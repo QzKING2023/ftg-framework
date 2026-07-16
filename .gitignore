@@ -1,3 +1,25 @@
 # Godot 4+ specific ignores
 .godot/
+.import/
 /android/
+
+# Imported translations (auto-generated)
+*.translation
+
+# Sensitive project data
+export_presets.cfg
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vs/
+*.swp
+*.swo

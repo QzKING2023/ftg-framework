@@ -1,0 +1,49 @@
+{
+  "moves": [
+    {
+      "move_id": "5LP",
+      "startup": 4,
+      "active": 3,
+      "recovery": 6,
+      "hit_advantage": 2,
+      "block_advantage": -3,
+      "damage": 30,
+      "cancel_windows": [
+        {
+          "start_frame": 3,
+          "end_frame": 6,
+          "target_category": "normal"
+        }
+      ],
+      "chain_repeatable": true
+    },
+    {
+      "move_id": "5HP",
+      "startup": 10,
+      "active": 4,
+      "recovery": 15,
+      "hit_advantage": 1,
+      "block_advantage": -8,
+      "damage": 80,
+      "cancel_windows": [],
+      "chain_repeatable": false
+    },
+    {
+      "move_id": "236P",
+      "startup": 8,
+      "active": 4,
+      "recovery": 18,
+      "hit_advantage": 1,
+      "block_advantage": -7,
+      "damage": 70,
+      "cancel_windows": [
+        {
+          "start_frame": 6,
+          "end_frame": 10,
+          "target_category": "super"
+        }
+      ],
+      "chain_repeatable": false
+    }
+  ]
+}

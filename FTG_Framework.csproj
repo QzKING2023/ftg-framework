@@ -7,4 +7,11 @@
   <ItemGroup>
     <Folder Include="Scripts\" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="FTG_Framework.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Tests\**" />
+    <None Remove="Tests\**" />
+  </ItemGroup>
 </Project>

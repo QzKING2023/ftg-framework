@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Godot;
+using FileAccess = Godot.FileAccess;
 
 namespace FTG_Framework.Data;
 

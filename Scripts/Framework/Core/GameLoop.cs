@@ -13,6 +13,8 @@ public partial class GameLoop : Node
     private IInputHistory? _inputHistory;
     private IInputLeniency? _leniencyMatcher;
     private IInputBuffer? _inputBuffer;
+    private IChargeTracker? _chargeTracker;
+    private IPriorityResolver? _priorityResolver;
     private readonly List<IModule> _modules = new();
 
     public override void _Ready()
@@ -27,6 +29,10 @@ public partial class GameLoop : Node
             RegisterModule(inputHistory);
             _inputHistory = inputHistory;
 
+            var chargeTracker = new global::FTG_Framework.Input.ChargeTracker(inputHistory);
+            RegisterModule(chargeTracker);
+            _chargeTracker = chargeTracker;
+
             var leniencyMatcher = new global::FTG_Framework.Input.InputLeniencyMatcher(inputHistory);
 
             leniencyMatcher.RegisterMove(new MoveInputConfig
@@ -38,7 +44,8 @@ public partial class GameLoop : Node
                     new[] { DirectionValue.Forward, DirectionValue.DownForward, DirectionValue.Forward },
                     new[] { DirectionValue.DownForward, DirectionValue.Down, DirectionValue.DownForward }
                 },
-                RequiredButton = ButtonValue.HP
+                RequiredButton = ButtonValue.HP,
+                Category = MoveCategory.Special
             });
 
             leniencyMatcher.RegisterMove(new MoveInputConfig
@@ -48,7 +55,33 @@ public partial class GameLoop : Node
                 {
                     new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward }
                 },
-                RequiredButton = ButtonValue.HP
+                RequiredButton = ButtonValue.HP,
+                Category = MoveCategory.Special
+            });
+
+            leniencyMatcher.RegisterMove(new MoveInputConfig
+            {
+                MoveId = "sonic_boom",
+                AcceptedSequences = new DirectionValue[][]
+                {
+                    new[] { DirectionValue.Forward }
+                },
+                RequiredButton = ButtonValue.HP,
+                ChargeDirection = DirectionValue.Back,
+                MinChargeDuration = 30,
+                Category = MoveCategory.Special
+            });
+
+            leniencyMatcher.RegisterMove(new MoveInputConfig
+            {
+                MoveId = "super_fireball",
+                AcceptedSequences = new DirectionValue[][]
+                {
+                    new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward,
+                             DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward }
+                },
+                RequiredButton = ButtonValue.HP,
+                Category = MoveCategory.Super
             });
 
             RegisterModule(leniencyMatcher);
@@ -57,6 +90,10 @@ public partial class GameLoop : Node
             var inputBuffer = new global::FTG_Framework.Input.InputBuffer(inputHistory, leniencyMatcher);
             RegisterModule(inputBuffer);
             _inputBuffer = inputBuffer;
+
+            var priorityResolver = new global::FTG_Framework.Input.DefaultPriorityResolver(leniencyMatcher, chargeTracker);
+            RegisterModule(priorityResolver);
+            _priorityResolver = priorityResolver;
         }
         catch (Exception ex)
         {
@@ -79,13 +116,17 @@ public partial class GameLoop : Node
             _inputHistory?.RecordInput(1, InputType.Directional, (int)DirectionValue.Down);
         if (Godot.Input.IsKeyPressed(Key.C))
             _inputHistory?.RecordInput(1, InputType.Directional, (int)DirectionValue.DownForward);
+        if (Godot.Input.IsKeyPressed(Key.A))
+            _inputHistory?.RecordInput(1, InputType.Directional, (int)DirectionValue.Back);
+
+        _chargeTracker?.Update(1, EventBus.Instance.CurrentFrame);
 
         var matches = _inputBuffer?.TryMatch(1);
-        if (matches is { Count: > 0 })
+        var resolved = _priorityResolver?.Resolve(matches ?? Array.Empty<MatchResult>(), 1, EventBus.Instance.CurrentFrame);
+        if (resolved != null)
         {
 #if DEBUG
-            foreach (var match in matches)
-                GD.Print($"[Input] Move detected: {match.MoveId} (button: {match.RequiredButton}) at frame {match.MatchedAtFrame}");
+            GD.Print($"[Input] Move detected: {resolved.Value.MoveId} (button: {resolved.Value.RequiredButton}) at frame {resolved.Value.MatchedAtFrame}");
 #endif
         }
 

@@ -2,4 +2,4 @@
 
 namespace FTG_Framework.Core;
 
-public readonly record struct MatchResult(string MoveId, ButtonValue RequiredButton, int MatchedAtFrame);
+public readonly record struct MatchResult(string MoveId, ButtonValue RequiredButton, int MatchedAtFrame, int SequenceLength);

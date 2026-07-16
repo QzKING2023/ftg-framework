@@ -94,7 +94,7 @@ internal sealed class InputLeniencyMatcher : IModule, IInputLeniency
             {
                 if (TryMatchSequence(sequence, windowedHistory, out int lastFrame))
                 {
-                    results.Add(new MatchResult(config.MoveId, config.RequiredButton, lastFrame));
+                    results.Add(new MatchResult(config.MoveId, config.RequiredButton, lastFrame, sequence.Length));
                     break;
                 }
             }

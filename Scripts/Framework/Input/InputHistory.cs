@@ -1,0 +1,92 @@
+#nullable enable
+using System;
+using System.Collections.Generic;
+using FTG_Framework.Core;
+using FTG_Framework.Core.Events;
+using Godot;
+
+namespace FTG_Framework.Input;
+
+internal sealed class InputHistory : IModule, IInputHistory
+{
+    private readonly CircularBuffer<InputEntry>[] _directionalTracks;
+    private readonly CircularBuffer<InputEntry>[] _buttonTracks;
+    private readonly int _capacity;
+
+    public InputHistory(int capacity = 600)
+    {
+        if (capacity <= 0)
+            throw new ArgumentException($"[Input] Capacity must be > 0, got {capacity}");
+        _capacity = capacity;
+        _directionalTracks = new CircularBuffer<InputEntry>[2];
+        _buttonTracks = new CircularBuffer<InputEntry>[2];
+        for (int i = 0; i < 2; i++)
+        {
+            _directionalTracks[i] = new CircularBuffer<InputEntry>(capacity);
+            _buttonTracks[i] = new CircularBuffer<InputEntry>(capacity);
+        }
+    }
+
+    public int Capacity => _capacity;
+
+    public void Initialize(IDataStore dataStore)
+    {
+        GD.Print($"[Input] InputHistory initialized — capacity: {_capacity} frames per track.");
+    }
+
+    public void Shutdown()
+    {
+    }
+
+    public void RecordInput(int playerId, InputType type, int value)
+    {
+        if (playerId < 1 || playerId > 2)
+        {
+            GD.PrintErr($"[Input] Invalid playerId: {playerId}. Must be 1 or 2.");
+            return;
+        }
+
+        int index = playerId - 1;
+        int frame = EventBus.Instance.CurrentFrame;
+        var entry = new InputEntry(frame, type, value);
+
+        var track = type == InputType.Directional
+            ? _directionalTracks[index]
+            : _buttonTracks[index];
+        track.Add(entry);
+
+        EventBus.Instance.Publish(new InputReceivedEvent(playerId, frame, (int)type, value));
+    }
+
+    public IReadOnlyList<InputEntry> GetDirectionalHistory(int playerId)
+    {
+        if (playerId < 1 || playerId > 2)
+        {
+            GD.PrintErr($"[Input] Invalid playerId: {playerId}. Must be 1 or 2.");
+            return Array.Empty<InputEntry>();
+        }
+        return _directionalTracks[playerId - 1].Snapshot();
+    }
+
+    public IReadOnlyList<InputEntry> GetButtonHistory(int playerId)
+    {
+        if (playerId < 1 || playerId > 2)
+        {
+            GD.PrintErr($"[Input] Invalid playerId: {playerId}. Must be 1 or 2.");
+            return Array.Empty<InputEntry>();
+        }
+        return _buttonTracks[playerId - 1].Snapshot();
+    }
+
+    public IReadOnlyList<InputEntry> GetHistory(int playerId, InputType type)
+    {
+        if (playerId < 1 || playerId > 2)
+        {
+            GD.PrintErr($"[Input] Invalid playerId: {playerId}. Must be 1 or 2.");
+            return Array.Empty<InputEntry>();
+        }
+        return type == InputType.Directional
+            ? _directionalTracks[playerId - 1].Snapshot()
+            : _buttonTracks[playerId - 1].Snapshot();
+    }
+}

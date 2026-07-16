@@ -15,6 +15,8 @@ public sealed class EventBus
     private bool _dispatching;
     private int _frameNumber;
 
+    public int CurrentFrame => _frameNumber;
+
     private EventBus() { }
 
     public void Subscribe<T>(Action<T> handler)

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using FTG_Framework.Data;
+using FTG_Framework.Input;
 using Godot;
 
 namespace FTG_Framework.Core;
@@ -9,6 +10,7 @@ namespace FTG_Framework.Core;
 public partial class GameLoop : Node
 {
     private IDataStore? _dataStore;
+    private IInputHistory? _inputHistory;
     private readonly List<IModule> _modules = new();
 
     public override void _Ready()
@@ -18,6 +20,10 @@ public partial class GameLoop : Node
             var moves = MoveDataLoader.LoadFromFile("res://Scripts/Framework/Data/example_moves.json");
             _dataStore = new DataStore(moves);
             GD.Print($"[Data] Loaded {moves.Length} moves.");
+
+            var inputHistory = new global::FTG_Framework.Input.InputHistory(capacity: 600);
+            RegisterModule(inputHistory);
+            _inputHistory = inputHistory;
         }
         catch (Exception ex)
         {
@@ -31,6 +37,12 @@ public partial class GameLoop : Node
     {
         if (_dataStore is null)
             return;
+
+        if (Godot.Input.IsKeyPressed(Key.P))
+            _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.LP);
+        if (Godot.Input.IsKeyPressed(Key.D))
+            _inputHistory?.RecordInput(1, InputType.Directional, (int)DirectionValue.Forward);
+
         EventBus.Instance.ProcessFrame();
     }
 

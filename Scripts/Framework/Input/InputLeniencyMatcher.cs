@@ -61,6 +61,11 @@ internal sealed class InputLeniencyMatcher : IModule, IInputLeniency
 
     public IReadOnlyList<MatchResult> TryMatch(int playerId)
     {
+        return TryMatch(playerId, 0, int.MaxValue);
+    }
+
+    public IReadOnlyList<MatchResult> TryMatch(int playerId, int fromFrame, int toFrame)
+    {
         if (playerId < 1 || playerId > 2)
         {
             GD.PrintErr($"[Input] Invalid playerId: {playerId}. Must be 1 or 2.");
@@ -71,12 +76,23 @@ internal sealed class InputLeniencyMatcher : IModule, IInputLeniency
         if (history.Count == 0)
             return Array.Empty<MatchResult>();
 
+        var windowedHistory = new List<InputEntry>();
+        for (int i = 0; i < history.Count; i++)
+        {
+            var entry = history[i];
+            if (entry.Frame >= fromFrame && entry.Frame <= toFrame)
+                windowedHistory.Add(entry);
+        }
+
+        if (windowedHistory.Count == 0)
+            return Array.Empty<MatchResult>();
+
         var results = new List<MatchResult>();
         foreach (var config in _registeredMoves)
         {
             foreach (var sequence in config.AcceptedSequences)
             {
-                if (TryMatchSequence(sequence, history, out int lastFrame))
+                if (TryMatchSequence(sequence, windowedHistory, out int lastFrame))
                 {
                     results.Add(new MatchResult(config.MoveId, config.RequiredButton, lastFrame));
                     break;

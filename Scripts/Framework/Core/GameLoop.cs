@@ -12,6 +12,7 @@ public partial class GameLoop : Node
     private IDataStore? _dataStore;
     private IInputHistory? _inputHistory;
     private IInputLeniency? _leniencyMatcher;
+    private IInputBuffer? _inputBuffer;
     private readonly List<IModule> _modules = new();
 
     public override void _Ready()
@@ -52,6 +53,10 @@ public partial class GameLoop : Node
 
             RegisterModule(leniencyMatcher);
             _leniencyMatcher = leniencyMatcher;
+
+            var inputBuffer = new global::FTG_Framework.Input.InputBuffer(inputHistory, leniencyMatcher);
+            RegisterModule(inputBuffer);
+            _inputBuffer = inputBuffer;
         }
         catch (Exception ex)
         {
@@ -67,7 +72,7 @@ public partial class GameLoop : Node
             return;
 
         if (Godot.Input.IsKeyPressed(Key.P))
-            _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.LP);
+            _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.HP);
         if (Godot.Input.IsKeyPressed(Key.D))
             _inputHistory?.RecordInput(1, InputType.Directional, (int)DirectionValue.Forward);
         if (Godot.Input.IsKeyPressed(Key.S))
@@ -75,7 +80,7 @@ public partial class GameLoop : Node
         if (Godot.Input.IsKeyPressed(Key.C))
             _inputHistory?.RecordInput(1, InputType.Directional, (int)DirectionValue.DownForward);
 
-        var matches = _leniencyMatcher?.TryMatch(1);
+        var matches = _inputBuffer?.TryMatch(1);
         if (matches is { Count: > 0 })
         {
 #if DEBUG

@@ -44,6 +44,39 @@
         }
       ],
       "chain_repeatable": false
+    },
+    {
+      "move_id": "dp_c",
+      "startup": 4,
+      "active": 8,
+      "recovery": 24,
+      "hit_advantage": -20,
+      "block_advantage": -28,
+      "damage": 100,
+      "cancel_windows": [],
+      "chain_repeatable": false
+    },
+    {
+      "move_id": "dp_d",
+      "startup": 4,
+      "active": 8,
+      "recovery": 24,
+      "hit_advantage": -20,
+      "block_advantage": -28,
+      "damage": 100,
+      "cancel_windows": [],
+      "chain_repeatable": false
+    },
+    {
+      "move_id": "fireball_c",
+      "startup": 12,
+      "active": 5,
+      "recovery": 20,
+      "hit_advantage": 2,
+      "block_advantage": -4,
+      "damage": 60,
+      "cancel_windows": [],
+      "chain_repeatable": false
     }
   ]
 }

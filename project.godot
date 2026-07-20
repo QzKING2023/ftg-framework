@@ -17,7 +17,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
-FrameRateManager="*res://scripts/FrameRateManager.cs"
+FrameRateManager="*res://Scripts/FrameRateManager.cs"
 GameLoop="*res://Scripts/Framework/Core/GameLoop.cs"
 
 [dotnet]

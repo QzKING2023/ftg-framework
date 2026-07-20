@@ -40,6 +40,13 @@ internal sealed class StubInputHistory : IInputHistory
         };
     }
 
+    public void AddButtonEntry(int playerId, int frame, ButtonValue button)
+    {
+        if (!_button.ContainsKey(playerId))
+            _button[playerId] = new List<InputEntry>();
+        _button[playerId].Add(new InputEntry(frame, InputType.Button, (int)button));
+    }
+
     public int Capacity => 600;
 
     public void RecordInput(int playerId, InputType type, int value)

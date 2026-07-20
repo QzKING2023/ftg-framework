@@ -14,11 +14,20 @@ internal sealed class StubInputLeniency : IInputLeniency
 
     public IReadOnlyList<MoveInputConfig> GetRegisteredMoves() => _moves.AsReadOnly();
 
-    public IReadOnlyList<MatchResult> TryMatch(int playerId) =>
-        new List<MatchResult>().AsReadOnly();
+    public List<MatchResult> TryMatchResult { get; set; } = new();
 
-    public IReadOnlyList<MatchResult> TryMatch(int playerId, int fromFrame, int toFrame) =>
-        new List<MatchResult>().AsReadOnly();
+    public int LastFromFrame { get; private set; }
+    public int LastToFrame { get; private set; }
+
+    public IReadOnlyList<MatchResult> TryMatch(int playerId) =>
+        TryMatchResult.AsReadOnly();
+
+    public IReadOnlyList<MatchResult> TryMatch(int playerId, int fromFrame, int toFrame)
+    {
+        LastFromFrame = fromFrame;
+        LastToFrame = toFrame;
+        return TryMatchResult.AsReadOnly();
+    }
 
     public IDataStore DataStore => null!;
     public void Initialize(IDataStore dataStore) { }

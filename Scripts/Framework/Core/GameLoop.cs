@@ -15,12 +15,17 @@ public partial class GameLoop : Node
     private IInputBuffer? _inputBuffer;
     private IChargeTracker? _chargeTracker;
     private IPriorityResolver? _priorityResolver;
+    private IFrameDataEngine? _frameDataEngine;
     private readonly List<IModule> _modules = new();
+    private bool _prevBtnA, _prevBtnB, _prevBtnC, _prevBtnD;
 
     public override void _Ready()
     {
         try
         {
+            FrameworkLog.Info = GD.Print;
+            FrameworkLog.Error = GD.PrintErr;
+
             var moves = MoveDataLoader.LoadFromFile("res://Scripts/Framework/Data/example_moves.json");
             _dataStore = new DataStore(moves);
             GD.Print($"[Data] Loaded {moves.Length} moves.");
@@ -37,63 +42,51 @@ public partial class GameLoop : Node
 
             leniencyMatcher.RegisterMove(new MoveInputConfig
             {
-                MoveId = "dp_p",
+                MoveId = "dp_c",
                 AcceptedSequences = new DirectionValue[][]
                 {
-                    new[] { DirectionValue.Forward, DirectionValue.Down, DirectionValue.DownForward },
-                    new[] { DirectionValue.Forward, DirectionValue.DownForward, DirectionValue.Forward },
-                    new[] { DirectionValue.DownForward, DirectionValue.Down, DirectionValue.DownForward }
+                    new[] { DirectionValue.Forward, DirectionValue.Down, DirectionValue.DownForward }
                 },
-                RequiredButton = ButtonValue.HP,
+                RequiredButton = ButtonValue.C,
                 Category = MoveCategory.Special
             });
 
             leniencyMatcher.RegisterMove(new MoveInputConfig
             {
-                MoveId = "fireball_p",
+                MoveId = "dp_d",
+                AcceptedSequences = new DirectionValue[][]
+                {
+                    new[] { DirectionValue.Forward, DirectionValue.Down, DirectionValue.DownForward }
+                },
+                RequiredButton = ButtonValue.D,
+                Category = MoveCategory.Special
+            });
+
+            leniencyMatcher.RegisterMove(new MoveInputConfig
+            {
+                MoveId = "fireball_c",
                 AcceptedSequences = new DirectionValue[][]
                 {
                     new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward }
                 },
-                RequiredButton = ButtonValue.HP,
+                RequiredButton = ButtonValue.C,
                 Category = MoveCategory.Special
-            });
-
-            leniencyMatcher.RegisterMove(new MoveInputConfig
-            {
-                MoveId = "sonic_boom",
-                AcceptedSequences = new DirectionValue[][]
-                {
-                    new[] { DirectionValue.Forward }
-                },
-                RequiredButton = ButtonValue.HP,
-                ChargeDirection = DirectionValue.Back,
-                MinChargeDuration = 30,
-                Category = MoveCategory.Special
-            });
-
-            leniencyMatcher.RegisterMove(new MoveInputConfig
-            {
-                MoveId = "super_fireball",
-                AcceptedSequences = new DirectionValue[][]
-                {
-                    new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward,
-                             DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward }
-                },
-                RequiredButton = ButtonValue.HP,
-                Category = MoveCategory.Super
             });
 
             RegisterModule(leniencyMatcher);
             _leniencyMatcher = leniencyMatcher;
 
-            var inputBuffer = new global::FTG_Framework.Input.InputBuffer(inputHistory, leniencyMatcher);
+            var inputBuffer = new global::FTG_Framework.Input.InputBuffer(inputHistory, leniencyMatcher, bufferDuration: 6, motionWindow: 30);
             RegisterModule(inputBuffer);
             _inputBuffer = inputBuffer;
 
             var priorityResolver = new global::FTG_Framework.Input.DefaultPriorityResolver(leniencyMatcher, chargeTracker);
             RegisterModule(priorityResolver);
             _priorityResolver = priorityResolver;
+
+            var frameDataEngine = new global::FTG_Framework.Engine.FrameData.FrameDataEngine(_dataStore);
+            RegisterModule(frameDataEngine);
+            _frameDataEngine = frameDataEngine;
         }
         catch (Exception ex)
         {
@@ -108,27 +101,37 @@ public partial class GameLoop : Node
         if (_dataStore is null)
             return;
 
-        if (Godot.Input.IsKeyPressed(Key.P))
-            _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.HP);
-        if (Godot.Input.IsKeyPressed(Key.D))
-            _inputHistory?.RecordInput(1, InputType.Directional, (int)DirectionValue.Forward);
-        if (Godot.Input.IsKeyPressed(Key.S))
-            _inputHistory?.RecordInput(1, InputType.Directional, (int)DirectionValue.Down);
-        if (Godot.Input.IsKeyPressed(Key.C))
-            _inputHistory?.RecordInput(1, InputType.Directional, (int)DirectionValue.DownForward);
-        if (Godot.Input.IsKeyPressed(Key.A))
-            _inputHistory?.RecordInput(1, InputType.Directional, (int)DirectionValue.Back);
+        // Direction auto-combine
+        bool back = Godot.Input.IsKeyPressed(Key.A);
+        bool forward = Godot.Input.IsKeyPressed(Key.D);
+        bool down = Godot.Input.IsKeyPressed(Key.S);
+        bool up = Godot.Input.IsKeyPressed(Key.Space);
+
+        var dir = ComputeDirection(back, forward, down, up);
+        _inputHistory?.RecordInput(1, InputType.Directional, (int)dir);
+
+        // Button inputs — record once on the rising edge of each press
+        bool btnA = Godot.Input.IsKeyPressed(Key.U);
+        bool btnB = Godot.Input.IsKeyPressed(Key.I);
+        bool btnC = Godot.Input.IsKeyPressed(Key.K);
+        bool btnD = Godot.Input.IsKeyPressed(Key.J);
+        if (btnA && !_prevBtnA) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.A);
+        if (btnB && !_prevBtnB) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.B);
+        if (btnC && !_prevBtnC) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.C);
+        if (btnD && !_prevBtnD) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.D);
+        _prevBtnA = btnA;
+        _prevBtnB = btnB;
+        _prevBtnC = btnC;
+        _prevBtnD = btnD;
 
         _chargeTracker?.Update(1, EventBus.Instance.CurrentFrame);
 
         var matches = _inputBuffer?.TryMatch(1);
         var resolved = _priorityResolver?.Resolve(matches ?? Array.Empty<MatchResult>(), 1, EventBus.Instance.CurrentFrame);
-        if (resolved != null)
-        {
-#if DEBUG
-            GD.Print($"[Input] Move detected: {resolved.Value.MoveId} (button: {resolved.Value.RequiredButton}) at frame {resolved.Value.MatchedAtFrame}");
-#endif
-        }
+        if (resolved != null && _frameDataEngine is not null && _frameDataEngine.GetPhase(1) == MovePhase.Idle)
+            _frameDataEngine.StartMove(1, resolved.Value.MoveId);
+
+        _frameDataEngine?.Update();
 
         EventBus.Instance.ProcessFrame();
     }
@@ -140,4 +143,19 @@ public partial class GameLoop : Node
         _modules.Add(module);
         module.Initialize(_dataStore);
     }
+
+    internal static DirectionValue ComputeDirection(bool back, bool forward, bool down, bool up)
+    {
+        int v = (up ? 1 : 0) + (down ? 2 : 0);
+        int h = (back ? 1 : 0) + (forward ? 2 : 0);
+        if (v > 2 || h > 2) return DirectionValue.Neutral;
+        return s_dirLookup[v, h];
+    }
+
+    private static readonly DirectionValue[,] s_dirLookup = new DirectionValue[3, 3]
+    {
+        { DirectionValue.Neutral, DirectionValue.Back, DirectionValue.Forward },
+        { DirectionValue.Up, DirectionValue.UpBack, DirectionValue.UpForward },
+        { DirectionValue.Down, DirectionValue.DownBack, DirectionValue.DownForward }
+    };
 }

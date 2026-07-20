@@ -15,14 +15,14 @@ public class DefaultPriorityResolverTests
         {
             MoveId = "normal_jab",
             AcceptedSequences = new[] { new[] { DirectionValue.Forward } },
-            RequiredButton = ButtonValue.LP,
+            RequiredButton = ButtonValue.A,
             Category = MoveCategory.Normal
         });
         leniency.AddMove(new MoveInputConfig
         {
             MoveId = "fireball",
             AcceptedSequences = new[] { new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward } },
-            RequiredButton = ButtonValue.HP,
+            RequiredButton = ButtonValue.C,
             Category = MoveCategory.Special
         });
         leniency.AddMove(new MoveInputConfig
@@ -33,7 +33,7 @@ public class DefaultPriorityResolverTests
                 new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward,
                         DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward }
             },
-            RequiredButton = ButtonValue.HP,
+            RequiredButton = ButtonValue.C,
             Category = MoveCategory.Super
         });
         return leniency;
@@ -50,8 +50,8 @@ public class DefaultPriorityResolverTests
 
         var candidates = new List<MatchResult>
         {
-            new("fireball", ButtonValue.HP, 0, 3),        // Special, seq=3
-            new("super_fireball", ButtonValue.HP, 0, 6),  // Super, seq=6
+            new("fireball", ButtonValue.C, 0, 3),        // Special, seq=3
+            new("super_fireball", ButtonValue.C, 0, 6),  // Super, seq=6
         };
 
         var result = resolver.Resolve(candidates, 1, 0);
@@ -68,8 +68,8 @@ public class DefaultPriorityResolverTests
 
         var candidates = new List<MatchResult>
         {
-            new("normal_jab", ButtonValue.LP, 0, 1),   // Normal, seq=1
-            new("fireball", ButtonValue.HP, 0, 3),     // Special, seq=3
+            new("normal_jab", ButtonValue.A, 0, 1),   // Normal, seq=1
+            new("fireball", ButtonValue.C, 0, 3),     // Special, seq=3
         };
 
         var result = resolver.Resolve(candidates, 1, 0);
@@ -85,14 +85,14 @@ public class DefaultPriorityResolverTests
         {
             MoveId = "short_special",
             AcceptedSequences = new[] { new[] { DirectionValue.Down, DirectionValue.Forward } },
-            RequiredButton = ButtonValue.HP,
+            RequiredButton = ButtonValue.C,
             Category = MoveCategory.Special
         });
         leniency.AddMove(new MoveInputConfig
         {
             MoveId = "long_special",
             AcceptedSequences = new[] { new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward } },
-            RequiredButton = ButtonValue.HP,
+            RequiredButton = ButtonValue.C,
             Category = MoveCategory.Special
         });
         var chargeTracker = new StubChargeTracker();
@@ -100,8 +100,8 @@ public class DefaultPriorityResolverTests
 
         var candidates = new List<MatchResult>
         {
-            new("short_special", ButtonValue.HP, 0, 2),
-            new("long_special", ButtonValue.HP, 0, 3),
+            new("short_special", ButtonValue.C, 0, 2),
+            new("long_special", ButtonValue.C, 0, 3),
         };
 
         var result = resolver.Resolve(candidates, 1, 0);
@@ -117,14 +117,14 @@ public class DefaultPriorityResolverTests
         {
             MoveId = "first_move",
             AcceptedSequences = new[] { new[] { DirectionValue.Forward, DirectionValue.Down, DirectionValue.DownForward } },
-            RequiredButton = ButtonValue.HP,
+            RequiredButton = ButtonValue.C,
             Category = MoveCategory.Special
         });
         leniency.AddMove(new MoveInputConfig
         {
             MoveId = "second_move",
             AcceptedSequences = new[] { new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward } },
-            RequiredButton = ButtonValue.HP,
+            RequiredButton = ButtonValue.C,
             Category = MoveCategory.Special
         });
         var chargeTracker = new StubChargeTracker();
@@ -132,8 +132,8 @@ public class DefaultPriorityResolverTests
 
         var candidates = new List<MatchResult>
         {
-            new("second_move", ButtonValue.HP, 0, 3),
-            new("first_move", ButtonValue.HP, 0, 3),
+            new("second_move", ButtonValue.C, 0, 3),
+            new("first_move", ButtonValue.C, 0, 3),
         };
 
         var result = resolver.Resolve(candidates, 1, 0);
@@ -151,7 +151,7 @@ public class DefaultPriorityResolverTests
         {
             MoveId = "sonic_boom",
             AcceptedSequences = new[] { new[] { DirectionValue.Forward } },
-            RequiredButton = ButtonValue.HP,
+            RequiredButton = ButtonValue.C,
             ChargeDirection = DirectionValue.Back,
             MinChargeDuration = 30,
             Category = MoveCategory.Special
@@ -160,7 +160,7 @@ public class DefaultPriorityResolverTests
         {
             MoveId = "fireball",
             AcceptedSequences = new[] { new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward } },
-            RequiredButton = ButtonValue.HP,
+            RequiredButton = ButtonValue.C,
             Category = MoveCategory.Special
         });
         var chargeTracker = new StubChargeTracker { IsValidResult = false };
@@ -168,8 +168,8 @@ public class DefaultPriorityResolverTests
 
         var candidates = new List<MatchResult>
         {
-            new("sonic_boom", ButtonValue.HP, 0, 1),
-            new("fireball", ButtonValue.HP, 0, 3),
+            new("sonic_boom", ButtonValue.C, 0, 1),
+            new("fireball", ButtonValue.C, 0, 3),
         };
 
         var result = resolver.Resolve(candidates, 1, 0);
@@ -185,7 +185,7 @@ public class DefaultPriorityResolverTests
         {
             MoveId = "sonic_boom",
             AcceptedSequences = new[] { new[] { DirectionValue.Forward } },
-            RequiredButton = ButtonValue.HP,
+            RequiredButton = ButtonValue.C,
             ChargeDirection = DirectionValue.Back,
             MinChargeDuration = 30,
             Category = MoveCategory.Super
@@ -194,7 +194,7 @@ public class DefaultPriorityResolverTests
         {
             MoveId = "fireball",
             AcceptedSequences = new[] { new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward } },
-            RequiredButton = ButtonValue.HP,
+            RequiredButton = ButtonValue.C,
             Category = MoveCategory.Special
         });
         var chargeTracker = new StubChargeTracker { IsValidResult = true };
@@ -202,8 +202,8 @@ public class DefaultPriorityResolverTests
 
         var candidates = new List<MatchResult>
         {
-            new("sonic_boom", ButtonValue.HP, 0, 1),
-            new("fireball", ButtonValue.HP, 0, 3),
+            new("sonic_boom", ButtonValue.C, 0, 1),
+            new("fireball", ButtonValue.C, 0, 3),
         };
 
         var result = resolver.Resolve(candidates, 1, 0);
@@ -219,7 +219,7 @@ public class DefaultPriorityResolverTests
         {
             MoveId = "charge_move",
             AcceptedSequences = new[] { new[] { DirectionValue.Forward } },
-            RequiredButton = ButtonValue.HP,
+            RequiredButton = ButtonValue.C,
             ChargeDirection = DirectionValue.Back,
             MinChargeDuration = 30,
             Category = MoveCategory.Special
@@ -229,7 +229,7 @@ public class DefaultPriorityResolverTests
 
         var candidates = new List<MatchResult>
         {
-            new("charge_move", ButtonValue.HP, 0, 1),
+            new("charge_move", ButtonValue.C, 0, 1),
         };
 
         var result = resolver.Resolve(candidates, 1, 0);
@@ -258,7 +258,7 @@ public class DefaultPriorityResolverTests
 
         var candidates = new List<MatchResult>
         {
-            new("fireball", ButtonValue.HP, 5, 3),
+            new("fireball", ButtonValue.C, 5, 3),
         };
 
         var result = resolver.Resolve(candidates, 1, 10);
@@ -277,12 +277,46 @@ public class DefaultPriorityResolverTests
 
         var candidates = new List<MatchResult>
         {
-            new("nonexistent_move", ButtonValue.HP, 0, 3),
-            new("fireball", ButtonValue.HP, 0, 3),
+            new("nonexistent_move", ButtonValue.C, 0, 3),
+            new("fireball", ButtonValue.C, 0, 3),
         };
 
         var result = resolver.Resolve(candidates, 1, 0);
         Assert.NotNull(result);
         Assert.Equal("fireball", result.Value.MoveId);
+    }
+
+    [Fact]
+    public void DP_WinsOver_Fireball_When_6236C_BothMatch()
+    {
+        var leniency = new StubInputLeniency();
+        // dp_c registered FIRST
+        leniency.AddMove(new MoveInputConfig
+        {
+            MoveId = "dp_c",
+            AcceptedSequences = new[] { new[] { DirectionValue.Forward, DirectionValue.Down, DirectionValue.DownForward } },
+            RequiredButton = ButtonValue.C,
+            Category = MoveCategory.Special
+        });
+        // fireball_c registered SECOND
+        leniency.AddMove(new MoveInputConfig
+        {
+            MoveId = "fireball_c",
+            AcceptedSequences = new[] { new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward } },
+            RequiredButton = ButtonValue.C,
+            Category = MoveCategory.Special
+        });
+        var chargeTracker = new StubChargeTracker();
+        var resolver = new DefaultPriorityResolver(leniency, chargeTracker);
+
+        var candidates = new List<MatchResult>
+        {
+            new("fireball_c", ButtonValue.C, 10, 3),  // [D,DF,F] at end
+            new("dp_c", ButtonValue.C, 8, 3),          // [F,D,DF] at start
+        };
+
+        var result = resolver.Resolve(candidates, 1, 10);
+        Assert.NotNull(result);
+        Assert.Equal("dp_c", result.Value.MoveId);
     }
 }

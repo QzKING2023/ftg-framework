@@ -11,23 +11,28 @@ internal sealed class InputBuffer : IModule, IInputBuffer
     private readonly IInputHistory _inputHistory;
     private readonly IInputLeniency _leniencyMatcher;
     private readonly int _bufferDuration;
+    private readonly int _motionWindow;
 
     public int BufferDuration => _bufferDuration;
+    public int MotionWindow => _motionWindow;
 
-    public InputBuffer(IInputHistory inputHistory, IInputLeniency leniencyMatcher, int bufferDuration = 6)
+    public InputBuffer(IInputHistory inputHistory, IInputLeniency leniencyMatcher, int bufferDuration = 6, int motionWindow = 30)
     {
         ArgumentNullException.ThrowIfNull(inputHistory);
         ArgumentNullException.ThrowIfNull(leniencyMatcher);
         if (bufferDuration < 0)
             throw new ArgumentException($"[Input] Buffer duration must be >= 0, got {bufferDuration}");
+        if (motionWindow < 0)
+            throw new ArgumentException($"[Input] Motion window must be >= 0, got {motionWindow}");
         _inputHistory = inputHistory;
         _leniencyMatcher = leniencyMatcher;
         _bufferDuration = bufferDuration;
+        _motionWindow = motionWindow;
     }
 
     public void Initialize(IDataStore dataStore)
     {
-        GD.Print($"[Input] InputBuffer initialized — buffer: {_bufferDuration}f.");
+        GD.Print($"[Input] InputBuffer initialized — buffer: {_bufferDuration}f, motion: {_motionWindow}f.");
     }
 
     public void Shutdown()
@@ -43,9 +48,10 @@ internal sealed class InputBuffer : IModule, IInputBuffer
         }
 
         int currentFrame = EventBus.Instance.CurrentFrame;
-        int fromFrame = Math.Max(0, currentFrame - _bufferDuration);
+        int motionFrom = Math.Max(0, currentFrame - _motionWindow);
+        int bufferFrom = Math.Max(0, currentFrame - _bufferDuration);
 
-        var directionMatches = _leniencyMatcher.TryMatch(playerId, fromFrame, currentFrame);
+        var directionMatches = _leniencyMatcher.TryMatch(playerId, motionFrom, currentFrame);
         if (directionMatches.Count == 0)
             return Array.Empty<MatchResult>();
 
@@ -53,7 +59,7 @@ internal sealed class InputBuffer : IModule, IInputBuffer
         var results = new List<MatchResult>();
         foreach (var match in directionMatches)
         {
-            if (ButtonExistsInWindow(buttonHistory, match.RequiredButton, fromFrame, currentFrame))
+            if (ButtonExistsInWindow(buttonHistory, match.RequiredButton, bufferFrom, currentFrame))
                 results.Add(match);
         }
 

@@ -29,3 +29,10 @@ _bmad-output/
 .vs/
 *.swp
 *.swo
+
+# .NET build artifacts
+bin/
+obj/
+
+# Rider temp files
+~*

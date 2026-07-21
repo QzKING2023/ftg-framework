@@ -33,23 +33,6 @@ public class FrameDataEngineTests : IDisposable
         return (new FrameDataEngine(store), store);
     }
 
-    private static List<MoveFrameChangedEvent> CollectEvents(Action scenario)
-    {
-        var events = new List<MoveFrameChangedEvent>();
-        void Handler(MoveFrameChangedEvent e) => events.Add(e);
-        EventBus.Instance.Subscribe<MoveFrameChangedEvent>(Handler);
-        try
-        {
-            scenario();
-        }
-        finally
-        {
-            EventBus.Instance.Unsubscribe<MoveFrameChangedEvent>(Handler);
-            EventBus.Instance.ProcessFrame(); // flush any queued events
-        }
-        return events;
-    }
-
     private static void StepFrame()
     {
         EventBus.Instance.ProcessFrame();
@@ -57,9 +40,7 @@ public class FrameDataEngineTests : IDisposable
 
     public void Dispose()
     {
-        // EventBus is a process-wide singleton — drain queued events so they
-        // cannot leak into another test's dispatch.
-        EventBus.Instance.ProcessFrame();
+        EventBusTestHelper.Drain();
     }
 
     // --- Phase transitions (AC 1) ---
@@ -108,7 +89,7 @@ public class FrameDataEngineTests : IDisposable
     {
         var (engine, _) = CreateEngine(MakeMove("fireball_c", 5, 3, 7));
 
-        var events = CollectEvents(() =>
+        var events = EventBusTestHelper.Collect<MoveFrameChangedEvent>(() =>
         {
             engine.StartMove(1, "fireball_c");
             engine.Update();
@@ -129,7 +110,7 @@ public class FrameDataEngineTests : IDisposable
     {
         var (engine, _) = CreateEngine(MakeMove("test", 5, 3, 7));
 
-        var events = CollectEvents(() =>
+        var events = EventBusTestHelper.Collect<MoveFrameChangedEvent>(() =>
         {
             engine.StartMove(1, "test");
             for (int i = 0; i < 20; i++)
@@ -176,7 +157,7 @@ public class FrameDataEngineTests : IDisposable
             MakeMove("p1_move", 5, 3, 7),
             MakeMove("p2_move", 2, 2, 2));
 
-        var events = CollectEvents(() =>
+        var events = EventBusTestHelper.Collect<MoveFrameChangedEvent>(() =>
         {
             engine.StartMove(1, "p1_move");
             engine.Update();
@@ -198,7 +179,7 @@ public class FrameDataEngineTests : IDisposable
     {
         var (engine, _) = CreateEngine(MakeMove("test", 5, 3, 7));
 
-        var events = CollectEvents(() =>
+        var events = EventBusTestHelper.Collect<MoveFrameChangedEvent>(() =>
         {
             engine.StartMove(1, "test");
             engine.Update();
@@ -232,7 +213,7 @@ public class FrameDataEngineTests : IDisposable
     {
         var (engine, _) = CreateEngine(MakeMove("test", 5, 3, 7));
 
-        var events = CollectEvents(() =>
+        var events = EventBusTestHelper.Collect<MoveFrameChangedEvent>(() =>
         {
             engine.StartMove(1, "nonexistent");
             engine.Update();
@@ -248,7 +229,7 @@ public class FrameDataEngineTests : IDisposable
     {
         var (engine, _) = CreateEngine(MakeMove("test", 5, 3, 7));
 
-        var events = CollectEvents(() =>
+        var events = EventBusTestHelper.Collect<MoveFrameChangedEvent>(() =>
         {
             engine.StartMove(0, "test");
             engine.StartMove(3, "test");
@@ -288,7 +269,7 @@ public class FrameDataEngineTests : IDisposable
         var (engine, store) = CreateEngine(MakeMove("test", 5, 3, 7));
 
         engine.StartMove(1, "test");
-        var first = CollectEvents(() =>
+        var first = EventBusTestHelper.Collect<MoveFrameChangedEvent>(() =>
         {
             engine.Update();
             StepFrame();
@@ -303,7 +284,7 @@ public class FrameDataEngineTests : IDisposable
 
         store.SetMove(MakeMove("test", 2, 2, 2));
         engine.StartMove(1, "test");
-        var second = CollectEvents(() =>
+        var second = EventBusTestHelper.Collect<MoveFrameChangedEvent>(() =>
         {
             engine.Update();
             StepFrame();
@@ -315,5 +296,126 @@ public class FrameDataEngineTests : IDisposable
 
         engine.Update(); // frame 1 (startup 2 → still startup), tick to frame 2 → active
         Assert.Equal(MovePhase.Active, engine.GetPhase(1));
+    }
+
+    // --- Cancel window integration (Story 2.2, Task 3.10) ---
+
+    private static MoveDefinition MakeWindowedMove(
+        string moveId, int startup, int active, int recovery,
+        params CancelWindow[] windows) => new()
+    {
+        MoveId = moveId,
+        Startup = startup,
+        Active = active,
+        Recovery = recovery,
+        CancelWindows = new List<CancelWindow>(windows)
+    };
+
+    private static CancelWindow W(int startFrame, int endFrame, string targetCategory = "special") => new()
+    {
+        StartFrame = startFrame,
+        EndFrame = endFrame,
+        TargetCategory = targetCategory
+    };
+
+    [Fact]
+    public void CancelWindows_EnteredAndExitedInterleaveWithMoveFrameChanged()
+    {
+        var (engine, _) = CreateEngine(MakeWindowedMove("test", 5, 3, 7,
+            W(3, 7, "special")));
+
+        // Ordered log across per-frame flushes — phase-3 dispatch delivers
+        // MoveFrameChanged → Entered → Exited within each frame (AD-4).
+        var log = new List<string>();
+        void OnMfc(MoveFrameChangedEvent e) => log.Add($"mfc:{e.CurrentFrame}");
+        void OnEntered(CancelWindowEnteredEvent e) => log.Add($"entered:{e.Category}:{e.StartFrame}-{e.EndFrame}");
+        void OnExited(CancelWindowExitedEvent e) => log.Add($"exited:{e.Category}");
+        EventBusTestHelper.Drain();
+        EventBus.Instance.Subscribe<MoveFrameChangedEvent>(OnMfc);
+        EventBus.Instance.Subscribe<CancelWindowEnteredEvent>(OnEntered);
+        EventBus.Instance.Subscribe<CancelWindowExitedEvent>(OnExited);
+        try
+        {
+            engine.StartMove(1, "test");
+            for (int i = 0; i < 15; i++)
+            {
+                engine.Update();
+                EventBus.Instance.ProcessFrame();
+            }
+        }
+        finally
+        {
+            EventBus.Instance.Unsubscribe<MoveFrameChangedEvent>(OnMfc);
+            EventBus.Instance.Unsubscribe<CancelWindowEnteredEvent>(OnEntered);
+            EventBus.Instance.Unsubscribe<CancelWindowExitedEvent>(OnExited);
+        }
+
+        var expected = new List<string>();
+        for (int f = 0; f <= 14; f++)
+        {
+            expected.Add($"mfc:{f}");
+            if (f == 3) expected.Add("entered:special:3-7");
+            if (f == 8) expected.Add("exited:special");
+        }
+        Assert.Equal(expected, log);
+    }
+
+    [Fact]
+    public void CancelWindows_EmptyWindows_NoCancelEvents()
+    {
+        var (engine, _) = CreateEngine(MakeMove("test", 5, 3, 7));
+
+        var (mfc, entered, exited) = EventBusTestHelper.Collect<MoveFrameChangedEvent, CancelWindowEnteredEvent, CancelWindowExitedEvent>(() =>
+        {
+            engine.StartMove(1, "test");
+            for (int i = 0; i < 15; i++)
+                engine.Update();
+        });
+
+        Assert.Equal(15, mfc.Count);
+        Assert.Empty(entered);
+        Assert.Empty(exited);
+    }
+
+    [Fact]
+    public void CancelWindows_BothPlayersIndependent()
+    {
+        var (engine, _) = CreateEngine(
+            MakeWindowedMove("p1_move", 5, 3, 7, W(3, 7, "special")),
+            MakeWindowedMove("p2_move", 2, 2, 2, W(0, 3, "super")));
+
+        var (mfc, entered, exited) = EventBusTestHelper.Collect<MoveFrameChangedEvent, CancelWindowEnteredEvent, CancelWindowExitedEvent>(() =>
+        {
+            engine.StartMove(1, "p1_move");
+            engine.StartMove(2, "p2_move");
+            for (int i = 0; i < 15; i++)
+                engine.Update();
+        });
+
+        Assert.Contains(mfc, e => e.PlayerId == 1);
+        Assert.Contains(mfc, e => e.PlayerId == 2);
+        Assert.Contains(entered, e => e.PlayerId == 1 && e.Category == "special");
+        Assert.Contains(entered, e => e.PlayerId == 2 && e.Category == "super");
+        Assert.Contains(exited, e => e.PlayerId == 1 && e.Category == "special");
+        Assert.Contains(exited, e => e.PlayerId == 2 && e.Category == "super");
+    }
+
+    [Fact]
+    public void CancelWindows_CloseAllWhenMoveCompletes()
+    {
+        var (engine, _) = CreateEngine(MakeWindowedMove("test", 5, 3, 7,
+            W(3, 20, "long_window"))); // window extends beyond move end
+
+        var (_, entered, exited) = EventBusTestHelper.Collect<MoveFrameChangedEvent, CancelWindowEnteredEvent, CancelWindowExitedEvent>(() =>
+        {
+            engine.StartMove(1, "test");
+            for (int i = 0; i < 15; i++)
+                engine.Update();
+        });
+
+        Assert.Single(entered);
+        var exitedSingle = Assert.Single(exited); // CloseAll published Exited
+        Assert.Equal("test", exitedSingle.MoveId); // captured pre-Tick, not nulled by completion
+        Assert.Equal(MovePhase.Idle, engine.GetPhase(1));
     }
 }

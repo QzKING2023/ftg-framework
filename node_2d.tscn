@@ -1,3 +1,5 @@
 [gd_scene format=3 uid="uid://favbfbm66duh"]
 
 [node name="Node2D" type="Node2D"]
+
+[node name="FrameDataPanel" type="Node" parent="."]

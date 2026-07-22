@@ -405,4 +405,89 @@ public class CancelWindowTrackerTests : IDisposable
         Assert.Equal(new[] { "super", "special" }, exited.ConvertAll(e => e.Category));
         Assert.All(exited, e => Assert.Equal("test", e.MoveId));
     }
+
+    // --- ResyncFrame (rewind restore path) ---
+
+    [Fact]
+    public void ResyncFrame_WindowOpenAcrossRestore_EmitsNothing()
+    {
+        var tracker = new CancelWindowTracker();
+        var move = MakeMove("test", MakeWindow(3, 7, "special"));
+        tracker.TrackMove(1, move);
+        tracker.EvaluateFrame(1, "test", 5); // window open
+        EventBusTestHelper.Drain();
+
+        // Restoring to a frame inside the same window must not emit a spurious
+        // Exited+Entered pair — the window never closed on this branch.
+        var (entered, exited) = EventBusTestHelper.Collect<CancelWindowEnteredEvent, CancelWindowExitedEvent>(
+            () => tracker.ResyncFrame(1, move, 5));
+
+        Assert.Empty(entered);
+        Assert.Empty(exited);
+    }
+
+    [Fact]
+    public void ResyncFrame_WindowClosedOnAbandonedBranch_ReopensWithEntered()
+    {
+        var tracker = new CancelWindowTracker();
+        var move = MakeMove("test", MakeWindow(3, 7, "special"));
+        tracker.TrackMove(1, move);
+        tracker.EvaluateFrame(1, "test", 3);
+        tracker.EvaluateFrame(1, "test", 8); // closed on the abandoned future
+        EventBusTestHelper.Drain();
+
+        // Restored frame is inside the window, but the tracker closed it on the
+        // abandoned branch — subscribers saw Exited, so they must see Entered.
+        var entered = EventBusTestHelper.Collect<CancelWindowEnteredEvent>(
+            () => tracker.ResyncFrame(1, move, 5));
+
+        var open = Assert.Single(entered);
+        Assert.Equal("special", open.Category);
+        Assert.Equal("test", open.MoveId);
+    }
+
+    [Fact]
+    public void ResyncFrame_WindowOpenedOnAbandonedBranch_ClosesWithExited()
+    {
+        var tracker = new CancelWindowTracker();
+        var move = MakeMove("test", MakeWindow(6, 8, "super"));
+        tracker.TrackMove(1, move);
+        tracker.EvaluateFrame(1, "test", 6); // opened on the abandoned future
+        EventBusTestHelper.Drain();
+
+        // Restored frame is before the window — subscribers saw Entered, so
+        // they must see Exited.
+        var exited = EventBusTestHelper.Collect<CancelWindowExitedEvent>(
+            () => tracker.ResyncFrame(1, move, 3));
+
+        var close = Assert.Single(exited);
+        Assert.Equal("super", close.Category);
+    }
+
+    [Fact]
+    public void ResyncFrame_DifferentMoveOnAbandonedBranch_ClosesOldAndOpensNew()
+    {
+        var tracker = new CancelWindowTracker();
+        var first = MakeMove("first", MakeWindow(0, 9, "special"));
+        var second = MakeMove("second", MakeWindow(2, 4, "super"));
+        tracker.TrackMove(1, first);
+        tracker.EvaluateFrame(1, "first", 2); // first's window open on abandoned branch
+        EventBusTestHelper.Drain();
+
+        var (entered, exited) = EventBusTestHelper.Collect<CancelWindowEnteredEvent, CancelWindowExitedEvent>(
+            () => tracker.ResyncFrame(1, second, 3));
+
+        var close = Assert.Single(exited);
+        Assert.Equal("first", close.MoveId);
+        var open = Assert.Single(entered);
+        Assert.Equal("second", open.MoveId);
+        Assert.Equal("super", open.Category);
+    }
+
+    [Fact]
+    public void ResyncFrame_NullMove_Throws()
+    {
+        var tracker = new CancelWindowTracker();
+        Assert.Throws<ArgumentNullException>(() => tracker.ResyncFrame(1, null!, 0));
+    }
 }

@@ -1,8 +1,11 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using FTG_Framework.Core.Events;
 using FTG_Framework.Data;
+using FTG_Framework.Engine.FrameData;
 using FTG_Framework.Input;
+using FTG_Framework.UI.Training;
 using Godot;
 
 namespace FTG_Framework.Core;
@@ -18,8 +21,17 @@ public partial class GameLoop : Node
     private IFrameDataEngine? _frameDataEngine;
     private readonly List<IModule> _modules = new();
     private bool _prevBtnA, _prevBtnB, _prevBtnC, _prevBtnD;
-    private global::FTG_Framework.UI.Training.PlaybackControls? _playbackControls;
-    private global::FTG_Framework.UI.Training.HitboxOverlay? _hitboxOverlay;
+    private PlaybackControls? _playbackControls;
+    private HitboxOverlay? _hitboxOverlay;
+    private FrameDataPanel? _frameDataPanel;
+    private AdvantageDisplay? _advantageDisplay;
+    private InputLog? _inputLog;
+
+    // Test control state — edge-tracking prevents repeating triggers per press
+    private bool _prevPauseKey, _prevStepFwdKey, _prevStepBackKey;
+    private bool _prevHitKey, _prevBlockKey, _prevOverlayKey;
+    private bool _prevShowP1Key, _prevShowP2Key;
+    private bool _overlayEnabled;
 
     public override void _Ready()
     {
@@ -86,18 +98,44 @@ public partial class GameLoop : Node
             RegisterModule(priorityResolver);
             _priorityResolver = priorityResolver;
 
-            var frameDataEngine = new global::FTG_Framework.Engine.FrameData.FrameDataEngine(_dataStore);
+            var frameDataEngine = new FrameDataEngine(_dataStore);
             RegisterModule(frameDataEngine);
             _frameDataEngine = frameDataEngine;
 
-            _playbackControls = new global::FTG_Framework.UI.Training.PlaybackControls
+            // --- Training-mode UI panels ---
+
+            _frameDataPanel = new FrameDataPanel
             {
-                FrameDataEngine = _frameDataEngine
+                PanelPosition = new Vector2(10, 10),
+                DataStore = _dataStore
+            };
+            AddChild(_frameDataPanel);
+
+            _advantageDisplay = new AdvantageDisplay
+            {
+                PanelPosition = new Vector2(10, 75)
+            };
+            AddChild(_advantageDisplay);
+
+            _inputLog = new InputLog
+            {
+                PanelPosition = new Vector2(10, 110),
+                InputHistory = _inputHistory
+            };
+            AddChild(_inputLog);
+
+            _playbackControls = new PlaybackControls
+            {
+                FrameDataEngine = _frameDataEngine,
+                InputLog = _inputLog
             };
             AddChild(_playbackControls);
 
-            _hitboxOverlay = new global::FTG_Framework.UI.Training.HitboxOverlay();
+            _hitboxOverlay = new HitboxOverlay();
             AddChild(_hitboxOverlay);
+
+            // --- Debug event logging — outputs to Godot console for verification ---
+            SubscribeDebugEvents();
         }
         catch (Exception ex)
         {
@@ -126,6 +164,18 @@ public partial class GameLoop : Node
         bool btnB = Godot.Input.IsKeyPressed(Key.I);
         bool btnC = Godot.Input.IsKeyPressed(Key.K);
         bool btnD = Godot.Input.IsKeyPressed(Key.J);
+
+        // Test-key polling — always active (even while paused).
+        bool pauseKey = Godot.Input.IsKeyPressed(Key.P);
+        bool stepFwd = Godot.Input.IsKeyPressed(Key.Right);
+        bool stepBack = Godot.Input.IsKeyPressed(Key.Left);
+        bool hitKey = Godot.Input.IsKeyPressed(Key.H);
+        bool blockKey = Godot.Input.IsKeyPressed(Key.B);
+        bool overlayKey = Godot.Input.IsKeyPressed(Key.O);
+        bool showP1Key = Godot.Input.IsKeyPressed(Key.Key1);
+        bool showP2Key = Godot.Input.IsKeyPressed(Key.Key2);
+
+        ProcessTestKeys(pauseKey, stepFwd, stepBack, hitKey, blockKey, overlayKey, showP1Key, showP2Key);
 
         if (!processFrame)
         {
@@ -186,4 +236,72 @@ public partial class GameLoop : Node
         { DirectionValue.Up, DirectionValue.UpBack, DirectionValue.UpForward },
         { DirectionValue.Down, DirectionValue.DownBack, DirectionValue.DownForward }
     };
+
+    private void ProcessTestKeys(bool pauseKey, bool stepFwd, bool stepBack,
+        bool hitKey, bool blockKey, bool overlayKey, bool showP1Key, bool showP2Key)
+    {
+        if (pauseKey && !_prevPauseKey)
+            _playbackControls?.TogglePause();
+
+        if (stepFwd && !_prevStepFwdKey)
+            _playbackControls?.StepForward();
+
+        if (stepBack && !_prevStepBackKey)
+            _playbackControls?.StepBackward();
+
+        if (hitKey && !_prevHitKey)
+            _frameDataEngine?.RegisterHit(attackerId: 1, defenderId: 2, moveId: "5LP", isBlocked: false);
+
+        if (blockKey && !_prevBlockKey)
+            _frameDataEngine?.RegisterHit(attackerId: 1, defenderId: 2, moveId: "5HP", isBlocked: true);
+
+        if (overlayKey && !_prevOverlayKey)
+        {
+            _overlayEnabled = !_overlayEnabled;
+            _hitboxOverlay!.Enabled = _overlayEnabled;
+            GD.Print($"[Test] HitboxOverlay Enabled = {_overlayEnabled}");
+        }
+
+        if (showP1Key && !_prevShowP1Key && _inputLog != null)
+        {
+            _inputLog.ShowP1 = !_inputLog.ShowP1;
+            GD.Print($"[Test] InputLog ShowP1 = {_inputLog.ShowP1}");
+        }
+
+        if (showP2Key && !_prevShowP2Key && _inputLog != null)
+        {
+            _inputLog.ShowP2 = !_inputLog.ShowP2;
+            GD.Print($"[Test] InputLog ShowP2 = {_inputLog.ShowP2}");
+        }
+
+        _prevPauseKey = pauseKey;
+        _prevStepFwdKey = stepFwd;
+        _prevStepBackKey = stepBack;
+        _prevHitKey = hitKey;
+        _prevBlockKey = blockKey;
+        _prevOverlayKey = overlayKey;
+        _prevShowP1Key = showP1Key;
+        _prevShowP2Key = showP2Key;
+    }
+
+    private void SubscribeDebugEvents()
+    {
+        EventBus.Instance.Subscribe<MoveFrameChangedEvent>(e =>
+            GD.Print($"[DEBUG] MoveFrame: P{e.PlayerId} {e.MoveId} phase={e.Phase} frame={e.CurrentFrame}/{e.TotalFrames}"));
+
+        EventBus.Instance.Subscribe<CancelWindowEnteredEvent>(e =>
+            GD.Print($"[DEBUG] CancelEnter: P{e.PlayerId} {e.MoveId} cat={e.Category} [{e.StartFrame}-{e.EndFrame}]"));
+
+        EventBus.Instance.Subscribe<CancelWindowExitedEvent>(e =>
+            GD.Print($"[DEBUG] CancelExited: P{e.PlayerId} {e.MoveId} cat={e.Category}"));
+
+        EventBus.Instance.Subscribe<HitConnectedEvent>(e =>
+            GD.Print($"[DEBUG] HitConnected: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.HitAdvantage}"));
+
+        EventBus.Instance.Subscribe<MoveBlockedEvent>(e =>
+            GD.Print($"[DEBUG] MoveBlocked: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.BlockAdvantage}"));
+
+        EventBus.Instance.Subscribe<InputReceivedEvent>(e =>
+            GD.Print($"[DEBUG] InputRecv: P{e.PlayerId} frame={e.Frame} type={e.InputType} val={e.InputValue}"));
+    }
 }

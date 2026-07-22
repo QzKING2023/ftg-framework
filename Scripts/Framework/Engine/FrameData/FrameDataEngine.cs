@@ -15,7 +15,10 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
     private readonly CancelWindowTracker _p1CancelTracker = new();
     private readonly CancelWindowTracker _p2CancelTracker = new();
     private readonly List<FrameStateSnapshot> _snapshots = new();
+    private readonly List<HitRegistration> _pendingHits = new();
     private int _snapshotCapacity = 600;
+
+    internal readonly record struct HitRegistration(int AttackerId, int DefenderId, string MoveId, bool IsBlocked);
 
     internal IReadOnlyList<FrameStateSnapshot> Snapshots => _snapshots.AsReadOnly();
 
@@ -73,11 +76,17 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
         FrameworkLog.Info?.Invoke($"[FrameData] P{playerId} started '{moveId}' — startup {move.Startup}f, active {move.Active}f, recovery {move.Recovery}f.");
     }
 
+    public void RegisterHit(int attackerId, int defenderId, string moveId, bool isBlocked)
+    {
+        _pendingHits.Add(new HitRegistration(attackerId, defenderId, moveId, isBlocked));
+    }
+
     public void Update()
     {
         SaveSnapshot();
         UpdatePlayer(1, _p1Timeline, _p1CancelTracker);
         UpdatePlayer(2, _p2Timeline, _p2CancelTracker);
+        FlushPendingHits();
     }
 
     private void SaveSnapshot()
@@ -195,6 +204,21 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
 
         if (timeline.Phase == MovePhase.Idle)
             tracker.CloseAll(playerId, moveIdBeforeTick!);
+    }
+
+    private void FlushPendingHits()
+    {
+        foreach (var reg in _pendingHits)
+        {
+            var move = _dataStore.GetMove(reg.MoveId);
+            if (move is null) continue;
+
+            if (reg.IsBlocked)
+                EventBus.Instance.Publish(new MoveBlockedEvent(reg.AttackerId, reg.DefenderId, reg.MoveId, move.BlockAdvantage));
+            else
+                EventBus.Instance.Publish(new HitConnectedEvent(reg.AttackerId, reg.DefenderId, reg.MoveId, move.HitAdvantage));
+        }
+        _pendingHits.Clear();
     }
 
     private MoveTimeline? GetTimeline(int playerId) => playerId switch

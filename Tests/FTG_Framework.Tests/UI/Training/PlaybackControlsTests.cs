@@ -116,6 +116,7 @@ public class PlaybackControlsTests : IDisposable
         public bool RestoreResult = true;
 
         public void StartMove(int playerId, string moveId) { }
+        public void RegisterHit(int attackerId, int defenderId, string moveId, bool isBlocked) { }
         public void Update() { }
         public MovePhase GetPhase(int playerId) => MovePhase.Idle;
         public int GetCurrentFrame(int playerId) => 0;

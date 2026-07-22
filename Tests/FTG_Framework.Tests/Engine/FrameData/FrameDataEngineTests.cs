@@ -418,4 +418,79 @@ public class FrameDataEngineTests : IDisposable
         Assert.Equal("test", exitedSingle.MoveId); // captured pre-Tick, not nulled by completion
         Assert.Equal(MovePhase.Idle, engine.GetPhase(1));
     }
+
+    // --- RegisterHit (Epic 2 retro: minimal hit registration API) ---
+
+    [Fact]
+    public void RegisterHit_HitConnected_PublishesWithMoveDataAdvantage()
+    {
+        var (engine, _) = CreateEngine(MakeMove("5LP", 4, 3, 6, hitAdvantage: 2, blockAdvantage: -3));
+
+        var events = EventBusTestHelper.Collect<HitConnectedEvent>(() =>
+        {
+            engine.RegisterHit(1, 2, "5LP", isBlocked: false);
+            engine.Update();
+            StepFrame();
+        });
+
+        var e = Assert.Single(events);
+        Assert.Equal(1, e.AttackerId);
+        Assert.Equal(2, e.DefenderId);
+        Assert.Equal("5LP", e.MoveId);
+        Assert.Equal(2, e.HitAdvantage);
+    }
+
+    [Fact]
+    public void RegisterHit_MoveBlocked_PublishesWithMoveDataAdvantage()
+    {
+        var (engine, _) = CreateEngine(MakeMove("5HP", 10, 4, 15, hitAdvantage: 1, blockAdvantage: -8));
+
+        var events = EventBusTestHelper.Collect<MoveBlockedEvent>(() =>
+        {
+            engine.RegisterHit(1, 2, "5HP", isBlocked: true);
+            engine.Update();
+            StepFrame();
+        });
+
+        var e = Assert.Single(events);
+        Assert.Equal(1, e.AttackerId);
+        Assert.Equal(2, e.DefenderId);
+        Assert.Equal("5HP", e.MoveId);
+        Assert.Equal(-8, e.BlockAdvantage);
+    }
+
+    [Fact]
+    public void RegisterHit_MultipleRegistrationsInSameFrame_AllPublished()
+    {
+        var (engine, _) = CreateEngine(
+            MakeMove("move_a", 5, 3, 7, hitAdvantage: 2),
+            MakeMove("move_b", 5, 3, 7, hitAdvantage: 4));
+
+        var events = EventBusTestHelper.Collect<HitConnectedEvent>(() =>
+        {
+            engine.RegisterHit(1, 2, "move_a", isBlocked: false);
+            engine.RegisterHit(1, 2, "move_b", isBlocked: false);
+            engine.Update();
+            StepFrame();
+        });
+
+        Assert.Equal(2, events.Count);
+        Assert.Contains(events, e => e.MoveId == "move_a" && e.HitAdvantage == 2);
+        Assert.Contains(events, e => e.MoveId == "move_b" && e.HitAdvantage == 4);
+    }
+
+    [Fact]
+    public void RegisterHit_UnknownMoveId_SilentlySkipped()
+    {
+        var (engine, _) = CreateEngine(MakeMove("real_move", 5, 3, 7));
+
+        var events = EventBusTestHelper.Collect<HitConnectedEvent>(() =>
+        {
+            engine.RegisterHit(1, 2, "nonexistent", isBlocked: false);
+            engine.Update();
+            StepFrame();
+        });
+
+        Assert.Empty(events);
+    }
 }

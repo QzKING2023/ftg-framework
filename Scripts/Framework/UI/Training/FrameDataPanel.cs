@@ -3,6 +3,7 @@ using Godot;
 using FTG_Framework.Core;
 using FTG_Framework.Core.Events;
 using FTG_Framework.Data;
+using FTG_Framework.UI.Training.ViewModels;
 
 namespace FTG_Framework.UI.Training;
 
@@ -17,10 +18,12 @@ public partial class FrameDataPanel : Control
 
     public IDataStore? DataStore { get; set; }
 
+    private readonly FrameDataViewModel _vm = new();
     private Label? _infoLabel;
     private Label? _durationsLabel;
     private ColorRect? _background;
 
+    internal FrameDataViewModel ViewModel => _vm;
     internal string InfoText => _infoLabel?.Text ?? string.Empty;
     internal string DurationsText => _durationsLabel?.Text ?? string.Empty;
     internal bool DurationsVisible => _durationsLabel?.Visible ?? false;
@@ -74,42 +77,12 @@ public partial class FrameDataPanel : Control
         if (_infoLabel == null || _durationsLabel == null)
             return;
 
-        if (phase == MovePhase.Idle)
-        {
-            _infoLabel.Text = "Move: Idle";
-            _infoLabel.Visible = true;
-            _durationsLabel.Visible = false;
-            return;
-        }
+        _vm.Update(DataStore, moveId, phase, currentFrame, totalFrames);
 
-        var moveDef = DataStore?.GetMove(moveId ?? string.Empty);
-        if (moveDef == null)
-        {
-            _infoLabel.Text = $"Move: {moveId} (unknown) | Phase: {phase} | Frame: {currentFrame}/{totalFrames}";
-            _durationsLabel.Visible = false;
-            return;
-        }
-
-        int withinPhase = phase switch
-        {
-            MovePhase.Startup => currentFrame,
-            MovePhase.Active => currentFrame - moveDef.Startup,
-            MovePhase.Recovery => currentFrame - moveDef.Startup - moveDef.Active,
-            _ => 0
-        };
-
-        int phaseTotal = phase switch
-        {
-            MovePhase.Startup => moveDef.Startup,
-            MovePhase.Active => moveDef.Active,
-            MovePhase.Recovery => moveDef.Recovery,
-            _ => 0
-        };
-
-        _infoLabel.Text = $"Move: {moveId} | Phase: {phase} | Frame: {withinPhase}/{phaseTotal}";
+        _infoLabel.Text = _vm.InfoText;
         _infoLabel.Visible = true;
-
-        _durationsLabel.Text = $"Startup: {moveDef.Startup}f | Active: {moveDef.Active}f | Recovery: {moveDef.Recovery}f";
-        _durationsLabel.Visible = true;
+        _durationsLabel.Visible = _vm.DurationsVisible;
+        if (_vm.DurationsVisible)
+            _durationsLabel.Text = _vm.DurationsText;
     }
 }

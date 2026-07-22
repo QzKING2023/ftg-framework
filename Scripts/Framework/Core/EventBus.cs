@@ -3,6 +3,36 @@ using System.Collections.Generic;
 
 namespace FTG_Framework.Core;
 
+/// <summary>
+/// Process-global, single-threaded event bus with a 5-phase frame pipeline.
+///
+/// <b>AD-4 Dispatch Semantics</b>
+///
+/// <b>1. LIFO same-type dispatch.</b> Within a single dispatch phase, events of the
+/// same type are dispatched in last-in-first-out order — the most recently published
+/// event fires first. This matters when the same subscriber publishes multiple events
+/// of the same type during one frame (e.g., all CancelWindowEntered fire before any
+/// CancelWindowExited within the same phase group).
+///
+/// <b>2. Per-phase grouping.</b> <c>ProcessFrame()</c> partitions dispatch into five
+/// ordered phases. All events of a given type are dispatched together before moving
+/// to the next type. Types within a phase are dispatched in the order listed in
+/// <c>ProcessFrame()</c>.
+///
+/// <b>3. Same-frame response queuing.</b> If a subscriber publishes an event while
+/// a dispatch is already in progress, the new event is queued in <c>_nextQueue</c>
+/// and dispatched during the following frame. This prevents unbounded re-entry and
+/// keeps frame boundaries well-defined.
+///
+/// <b>Five-phase pipeline:</b>
+/// <list type="number">
+/// <item>Phase 1 — Frame tick: <c>FrameAdvancedEvent</c> (auto-injected)</item>
+/// <item>Phase 2 — Input System: <c>InputReceivedEvent</c>, <c>InputBufferExpiredEvent</c>, <c>ChargeStateChangedEvent</c></item>
+/// <item>Phase 3 — Frame Data Engine: <c>MoveFrameChangedEvent</c>, <c>CancelWindowEnteredEvent</c>, <c>CancelWindowExitedEvent</c>, <c>HitConnectedEvent</c>, <c>MoveBlockedEvent</c></item>
+/// <item>Phase 4 — Combo Exec: <c>ComboStartedEvent</c>, <c>MoveCanceledEvent</c>, <c>ComboEndedEvent</c></item>
+/// <item>Phase 5 — UI: Read-only observer layer; no events are dispatched here</item>
+/// </list>
+/// </summary>
 public sealed class EventBus
 {
     private static readonly Lazy<EventBus> _instance = new(() => new EventBus());
@@ -49,6 +79,9 @@ public sealed class EventBus
             handlers.Remove(handler);
     }
 
+    // Events published outside a dispatch go to _currentQueue (processed this frame).
+    // Events published DURING a dispatch (re-entrant publish) go to _nextQueue and
+    // are held until the next frame — this is the same-frame response queuing rule.
     public void Publish<T>(T evt)
     {
         if (evt is null)
@@ -82,6 +115,15 @@ public sealed class EventBus
         }
     }
 
+    // 5-phase dispatch pipeline. Each phase dispatches all queued events of its
+    // declared types before the next phase begins. The ordering is fixed:
+    //   1. Frame tick      (FrameAdvanced — auto-injected)
+    //   2. Input System    (InputReceived, InputBufferExpired, ChargeStateChanged)
+    //   3. Frame Data Engine (MoveFrameChanged, CancelWindow*, HitConnected, MoveBlocked)
+    //   4. Combo Exec      (ComboStarted, MoveCanceled, ComboEnded)
+    //   5. UI              (read-only observer; no events dispatched here)
+    // This ordering guarantees that downstream systems see the upstream
+    // system's events before their own subscribers run.
     public void ProcessFrame()
     {
         _dispatching = true;
@@ -127,6 +169,12 @@ public sealed class EventBus
         }
     }
 
+    // Dispatches all queued events of type T in LIFO order (reverse iteration).
+    // LIFO guarantees that when multiple events of the same type are published
+    // within one frame, the most recent one fires first. This is load-bearing
+    // for CancelWindowTracker: all CancelWindowEntered dispatch before any
+    // CancelWindowExited within the same phase, because Entered is published
+    // after Exited in the tracker's EvaluateFrame flow.
     private void DispatchType<T>() where T : struct
     {
         for (int i = _currentQueue.Count - 1; i >= 0; i--)

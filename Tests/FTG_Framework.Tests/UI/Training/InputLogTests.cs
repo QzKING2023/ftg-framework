@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using FTG_Framework.Core;
 using FTG_Framework.Core.Events;
 using FTG_Framework.UI.Training;
+using FTG_Framework.UI.Training.ViewModels;
 using Xunit;
 
 namespace FTG_Framework.Tests.UI.Training;
@@ -140,7 +141,7 @@ public class InputLogTests : IDisposable
     [Fact]
     public void Format_EntryLine_ContainsFramePlayerTypeAndValue()
     {
-        var result = InputLog.FormatEntry(new InputLog.DisplayEntry(42, 1, InputType.Button, 0));
+        var result = InputLog.FormatEntry(new InputLogViewModel.DisplayEntry(42, 1, InputType.Button, 0));
 
         Assert.Contains("42", result);
         Assert.Contains("P1", result);

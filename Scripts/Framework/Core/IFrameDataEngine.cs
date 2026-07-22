@@ -9,4 +9,6 @@ public interface IFrameDataEngine
     MovePhase GetPhase(int playerId);
     int GetCurrentFrame(int playerId);
     string? GetCurrentMoveId(int playerId);
+    bool RestoreFrame(int frameNumber);
+    int EarliestSnapshotFrame { get; }
 }

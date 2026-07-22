@@ -21,6 +21,33 @@ internal sealed class MoveTimeline
     public int HitAdvantage => _move?.HitAdvantage ?? 0;
     public int BlockAdvantage => _move?.BlockAdvantage ?? 0;
 
+    internal IDataStore? DataStore { get; set; }
+
+    internal void Restore(string? moveId, int currentFrame, MovePhase phase)
+    {
+        if (moveId is null)
+        {
+            _move = null;
+            _currentFrame = 0;
+            _phase = MovePhase.Idle;
+            return;
+        }
+
+        var move = DataStore?.GetMove(moveId);
+        if (move is null)
+        {
+            FrameworkLog.Error?.Invoke($"[FrameData] Restore failed — move not found: '{moveId}'. Resetting to Idle.");
+            _move = null;
+            _currentFrame = 0;
+            _phase = MovePhase.Idle;
+            return;
+        }
+
+        _move = move;
+        _currentFrame = currentFrame;
+        _phase = phase;
+    }
+
     public void StartMove(MoveDefinition move)
     {
         ArgumentNullException.ThrowIfNull(move);

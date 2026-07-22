@@ -25,6 +25,7 @@ internal sealed class InputHistory : IModule, IInputHistory
             _directionalTracks[i] = new CircularBuffer<InputEntry>(capacity);
             _buttonTracks[i] = new CircularBuffer<InputEntry>(capacity);
         }
+        EventBus.Instance.Subscribe<FrameRewoundEvent>(_OnFrameRewound);
     }
 
     public int Capacity => _capacity;
@@ -36,6 +37,18 @@ internal sealed class InputHistory : IModule, IInputHistory
 
     public void Shutdown()
     {
+        EventBus.Instance.Unsubscribe<FrameRewoundEvent>(_OnFrameRewound);
+    }
+
+    // After a rewind, inputs recorded on the abandoned future branch must not keep
+    // driving InputBuffer/leniency matching.
+    private void _OnFrameRewound(FrameRewoundEvent e)
+    {
+        for (int i = 0; i < 2; i++)
+        {
+            _directionalTracks[i].RemoveTailWhile(entry => entry.Frame > e.FrameNumber);
+            _buttonTracks[i].RemoveTailWhile(entry => entry.Frame > e.FrameNumber);
+        }
     }
 
     public void RecordInput(int playerId, InputType type, int value)

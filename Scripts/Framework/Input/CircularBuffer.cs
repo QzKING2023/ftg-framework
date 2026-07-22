@@ -35,9 +35,25 @@ internal sealed class CircularBuffer<T>
         if (_count == 0)
             return Array.Empty<T>();
         var result = new T[_count];
-        int start = _count < _buffer.Length ? 0 : _head;
+        // Oldest item sits _count slots behind _head — a plain `_count < len ? 0`
+        // shortcut is wrong once the buffer has wrapped and then been tail-trimmed.
+        int start = (_head - _count + _buffer.Length) % _buffer.Length;
         for (int i = 0; i < _count; i++)
             result[i] = _buffer[(start + i) % _buffer.Length];
         return result;
+    }
+
+    // Drops trailing entries while the predicate holds. Entries are appended in
+    // chronological order, so a frame-based predicate removes a contiguous suffix.
+    public void RemoveTailWhile(Func<T, bool> predicate)
+    {
+        while (_count > 0)
+        {
+            int tailIndex = (_head - 1 + _buffer.Length) % _buffer.Length;
+            if (!predicate(_buffer[tailIndex]))
+                break;
+            _head = tailIndex;
+            _count--;
+        }
     }
 }

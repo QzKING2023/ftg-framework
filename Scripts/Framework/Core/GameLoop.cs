@@ -18,6 +18,8 @@ public partial class GameLoop : Node
     private IFrameDataEngine? _frameDataEngine;
     private readonly List<IModule> _modules = new();
     private bool _prevBtnA, _prevBtnB, _prevBtnC, _prevBtnD;
+    private global::FTG_Framework.UI.Training.PlaybackControls? _playbackControls;
+    private global::FTG_Framework.UI.Training.HitboxOverlay? _hitboxOverlay;
 
     public override void _Ready()
     {
@@ -87,6 +89,15 @@ public partial class GameLoop : Node
             var frameDataEngine = new global::FTG_Framework.Engine.FrameData.FrameDataEngine(_dataStore);
             RegisterModule(frameDataEngine);
             _frameDataEngine = frameDataEngine;
+
+            _playbackControls = new global::FTG_Framework.UI.Training.PlaybackControls
+            {
+                FrameDataEngine = _frameDataEngine
+            };
+            AddChild(_playbackControls);
+
+            _hitboxOverlay = new global::FTG_Framework.UI.Training.HitboxOverlay();
+            AddChild(_hitboxOverlay);
         }
         catch (Exception ex)
         {
@@ -101,20 +112,35 @@ public partial class GameLoop : Node
         if (_dataStore is null)
             return;
 
-        // Direction auto-combine
+        bool processFrame = ShouldProcessFrame(EventBus.Instance.Paused, EventBus.Instance.StepRequested);
+        EventBus.Instance.StepRequested = false;
+
+        // Keys are polled even while paused so edge state (_prevBtn*) stays current —
+        // a button held across the resume boundary must not produce a synthetic
+        // rising edge. Inputs are only recorded when a frame is processed.
         bool back = Godot.Input.IsKeyPressed(Key.A);
         bool forward = Godot.Input.IsKeyPressed(Key.D);
         bool down = Godot.Input.IsKeyPressed(Key.S);
         bool up = Godot.Input.IsKeyPressed(Key.Space);
-
-        var dir = ComputeDirection(back, forward, down, up);
-        _inputHistory?.RecordInput(1, InputType.Directional, (int)dir);
-
-        // Button inputs — record once on the rising edge of each press
         bool btnA = Godot.Input.IsKeyPressed(Key.U);
         bool btnB = Godot.Input.IsKeyPressed(Key.I);
         bool btnC = Godot.Input.IsKeyPressed(Key.K);
         bool btnD = Godot.Input.IsKeyPressed(Key.J);
+
+        if (!processFrame)
+        {
+            _prevBtnA = btnA;
+            _prevBtnB = btnB;
+            _prevBtnC = btnC;
+            _prevBtnD = btnD;
+            return;
+        }
+
+        // Direction auto-combine
+        var dir = ComputeDirection(back, forward, down, up);
+        _inputHistory?.RecordInput(1, InputType.Directional, (int)dir);
+
+        // Button inputs — record once on the rising edge of each press
         if (btnA && !_prevBtnA) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.A);
         if (btnB && !_prevBtnB) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.B);
         if (btnC && !_prevBtnC) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.C);
@@ -143,6 +169,8 @@ public partial class GameLoop : Node
         _modules.Add(module);
         module.Initialize(_dataStore);
     }
+
+    internal static bool ShouldProcessFrame(bool paused, bool stepRequested) => !paused || stepRequested;
 
     internal static DirectionValue ComputeDirection(bool back, bool forward, bool down, bool up)
     {

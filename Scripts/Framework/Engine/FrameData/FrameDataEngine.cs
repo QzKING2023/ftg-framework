@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using FTG_Framework.Core;
 using FTG_Framework.Core.Events;
 using Godot;
@@ -13,11 +14,33 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
     private readonly MoveTimeline _p2Timeline = new();
     private readonly CancelWindowTracker _p1CancelTracker = new();
     private readonly CancelWindowTracker _p2CancelTracker = new();
+    private readonly List<FrameStateSnapshot> _snapshots = new();
+    private int _snapshotCapacity = 600;
+
+    internal IReadOnlyList<FrameStateSnapshot> Snapshots => _snapshots.AsReadOnly();
+
+    internal int SnapshotCapacity
+    {
+        get => _snapshotCapacity;
+        set
+        {
+            if (value < 1)
+            {
+                FrameworkLog.Error?.Invoke($"[FrameData] SnapshotCapacity must be >= 1, got {value}. Clamped to 1.");
+                value = 1;
+            }
+            _snapshotCapacity = value;
+        }
+    }
+
+    public int EarliestSnapshotFrame => _snapshots.Count > 0 ? _snapshots[0].Frame : -1;
 
     public FrameDataEngine(IDataStore dataStore)
     {
         ArgumentNullException.ThrowIfNull(dataStore);
         _dataStore = dataStore;
+        _p1Timeline.DataStore = dataStore;
+        _p2Timeline.DataStore = dataStore;
     }
 
     public void Initialize(IDataStore dataStore)
@@ -52,8 +75,107 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
 
     public void Update()
     {
+        SaveSnapshot();
         UpdatePlayer(1, _p1Timeline, _p1CancelTracker);
         UpdatePlayer(2, _p2Timeline, _p2CancelTracker);
+    }
+
+    private void SaveSnapshot()
+    {
+        int frame = EventBus.Instance.CurrentFrame;
+        var snapshot = new FrameStateSnapshot(
+            frame,
+            _p1Timeline.MoveId, _p1Timeline.CurrentFrame, _p1Timeline.Phase,
+            _p2Timeline.MoveId, _p2Timeline.CurrentFrame, _p2Timeline.Phase
+        );
+        _snapshots.Add(snapshot);
+        while (_snapshots.Count > _snapshotCapacity)
+            _snapshots.RemoveAt(0);
+    }
+
+    // Restores the exact observable state of frame `frameNumber`. Snapshot k is
+    // the pre-tick state of frame k — the state the panel displayed at frame k.
+    // The timeline, however, must resume from snapshot frameNumber+1 (the
+    // post-frame state) so the next stepped tick re-executes frame frameNumber+1
+    // and replays the original trajectory exactly. The bus counter rewinds to
+    // frameNumber+1, keeping snapshots, input history, and displays in one
+    // frame domain. Returns false when either snapshot is unavailable (notably
+    // when frameNumber is the newest snapshot — there is no frameNumber+1 yet).
+    public bool RestoreFrame(int frameNumber)
+    {
+        int foundIndex = -1;
+        for (int i = 0; i + 1 < _snapshots.Count; i++)
+        {
+            if (_snapshots[i].Frame == frameNumber)
+            {
+                foundIndex = i;
+                break;
+            }
+        }
+
+        if (foundIndex < 0)
+        {
+            FrameworkLog.Error?.Invoke($"[FrameDataEngine] No snapshot for frame {frameNumber}.");
+            return false;
+        }
+
+        var timelineSnapshot = _snapshots[foundIndex + 1];
+        _p1Timeline.Restore(timelineSnapshot.P1MoveId, timelineSnapshot.P1CurrentFrame, timelineSnapshot.P1Phase);
+        _p2Timeline.Restore(timelineSnapshot.P2MoveId, timelineSnapshot.P2CurrentFrame, timelineSnapshot.P2Phase);
+
+        // Rewinding abandons the old future — drop snapshots past the restore
+        // point; snapshot frameNumber+1 is re-saved when that frame re-executes.
+        _snapshots.RemoveRange(foundIndex + 1, _snapshots.Count - foundIndex - 1);
+
+        EventBus.Instance.RewindFrameCounter(frameNumber + 1);
+
+        ResyncCancelTracker(1, _p1Timeline, _p1CancelTracker);
+        ResyncCancelTracker(2, _p2Timeline, _p2CancelTracker);
+
+        PublishSnapshotState(_snapshots[foundIndex]);
+        EventBus.Instance.PublishImmediate(new FrameRewoundEvent(frameNumber));
+        return true;
+    }
+
+    private static void ResyncCancelTracker(int playerId, MoveTimeline timeline, CancelWindowTracker tracker)
+    {
+        if (timeline.Phase == MovePhase.Idle || timeline.ActiveMove is null)
+        {
+            tracker.Reset(playerId, immediate: true);
+            return;
+        }
+        tracker.ResyncFrame(playerId, timeline.ActiveMove, timeline.CurrentFrame);
+    }
+
+    public void PublishCurrentState()
+    {
+        PublishPlayerState(1, _p1Timeline.MoveId, _p1Timeline.CurrentFrame, _p1Timeline.Phase);
+        PublishPlayerState(2, _p2Timeline.MoveId, _p2Timeline.CurrentFrame, _p2Timeline.Phase);
+    }
+
+    // Panel-facing publish from a snapshot record rather than the live timelines:
+    // after a restore the timelines hold the NEXT frame's state, while the panel
+    // must show the restored frame's own displayed state.
+    private void PublishSnapshotState(FrameStateSnapshot snapshot)
+    {
+        PublishPlayerState(1, snapshot.P1MoveId, snapshot.P1CurrentFrame, snapshot.P1Phase);
+        PublishPlayerState(2, snapshot.P2MoveId, snapshot.P2CurrentFrame, snapshot.P2Phase);
+    }
+
+    // One event per player including Idle — panels must not keep rendering an
+    // abandoned future's move after a rewind-to-idle.
+    private void PublishPlayerState(int playerId, string? moveId, int currentFrame, MovePhase phase)
+    {
+        if (phase == MovePhase.Idle || moveId is null)
+        {
+            EventBus.Instance.PublishImmediate(new MoveFrameChangedEvent(
+                playerId, string.Empty, 0, 0, MovePhase.Idle));
+            return;
+        }
+        var move = _dataStore.GetMove(moveId);
+        int totalFrames = move is null ? 0 : move.Startup + move.Active + move.Recovery;
+        EventBus.Instance.PublishImmediate(new MoveFrameChangedEvent(
+            playerId, moveId, currentFrame, totalFrames, phase));
     }
 
     public MovePhase GetPhase(int playerId) => GetTimeline(playerId)?.Phase ?? MovePhase.Idle;

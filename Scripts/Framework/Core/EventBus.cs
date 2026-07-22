@@ -17,6 +17,19 @@ public sealed class EventBus
 
     public int CurrentFrame => _frameNumber;
 
+    public bool Paused { get; set; }
+    public bool StepRequested { get; set; }
+
+    // Rewinds after a state restore: the next processed frame re-executes as
+    // nextFrame, keeping snapshots, input history, and displays in one frame
+    // domain. Queued events from the abandoned future are purged.
+    internal void RewindFrameCounter(int nextFrame)
+    {
+        _frameNumber = nextFrame;
+        _currentQueue.Clear();
+        _nextQueue.Clear();
+    }
+
     private EventBus() { }
 
     public void Subscribe<T>(Action<T> handler)
@@ -45,6 +58,28 @@ public sealed class EventBus
             _nextQueue.Add(evt);
         else
             _currentQueue.Add(evt);
+    }
+
+    // Bypasses the frame queue and dispatches to subscribers synchronously. Required
+    // for rewind/restore events: while paused, ProcessFrame never runs, so queued
+    // events would either never arrive or arrive stale (LIFO) on resume.
+    public void PublishImmediate<T>(T evt) where T : struct
+    {
+        if (_subscribers.TryGetValue(typeof(T), out var handlers))
+        {
+            var snapshot = handlers.ToArray();
+            foreach (var handler in snapshot)
+            {
+                try
+                {
+                    ((Action<T>)handler)(evt);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[EventBus] Handler for {typeof(T).Name} threw: {ex}");
+                }
+            }
+        }
     }
 
     public void ProcessFrame()

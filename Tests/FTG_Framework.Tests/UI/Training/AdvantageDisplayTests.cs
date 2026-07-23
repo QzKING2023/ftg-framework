@@ -54,7 +54,7 @@ public class AdvantageDisplayTests : IDisposable
     {
         var panel = CreatePanel(1);
 
-        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4));
+        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4, 0));
 
         Assert.Equal(4, panel.Advantage);
         Assert.Equal("+4", panel.DisplayText);
@@ -66,7 +66,7 @@ public class AdvantageDisplayTests : IDisposable
     {
         var panel = CreatePanel(1);
 
-        PublishAndProcess(new HitConnectedEvent(2, 1, "5LP", 4));
+        PublishAndProcess(new HitConnectedEvent(2, 1, "5LP", 4, 0));
 
         Assert.Equal(-4, panel.Advantage);
         Assert.Equal("-4", panel.DisplayText);
@@ -77,7 +77,7 @@ public class AdvantageDisplayTests : IDisposable
     {
         var panel = CreatePanel(1);
 
-        PublishAndProcess(new MoveBlockedEvent(1, 2, "5LP", -5));
+        PublishAndProcess(new MoveBlockedEvent(1, 2, "5LP", -5, 0));
 
         Assert.Equal(-5, panel.Advantage);
         Assert.Equal("-5", panel.DisplayText);
@@ -88,7 +88,7 @@ public class AdvantageDisplayTests : IDisposable
     {
         var panel = CreatePanel(1);
 
-        PublishAndProcess(new MoveBlockedEvent(2, 1, "5LP", -5));
+        PublishAndProcess(new MoveBlockedEvent(2, 1, "5LP", -5, 0));
 
         Assert.Equal(5, panel.Advantage);
         Assert.Equal("+5", panel.DisplayText);
@@ -99,7 +99,7 @@ public class AdvantageDisplayTests : IDisposable
     {
         var panel = CreatePanel(1);
 
-        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 0));
+        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 0, 0));
 
         Assert.Equal(0, panel.Advantage);
         Assert.Equal("0", panel.DisplayText);
@@ -112,7 +112,7 @@ public class AdvantageDisplayTests : IDisposable
         var panel = CreatePanel(1);
 
         // Hit lands: Phase 1 ticks 0→0, Phase 3 sets +4 (shown for the rest of that frame)
-        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4));
+        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4, 0));
         Assert.Equal(4, panel.Advantage);
 
         // Each subsequent frame decrements by exactly 1
@@ -133,7 +133,7 @@ public class AdvantageDisplayTests : IDisposable
     {
         var panel = CreatePanel(1);
 
-        PublishAndProcess(new MoveBlockedEvent(1, 2, "5LP", -5));
+        PublishAndProcess(new MoveBlockedEvent(1, 2, "5LP", -5, 0));
         Assert.Equal(-5, panel.Advantage);
 
         for (int expected = -4; expected <= 0; expected++)
@@ -152,14 +152,14 @@ public class AdvantageDisplayTests : IDisposable
     {
         var panel = CreatePanel(1);
 
-        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4));
+        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4, 0));
 
         // Advance 2 frames: +4 → +2
         AdvanceFrames(2);
         Assert.Equal(2, panel.Advantage);
 
         // New hit lands: Phase 1 ticks +2 → +1, Phase 3 overwrites with +6
-        PublishAndProcess(new HitConnectedEvent(1, 2, "5HP", 6));
+        PublishAndProcess(new HitConnectedEvent(1, 2, "5HP", 6, 0));
         Assert.Equal(6, panel.Advantage);
         Assert.Equal("+6", panel.DisplayText);
     }
@@ -186,7 +186,7 @@ public class AdvantageDisplayTests : IDisposable
         Assert.False(panel.IsBackgroundVisible);
 
         // Non-zero advantage — whole panel becomes visible
-        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 3));
+        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 3, 0));
         Assert.Equal(3, panel.Advantage);
         Assert.True(panel.IsLabelVisible);
         Assert.True(panel.IsBackgroundVisible);
@@ -215,13 +215,13 @@ public class AdvantageDisplayTests : IDisposable
         var panel = CreatePanel(2);
 
         // P2 is the defender — advantage is negated
-        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4));
+        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4, 0));
         Assert.Equal(-4, panel.Advantage);
         Assert.Equal("-4", panel.DisplayText);
 
         // P2 is the attacker — advantage is taken as-is.
         // Same frame: Phase 1 ticks -4 → -3, Phase 3 overwrites with +4
-        PublishAndProcess(new HitConnectedEvent(2, 1, "5LP", 4));
+        PublishAndProcess(new HitConnectedEvent(2, 1, "5LP", 4, 0));
         Assert.Equal(4, panel.Advantage);
         Assert.Equal("+4", panel.DisplayText);
     }
@@ -232,12 +232,12 @@ public class AdvantageDisplayTests : IDisposable
         var p1Panel = CreatePanel(1);
         var p2Panel = CreatePanel(2);
 
-        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4));
+        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4, 0));
 
         Assert.Equal(4, p1Panel.Advantage);
         Assert.Equal(-4, p2Panel.Advantage);
 
-        PublishAndProcess(new MoveBlockedEvent(1, 2, "5LP", -5));
+        PublishAndProcess(new MoveBlockedEvent(1, 2, "5LP", -5, 0));
 
         Assert.Equal(-5, p1Panel.Advantage);
         Assert.Equal(5, p2Panel.Advantage);
@@ -248,14 +248,14 @@ public class AdvantageDisplayTests : IDisposable
     {
         var panel = CreatePanel(1);
 
-        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4));
+        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4, 0));
         Assert.Equal(4, panel.Advantage);
 
         panel._ExitTree();
         EventBusTestHelper.Drain();
 
         // Publish events — panel should not react
-        PublishAndProcess(new HitConnectedEvent(1, 2, "5HP", 6));
+        PublishAndProcess(new HitConnectedEvent(1, 2, "5HP", 6, 0));
         AdvanceFrames(1);
 
         Assert.Equal(4, panel.Advantage);
@@ -266,11 +266,11 @@ public class AdvantageDisplayTests : IDisposable
     {
         var panel = CreatePanel(1);
 
-        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4));
+        PublishAndProcess(new HitConnectedEvent(1, 2, "5LP", 4, 0));
         Assert.Equal(4, panel.Advantage);
 
         // Same frame: Phase 1 ticks 4 → 3; the unrelated (2,3) hit must be ignored in Phase 3
-        PublishAndProcess(new HitConnectedEvent(2, 3, "5HP", 10));
+        PublishAndProcess(new HitConnectedEvent(2, 3, "5HP", 10, 0));
 
         Assert.Equal(3, panel.Advantage);
     }

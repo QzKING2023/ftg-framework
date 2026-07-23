@@ -8,4 +8,7 @@ public interface IDataStore
 {
     MoveDefinition? GetMove(string moveId);
     IReadOnlyList<MoveDefinition> GetAllMoves();
+    GatlingTable? GetGatlingTable(string characterId);
+    IReadOnlyList<GatlingTable> GetAllGatlingTables();
+    void SetGatlingTable(GatlingTable table);
 }

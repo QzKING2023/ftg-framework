@@ -1,0 +1,29 @@
+{
+  "gatling_tables": [
+    {
+      "character_id": "ryu",
+      "entries": [
+        {
+          "source_move": "5LP",
+          "target_moves": ["5MP", "5HP"],
+          "cancel_category": "normal"
+        },
+        {
+          "source_move": "5MP",
+          "target_moves": ["5HP"],
+          "cancel_category": "normal"
+        },
+        {
+          "source_move": "5HP",
+          "target_moves": ["236P", "dp_c"],
+          "cancel_category": "special"
+        },
+        {
+          "source_move": "236P",
+          "target_moves": ["dp_c", "dp_d"],
+          "cancel_category": "super"
+        }
+      ]
+    }
+  ]
+}

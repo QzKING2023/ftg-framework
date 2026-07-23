@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using FTG_Framework.Core.Events;
 using FTG_Framework.Data;
+using FTG_Framework.Engine.Combo;
 using FTG_Framework.Engine.FrameData;
 using FTG_Framework.Input;
 using FTG_Framework.UI.Training;
@@ -26,6 +27,7 @@ public partial class GameLoop : Node
     private FrameDataPanel? _frameDataPanel;
     private AdvantageDisplay? _advantageDisplay;
     private InputLog? _inputLog;
+    private IComboExecutor? _comboExecutor;
 
     // Test control state — edge-tracking prevents repeating triggers per press
     private bool _prevPauseKey, _prevStepFwdKey, _prevStepBackKey;
@@ -41,7 +43,20 @@ public partial class GameLoop : Node
             FrameworkLog.Error = GD.PrintErr;
 
             var moves = MoveDataLoader.LoadFromFile("res://Scripts/Framework/Data/example_moves.json");
-            _dataStore = new DataStore(moves);
+
+            var gatlingPath = "res://Scripts/Framework/Data/example_gatling.json";
+            GatlingTable[] gatlingTables;
+            if (Godot.FileAccess.FileExists(gatlingPath))
+            {
+                gatlingTables = GatlingDataLoader.LoadFromFile(gatlingPath);
+                GD.Print($"[Data] Loaded {gatlingTables.Length} gatling tables.");
+            }
+            else
+            {
+                gatlingTables = Array.Empty<GatlingTable>();
+            }
+
+            _dataStore = new DataStore(moves, gatlingTables);
             GD.Print($"[Data] Loaded {moves.Length} moves.");
 
             var inputHistory = new global::FTG_Framework.Input.InputHistory(capacity: 600);
@@ -101,6 +116,8 @@ public partial class GameLoop : Node
             var frameDataEngine = new FrameDataEngine(_dataStore);
             RegisterModule(frameDataEngine);
             _frameDataEngine = frameDataEngine;
+
+            _comboExecutor = new ComboExecutor(_dataStore);
 
             // --- Training-mode UI panels ---
 
@@ -296,10 +313,10 @@ public partial class GameLoop : Node
             GD.Print($"[DEBUG] CancelExited: P{e.PlayerId} {e.MoveId} cat={e.Category}"));
 
         EventBus.Instance.Subscribe<HitConnectedEvent>(e =>
-            GD.Print($"[DEBUG] HitConnected: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.HitAdvantage}"));
+            GD.Print($"[DEBUG] HitConnected: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.HitAdvantage} dmg={e.Damage}"));
 
         EventBus.Instance.Subscribe<MoveBlockedEvent>(e =>
-            GD.Print($"[DEBUG] MoveBlocked: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.BlockAdvantage}"));
+            GD.Print($"[DEBUG] MoveBlocked: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.BlockAdvantage} dmg={e.Damage}"));
 
         EventBus.Instance.Subscribe<InputReceivedEvent>(e =>
             GD.Print($"[DEBUG] InputRecv: P{e.PlayerId} frame={e.Frame} type={e.InputType} val={e.InputValue}"));

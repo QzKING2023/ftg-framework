@@ -424,7 +424,7 @@ public class FrameDataEngineTests : IDisposable
     [Fact]
     public void RegisterHit_HitConnected_PublishesWithMoveDataAdvantage()
     {
-        var (engine, _) = CreateEngine(MakeMove("5LP", 4, 3, 6, hitAdvantage: 2, blockAdvantage: -3));
+        var (engine, _) = CreateEngine(MakeMove("5LP", 4, 3, 6, hitAdvantage: 2, blockAdvantage: -3, damage: 30));
 
         var events = EventBusTestHelper.Collect<HitConnectedEvent>(() =>
         {
@@ -438,12 +438,13 @@ public class FrameDataEngineTests : IDisposable
         Assert.Equal(2, e.DefenderId);
         Assert.Equal("5LP", e.MoveId);
         Assert.Equal(2, e.HitAdvantage);
+        Assert.Equal(30, e.Damage);
     }
 
     [Fact]
     public void RegisterHit_MoveBlocked_PublishesWithMoveDataAdvantage()
     {
-        var (engine, _) = CreateEngine(MakeMove("5HP", 10, 4, 15, hitAdvantage: 1, blockAdvantage: -8));
+        var (engine, _) = CreateEngine(MakeMove("5HP", 10, 4, 15, hitAdvantage: 1, blockAdvantage: -8, damage: 80));
 
         var events = EventBusTestHelper.Collect<MoveBlockedEvent>(() =>
         {
@@ -457,14 +458,15 @@ public class FrameDataEngineTests : IDisposable
         Assert.Equal(2, e.DefenderId);
         Assert.Equal("5HP", e.MoveId);
         Assert.Equal(-8, e.BlockAdvantage);
+        Assert.Equal(80, e.Damage);
     }
 
     [Fact]
     public void RegisterHit_MultipleRegistrationsInSameFrame_AllPublished()
     {
         var (engine, _) = CreateEngine(
-            MakeMove("move_a", 5, 3, 7, hitAdvantage: 2),
-            MakeMove("move_b", 5, 3, 7, hitAdvantage: 4));
+            MakeMove("move_a", 5, 3, 7, hitAdvantage: 2, damage: 25),
+            MakeMove("move_b", 5, 3, 7, hitAdvantage: 4, damage: 50));
 
         var events = EventBusTestHelper.Collect<HitConnectedEvent>(() =>
         {
@@ -475,8 +477,8 @@ public class FrameDataEngineTests : IDisposable
         });
 
         Assert.Equal(2, events.Count);
-        Assert.Contains(events, e => e.MoveId == "move_a" && e.HitAdvantage == 2);
-        Assert.Contains(events, e => e.MoveId == "move_b" && e.HitAdvantage == 4);
+        Assert.Contains(events, e => e.MoveId == "move_a" && e.HitAdvantage == 2 && e.Damage == 25);
+        Assert.Contains(events, e => e.MoveId == "move_b" && e.HitAdvantage == 4 && e.Damage == 50);
     }
 
     [Fact]

@@ -214,9 +214,9 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
             if (move is null) continue;
 
             if (reg.IsBlocked)
-                EventBus.Instance.Publish(new MoveBlockedEvent(reg.AttackerId, reg.DefenderId, reg.MoveId, move.BlockAdvantage));
+                EventBus.Instance.Publish(new MoveBlockedEvent(reg.AttackerId, reg.DefenderId, reg.MoveId, move.BlockAdvantage, move.Damage));
             else
-                EventBus.Instance.Publish(new HitConnectedEvent(reg.AttackerId, reg.DefenderId, reg.MoveId, move.HitAdvantage));
+                EventBus.Instance.Publish(new HitConnectedEvent(reg.AttackerId, reg.DefenderId, reg.MoveId, move.HitAdvantage, move.Damage));
         }
         _pendingHits.Clear();
     }

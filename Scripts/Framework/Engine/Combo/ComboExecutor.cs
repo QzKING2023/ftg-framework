@@ -3,18 +3,145 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using FTG_Framework.Core;
+using FTG_Framework.Core.Events;
 using FTG_Framework.Data;
 
 namespace FTG_Framework.Engine.Combo;
 
-internal sealed class ComboExecutor : IComboExecutor
+internal sealed class ComboExecutor : IComboExecutor, IModule
 {
     private readonly IDataStore _dataStore;
+    private readonly ChainValidator _chainValidator;
     private readonly Dictionary<string, GatlingTable> _windowSnapshots = new();
+    private readonly Dictionary<int, List<ActiveWindow>> _activeWindows = new();
+    private bool _initialized;
+
+    private sealed class ActiveWindow
+    {
+        public string MoveId { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public int EndFrame { get; set; }
+        public bool Consumed { get; set; }
+    }
 
     public ComboExecutor(IDataStore dataStore)
     {
         _dataStore = dataStore;
+        _chainValidator = new ChainValidator(dataStore);
+    }
+
+    public void Initialize(IDataStore dataStore)
+    {
+        if (_initialized) return;
+        _initialized = true;
+        EventBus.Instance.Subscribe<CancelWindowEnteredEvent>(OnCancelWindowEntered);
+        EventBus.Instance.Subscribe<CancelWindowExitedEvent>(OnCancelWindowExited);
+        EventBus.Instance.Subscribe<ComboEndedEvent>(OnComboEnded);
+        EventBus.Instance.Subscribe<MoveFrameChangedEvent>(OnMoveFrameChanged);
+        FrameworkLog.Info?.Invoke("[Combo] ComboExecutor initialized.");
+    }
+
+    public void Shutdown()
+    {
+        EventBus.Instance.Unsubscribe<CancelWindowEnteredEvent>(OnCancelWindowEntered);
+        EventBus.Instance.Unsubscribe<CancelWindowExitedEvent>(OnCancelWindowExited);
+        EventBus.Instance.Unsubscribe<ComboEndedEvent>(OnComboEnded);
+        EventBus.Instance.Unsubscribe<MoveFrameChangedEvent>(OnMoveFrameChanged);
+        _activeWindows.Clear();
+        _windowSnapshots.Clear();
+        _chainValidator.Clear();
+        _initialized = false;
+    }
+
+    private void OnMoveFrameChanged(MoveFrameChangedEvent evt)
+    {
+        _chainValidator.AddToChainIfEmpty(evt.PlayerId, evt.MoveId);
+    }
+
+    private void OnComboEnded(ComboEndedEvent evt)
+    {
+        _chainValidator.ResetForPlayer(evt.PlayerId);
+    }
+
+    private void OnCancelWindowEntered(CancelWindowEnteredEvent evt)
+    {
+        if (!_activeWindows.TryGetValue(evt.PlayerId, out var windows))
+        {
+            windows = new List<ActiveWindow>();
+            _activeWindows[evt.PlayerId] = windows;
+        }
+
+        windows.Add(new ActiveWindow
+        {
+            MoveId = evt.MoveId,
+            Category = evt.Category,
+            EndFrame = evt.EndFrame,
+            Consumed = false
+        });
+
+        var characterId = GetCharacterId(evt.PlayerId);
+        if (!_windowSnapshots.ContainsKey(characterId))
+            CaptureTableForWindow(characterId);
+    }
+
+    private void OnCancelWindowExited(CancelWindowExitedEvent evt)
+    {
+        if (!_activeWindows.TryGetValue(evt.PlayerId, out var windows))
+            return;
+
+        int removed = windows.RemoveAll(w => w.MoveId == evt.MoveId && w.Category == evt.Category && !w.Consumed);
+        if (removed > 0)
+            FrameworkLog.Info?.Invoke($"[Combo] Cancel window expired unconsumed — P{evt.PlayerId} {evt.MoveId}/{evt.Category}");
+
+        if (windows.Count == 0)
+        {
+            _activeWindows.Remove(evt.PlayerId);
+            var characterId = GetCharacterId(evt.PlayerId);
+            ReleaseTableForWindow(characterId);
+        }
+    }
+
+    public bool TryCancel(int playerId, string candidateMoveId)
+    {
+        if (candidateMoveId is null)
+            return false;
+
+        if (playerId < 1 || playerId > 2)
+            return false;
+
+        if (!_activeWindows.TryGetValue(playerId, out var windows) || windows.Count == 0)
+            return false;
+
+        var characterId = GetCharacterId(playerId);
+
+        for (int i = windows.Count - 1; i >= 0; i--)
+        {
+            var window = windows[i];
+            if (window.Consumed)
+                continue;
+
+            if (CanCancel(characterId, window.MoveId, candidateMoveId, window.Category))
+            {
+                window.Consumed = true;
+                windows.RemoveAt(i);
+
+                if (windows.Count == 0)
+                {
+                    _activeWindows.Remove(playerId);
+                    ReleaseTableForWindow(characterId);
+                }
+
+                if (!_chainValidator.IsUnique(playerId, candidateMoveId))
+                    return false;
+
+                _chainValidator.AddToChain(playerId, candidateMoveId);
+                EventBus.Instance.Publish(new MoveCanceledEvent(
+                    playerId, window.MoveId, candidateMoveId, window.Category));
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public bool CanCancel(string characterId, string fromMoveId, string toMoveId, string cancelCategory)
@@ -55,4 +182,11 @@ internal sealed class ComboExecutor : IComboExecutor
         ArgumentNullException.ThrowIfNull(characterId);
         _windowSnapshots.Remove(characterId);
     }
+
+    private static string GetCharacterId(int playerId) => playerId switch
+    {
+        1 => "ryu",
+        2 => "ken",
+        _ => "unknown"
+    };
 }

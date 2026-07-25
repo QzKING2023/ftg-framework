@@ -17,6 +17,7 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
     private readonly List<FrameStateSnapshot> _snapshots = new();
     private readonly List<HitRegistration> _pendingHits = new();
     private int _snapshotCapacity = 600;
+    private bool _initialized;
 
     internal readonly record struct HitRegistration(int AttackerId, int DefenderId, string MoveId, bool IsBlocked);
 
@@ -48,11 +49,52 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
 
     public void Initialize(IDataStore dataStore)
     {
-        GD.Print("[FrameData] FrameDataEngine initialized.");
+        if (_initialized) return;
+        _initialized = true;
+        EventBus.Instance.Subscribe<MoveCanceledEvent>(OnMoveCanceled);
+        FrameworkLog.Info?.Invoke("[FrameData] FrameDataEngine initialized.");
     }
 
     public void Shutdown()
     {
+        EventBus.Instance.Unsubscribe<MoveCanceledEvent>(OnMoveCanceled);
+        _initialized = false;
+    }
+
+    public void InterruptAndStart(int playerId, string moveId)
+    {
+        if (playerId < 1 || playerId > 2)
+        {
+            FrameworkLog.Error?.Invoke($"[FrameData] Invalid playerId for InterruptAndStart: {playerId}");
+            return;
+        }
+
+        var move = _dataStore.GetMove(moveId);
+        if (move is null)
+        {
+            FrameworkLog.Error?.Invoke($"[FrameData] InterruptAndStart — move not found: '{moveId}'");
+            return;
+        }
+
+        var timeline = GetTimeline(playerId);
+        if (timeline is null || timeline.Phase == MovePhase.Idle)
+        {
+            FrameworkLog.Info?.Invoke($"[FrameData] InterruptAndStart — P{playerId} idle, starting normally.");
+            StartMove(playerId, moveId);
+            return;
+        }
+
+        var cancelTracker = GetCancelTracker(playerId);
+        if (cancelTracker is null) return;
+
+        cancelTracker.Reset(playerId);
+        timeline.StartMove(move);
+        cancelTracker.TrackMove(playerId, move);
+    }
+
+    private void OnMoveCanceled(MoveCanceledEvent evt)
+    {
+        InterruptAndStart(evt.PlayerId, evt.ToMove);
     }
 
     public void StartMove(int playerId, string moveId)

@@ -117,7 +117,9 @@ public partial class GameLoop : Node
             RegisterModule(frameDataEngine);
             _frameDataEngine = frameDataEngine;
 
-            _comboExecutor = new ComboExecutor(_dataStore);
+            var comboExecutor = new ComboExecutor(_dataStore);
+            _comboExecutor = comboExecutor;
+            RegisterModule(comboExecutor);
 
             // --- Training-mode UI panels ---
 
@@ -221,8 +223,17 @@ public partial class GameLoop : Node
 
         var matches = _inputBuffer?.TryMatch(1);
         var resolved = _priorityResolver?.Resolve(matches ?? Array.Empty<MatchResult>(), 1, EventBus.Instance.CurrentFrame);
-        if (resolved != null && _frameDataEngine is not null && _frameDataEngine.GetPhase(1) == MovePhase.Idle)
-            _frameDataEngine.StartMove(1, resolved.Value.MoveId);
+        if (resolved != null && _frameDataEngine is not null)
+        {
+            if (_frameDataEngine.GetPhase(1) == MovePhase.Idle)
+            {
+                _frameDataEngine.StartMove(1, resolved.Value.MoveId);
+            }
+            else if (_comboExecutor?.TryCancel(1, resolved.Value.MoveId) == true)
+            {
+                // Cancel executed — MoveCanceled published, FrameDataEngine handles interrupt
+            }
+        }
 
         _frameDataEngine?.Update();
 

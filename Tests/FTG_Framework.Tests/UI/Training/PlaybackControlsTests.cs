@@ -127,6 +127,7 @@ public class PlaybackControlsTests : IDisposable
             LastRestoredFrame = frameNumber;
             return RestoreResult;
         }
+        public void InterruptAndStart(int playerId, string moveId) { }
     }
 
     private static void SetDisplayFrame(PlaybackControls panel, int frame)

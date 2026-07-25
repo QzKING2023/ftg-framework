@@ -27,6 +27,16 @@ public class FrameDataViewModelTests
         Assert.False(vm.DurationsVisible);
     }
 
+    // Converted from Control-level FrameDataPanelTests: panel before any event.
+    [Fact]
+    public void InitialState_BeforeAnyUpdate_ShowsIdle()
+    {
+        var vm = new FrameDataViewModel();
+
+        Assert.Equal("Move: Idle", vm.InfoText);
+        Assert.False(vm.DurationsVisible);
+    }
+
     [Fact]
     public void StartupPhase_ShowsWithinPhaseFrameCounter()
     {

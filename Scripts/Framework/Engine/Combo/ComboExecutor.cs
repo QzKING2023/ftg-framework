@@ -11,6 +11,7 @@ namespace FTG_Framework.Engine.Combo;
 internal sealed class ComboExecutor : IComboExecutor, IModule
 {
     private readonly IDataStore _dataStore;
+    private readonly IFrameDataEngine _frameDataEngine;
     private readonly ChainValidator _chainValidator;
     private readonly Dictionary<string, GatlingTable> _windowSnapshots = new();
     private readonly Dictionary<int, List<ActiveWindow>> _activeWindows = new();
@@ -24,9 +25,11 @@ internal sealed class ComboExecutor : IComboExecutor, IModule
         public bool Consumed { get; set; }
     }
 
-    public ComboExecutor(IDataStore dataStore)
+    public ComboExecutor(IDataStore dataStore, IFrameDataEngine frameDataEngine)
     {
+        ArgumentNullException.ThrowIfNull(frameDataEngine);
         _dataStore = dataStore;
+        _frameDataEngine = frameDataEngine;
         _chainValidator = new ChainValidator(dataStore);
     }
 
@@ -118,6 +121,11 @@ internal sealed class ComboExecutor : IComboExecutor, IModule
         {
             var window = windows[i];
             if (window.Consumed)
+                continue;
+
+            // TryCancel runs before FrameDataEngine.Update dispatches the exit
+            // event — without this guard the window stays usable one frame past EndFrame.
+            if (_frameDataEngine.GetCurrentFrame(playerId) > window.EndFrame)
                 continue;
 
             if (CanCancel(characterId, window.MoveId, candidateMoveId, window.Category))

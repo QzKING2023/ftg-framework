@@ -41,7 +41,7 @@ public class ComboExecutorTests
         foreach (var m in moves) store.SetMove(m);
         store.SetGatlingTable(MakeTable("ryu", MakeEntry("5LP", new[] { "5MP", "5HP" })));
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
 
         Assert.True(executor.CanCancel("ryu", "5LP", "5MP", "normal"));
     }
@@ -54,7 +54,7 @@ public class ComboExecutorTests
         foreach (var m in moves) store.SetMove(m);
         store.SetGatlingTable(MakeTable("ryu", MakeEntry("5LP", new[] { "5MP" }, "normal")));
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
 
         Assert.False(executor.CanCancel("ryu", "5LP", "5MP", "special"));
     }
@@ -67,7 +67,7 @@ public class ComboExecutorTests
         foreach (var m in moves) store.SetMove(m);
         store.SetGatlingTable(MakeTable("ryu", MakeEntry("5LP", new[] { "5MP" })));
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
 
         Assert.False(executor.CanCancel("ryu", "5LP", "5HK", "normal"));
     }
@@ -80,7 +80,7 @@ public class ComboExecutorTests
         foreach (var m in moves) store.SetMove(m);
         store.SetGatlingTable(MakeTable("ryu", MakeEntry("5LP", new[] { "5MP" })));
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
 
         Assert.False(executor.CanCancel("ryu", "5HK", "5MP", "normal"));
     }
@@ -90,7 +90,7 @@ public class ComboExecutorTests
     {
         var store = new StubDataStore();
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
 
         Assert.False(executor.CanCancel("unregistered", "5LP", "5MP", "normal"));
     }
@@ -103,7 +103,7 @@ public class ComboExecutorTests
         foreach (var m in moves) store.SetMove(m);
         store.SetGatlingTable(MakeTable("ryu", MakeEntry("5LP", new[] { "5MP" })));
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
 
         Assert.True(executor.CanCancel("ryu", "5LP", "5MP", "normal"));
         Assert.False(executor.CanCancel("ryu", "5LP", "5HP", "normal"));

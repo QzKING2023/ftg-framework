@@ -56,6 +56,16 @@ public partial class InputLog : Control
         }
     }
 
+    public IInputLogFormatter Formatter
+    {
+        get => _vm.Formatter;
+        set
+        {
+            _vm.Formatter = value;
+            _RefreshDisplay();
+        }
+    }
+
     public int DisplayFrameLimit
     {
         get => _vm.DisplayFrameLimit;

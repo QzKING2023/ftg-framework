@@ -335,4 +335,36 @@ public class InputLogViewModelTests
 
         Assert.Equal(2, vm.MaxScrollOffset);
     }
+
+    // --- Converted from Control-level InputLogTests ---
+
+    [Fact]
+    public void TryAddEntry_MultipleEntries_MaintainsInsertionOrder()
+    {
+        var vm = CreateVm();
+
+        vm.TryAddEntry(new InputReceivedEvent(1, 10, (int)InputType.Directional, 6));
+        vm.TryAddEntry(new InputReceivedEvent(1, 20, (int)InputType.Directional, 5));
+        vm.TryAddEntry(new InputReceivedEvent(1, 15, (int)InputType.Directional, 6));
+
+        Assert.Equal(3, vm.EntryCount);
+        Assert.Equal(10, vm.Entries[0].Frame);
+        Assert.Equal(20, vm.Entries[1].Frame);
+        Assert.Equal(15, vm.Entries[2].Frame);
+    }
+
+    [Fact]
+    public void InitialSnapshot_LoadsTrackedPlayer_EvenWhenToggleOff()
+    {
+        var stub = new StubInputHistory();
+        stub.AddDirectionalEntry(1, 10, DirectionValue.Forward);
+        stub.AddDirectionalEntry(2, 11, DirectionValue.Back);
+
+        var vm = new InputLogViewModel { ShowP1 = false, ShowP2 = true };
+        vm.LoadInitialSnapshot(stub, trackedPlayer: 1, showP1: false, showP2: true);
+
+        Assert.Equal(2, vm.EntryCount);
+        Assert.Equal(1, vm.FilteredCount);
+        Assert.DoesNotContain("P1", vm.GetVisibleRowTexts()[0]);
+    }
 }

@@ -166,4 +166,32 @@ public class AdvantageViewModelTests
         vm.OnHitConnected(3, 4, 10);
         Assert.Equal(4, vm.Advantage);
     }
+
+    // --- Converted from Control-level AdvantageDisplayTests ---
+
+    [Fact]
+    public void FrameAdvanced_AdvantageIsZero_DoesNothing()
+    {
+        var vm = new AdvantageViewModel(1);
+
+        vm.OnFrameAdvanced();
+
+        Assert.Equal(0, vm.Advantage);
+        Assert.Equal("0", vm.DisplayText);
+    }
+
+    [Fact]
+    public void HitConnected_TwoViewModels_MirrorPerspectives()
+    {
+        var vmP1 = new AdvantageViewModel(1);
+        var vmP2 = new AdvantageViewModel(2);
+
+        vmP1.OnHitConnected(1, 2, 4);
+        vmP2.OnHitConnected(1, 2, 4);
+
+        Assert.Equal(4, vmP1.Advantage);
+        Assert.Equal("+4", vmP1.DisplayText);
+        Assert.Equal(-4, vmP2.Advantage);
+        Assert.Equal("-4", vmP2.DisplayText);
+    }
 }

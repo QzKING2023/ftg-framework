@@ -14,7 +14,12 @@ public partial class PlaybackControls : Control
     [Export] public int FontSize { get; set; } = 12;
     [Export] public Color BackgroundColor { get; set; } = new(0, 0, 0, 0.5f);
 
-    public IFrameDataEngine? FrameDataEngine { get; set; }
+    public IFrameDataEngine? FrameDataEngine
+    {
+        get => _vm.FrameDataEngine;
+        set => _vm.FrameDataEngine = value;
+    }
+
     public InputLog? InputLog { get; set; }
 
     private readonly PlaybackControlsViewModel _vm = new();
@@ -29,13 +34,10 @@ public partial class PlaybackControls : Control
 
     public bool Paused
     {
-        get => EventBus.Instance.Paused;
+        get => _vm.Paused;
         set
         {
-            EventBus.Instance.Paused = value;
             _vm.SetPaused(value);
-            if (!value)
-                InputLogSetDisplayFrameLimit(int.MaxValue);
             UpdateLabel();
         }
     }
@@ -43,6 +45,7 @@ public partial class PlaybackControls : Control
     public override void _Ready()
     {
         EventBus.Instance.Subscribe<FrameAdvancedEvent>(_OnFrameAdvanced);
+        _vm.DisplayFrameLimitChanged = OnDisplayFrameLimitChanged;
 
         if (_label != null)
             return;
@@ -71,55 +74,37 @@ public partial class PlaybackControls : Control
     public override void _ExitTree()
     {
         EventBus.Instance.Unsubscribe<FrameAdvancedEvent>(_OnFrameAdvanced);
-        if (EventBus.Instance.Paused)
-        {
-            InputLogSetDisplayFrameLimit(int.MaxValue);
-            EventBus.Instance.Paused = false;
-            EventBus.Instance.StepRequested = false;
-        }
+        _vm.OnExitTree();
+    }
+
+    private void OnDisplayFrameLimitChanged(int limit)
+    {
+        if (InputLog is not null)
+            InputLog.DisplayFrameLimit = limit;
     }
 
     private void _OnFrameAdvanced(FrameAdvancedEvent e)
     {
         _vm.OnFrameAdvanced(e.FrameNumber);
-        if (Paused)
-            InputLogSetDisplayFrameLimit(_vm.DisplayFrame);
         UpdateLabel();
     }
 
     public void TogglePause()
     {
-        Paused = !Paused;
+        _vm.TogglePause();
+        UpdateLabel();
     }
 
     public void StepForward()
     {
-        if (!Paused)
-            Paused = true;
-        EventBus.Instance.StepRequested = true;
+        _vm.StepForward();
+        UpdateLabel();
     }
 
     public void StepBackward()
     {
-        if (!Paused)
-            Paused = true;
-        if (!_vm.CanStepBackward(FrameDataEngine?.EarliestSnapshotFrame ?? -1))
-            return;
-        if (FrameDataEngine is null)
-            return;
-
-        if (!FrameDataEngine.RestoreFrame(_vm.DisplayFrame - 1))
-            return;
-
-        _vm.OnStepBackward(_vm.DisplayFrame - 1);
-        InputLogSetDisplayFrameLimit(_vm.DisplayFrame);
+        _vm.StepBackward();
         UpdateLabel();
-    }
-
-    private void InputLogSetDisplayFrameLimit(int limit)
-    {
-        if (InputLog is not null)
-            InputLog.DisplayFrameLimit = limit;
     }
 
     private void UpdateLabel()

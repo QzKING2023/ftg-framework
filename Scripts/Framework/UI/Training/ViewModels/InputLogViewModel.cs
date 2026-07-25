@@ -19,6 +19,8 @@ public sealed class InputLogViewModel
     public bool ShowP1 { get; set; } = true;
     public bool ShowP2 { get; set; } = true;
 
+    public IInputLogFormatter Formatter { get; set; } = FrameLevelInputLogFormatter.Instance;
+
     public int VisibleRowCount
     {
         get => _visibleRowCount;
@@ -36,7 +38,7 @@ public sealed class InputLogViewModel
         get => _scrollOffset;
         set
         {
-            int maxOffset = Math.Max(0, FilteredCount - VisibleRowCount);
+            int maxOffset = Math.Max(0, DisplayRowCount - VisibleRowCount);
             _scrollOffset = Math.Clamp(value, 0, maxOffset);
         }
     }
@@ -66,7 +68,11 @@ public sealed class InputLogViewModel
         }
     }
 
-    public int MaxScrollOffset => Math.Max(0, FilteredCount - VisibleRowCount);
+    public int MaxScrollOffset => Math.Max(0, DisplayRowCount - VisibleRowCount);
+
+    // Row count in the formatter's output domain — a merging formatter produces
+    // fewer rows than there are filtered entries. Scrolling operates on rows.
+    public int DisplayRowCount => Formatter.FormatRows(GetFilteredEntries()).Count;
 
     public void LoadInitialSnapshot(IInputHistory? inputHistory, int trackedPlayer, bool showP1, bool showP2)
     {
@@ -146,23 +152,23 @@ public sealed class InputLogViewModel
 
     public List<string> GetVisibleRowTexts()
     {
-        var filtered = GetFilteredEntries();
-        int maxOffset = Math.Max(0, filtered.Count - VisibleRowCount);
+        var rows = Formatter.FormatRows(GetFilteredEntries());
+        int maxOffset = Math.Max(0, rows.Count - VisibleRowCount);
         _scrollOffset = Math.Clamp(_scrollOffset, 0, maxOffset);
 
-        int startIdx = Math.Max(0, filtered.Count - VisibleRowCount - _scrollOffset);
-        var rows = new List<string>(VisibleRowCount);
+        int startIdx = Math.Max(0, rows.Count - VisibleRowCount - _scrollOffset);
+        var visible = new List<string>(VisibleRowCount);
 
         for (int i = 0; i < VisibleRowCount; i++)
         {
-            int entryIdx = startIdx + i;
-            if (entryIdx < filtered.Count)
-                rows.Add(FormatEntry(filtered[entryIdx]));
+            int rowIdx = startIdx + i;
+            if (rowIdx < rows.Count)
+                visible.Add(rows[rowIdx]);
             else
-                rows.Add("");
+                visible.Add("");
         }
 
-        return rows;
+        return visible;
     }
 
     private void TrimTrack(int playerId, InputType type)

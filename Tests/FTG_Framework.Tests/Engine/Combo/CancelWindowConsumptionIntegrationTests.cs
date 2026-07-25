@@ -72,7 +72,7 @@ public class CancelWindowConsumptionIntegrationTests : IDisposable
             Engine = new FrameDataEngine(Store);
             Engine.Initialize(Store);
 
-            Executor = new ComboExecutor(Store);
+            Executor = new ComboExecutor(Store, Engine);
             Executor.Initialize(Store);
         }
 

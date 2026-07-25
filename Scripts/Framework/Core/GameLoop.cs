@@ -28,6 +28,7 @@ public partial class GameLoop : Node
     private AdvantageDisplay? _advantageDisplay;
     private InputLog? _inputLog;
     private IComboExecutor? _comboExecutor;
+    private IComboStateTracker? _comboStateTracker;
 
     // Test control state — edge-tracking prevents repeating triggers per press
     private bool _prevPauseKey, _prevStepFwdKey, _prevStepBackKey;
@@ -117,9 +118,13 @@ public partial class GameLoop : Node
             RegisterModule(frameDataEngine);
             _frameDataEngine = frameDataEngine;
 
-            var comboExecutor = new ComboExecutor(_dataStore);
+            var comboExecutor = new ComboExecutor(_dataStore, frameDataEngine);
             _comboExecutor = comboExecutor;
             RegisterModule(comboExecutor);
+
+            var comboStateTracker = new ComboStateTracker(_dataStore);
+            _comboStateTracker = comboStateTracker;
+            RegisterModule(comboStateTracker);
 
             // --- Training-mode UI panels ---
 
@@ -248,6 +253,21 @@ public partial class GameLoop : Node
         module.Initialize(_dataStore);
     }
 
+    public override void _ExitTree()
+    {
+        UnsubscribeDebugEvents();
+        ShutdownModules(_modules);
+    }
+
+    // Reverse order: dependents (combo modules) detach before the engines whose
+    // events they consume. Clearing prevents a double shutdown if _ExitTree re-fires.
+    internal static void ShutdownModules(List<IModule> modules)
+    {
+        for (int i = modules.Count - 1; i >= 0; i--)
+            modules[i].Shutdown();
+        modules.Clear();
+    }
+
     internal static bool ShouldProcessFrame(bool paused, bool stepRequested) => !paused || stepRequested;
 
     internal static DirectionValue ComputeDirection(bool back, bool forward, bool down, bool up)
@@ -312,24 +332,43 @@ public partial class GameLoop : Node
         _prevShowP2Key = showP2Key;
     }
 
+    private Action<MoveFrameChangedEvent>? _dbgMoveFrame;
+    private Action<CancelWindowEnteredEvent>? _dbgCancelEnter;
+    private Action<CancelWindowExitedEvent>? _dbgCancelExit;
+    private Action<HitConnectedEvent>? _dbgHit;
+    private Action<MoveBlockedEvent>? _dbgBlock;
+    private Action<InputReceivedEvent>? _dbgInput;
+
     private void SubscribeDebugEvents()
     {
-        EventBus.Instance.Subscribe<MoveFrameChangedEvent>(e =>
-            GD.Print($"[DEBUG] MoveFrame: P{e.PlayerId} {e.MoveId} phase={e.Phase} frame={e.CurrentFrame}/{e.TotalFrames}"));
+        _dbgMoveFrame ??= e =>
+            GD.Print($"[DEBUG] MoveFrame: P{e.PlayerId} {e.MoveId} phase={e.Phase} frame={e.CurrentFrame}/{e.TotalFrames}");
+        _dbgCancelEnter ??= e =>
+            GD.Print($"[DEBUG] CancelEnter: P{e.PlayerId} {e.MoveId} cat={e.Category} [{e.StartFrame}-{e.EndFrame}]");
+        _dbgCancelExit ??= e =>
+            GD.Print($"[DEBUG] CancelExited: P{e.PlayerId} {e.MoveId} cat={e.Category}");
+        _dbgHit ??= e =>
+            GD.Print($"[DEBUG] HitConnected: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.HitAdvantage} dmg={e.Damage}");
+        _dbgBlock ??= e =>
+            GD.Print($"[DEBUG] MoveBlocked: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.BlockAdvantage} dmg={e.Damage}");
+        _dbgInput ??= e =>
+            GD.Print($"[DEBUG] InputRecv: P{e.PlayerId} frame={e.Frame} type={e.InputType} val={e.InputValue}");
 
-        EventBus.Instance.Subscribe<CancelWindowEnteredEvent>(e =>
-            GD.Print($"[DEBUG] CancelEnter: P{e.PlayerId} {e.MoveId} cat={e.Category} [{e.StartFrame}-{e.EndFrame}]"));
+        EventBus.Instance.Subscribe(_dbgMoveFrame);
+        EventBus.Instance.Subscribe(_dbgCancelEnter);
+        EventBus.Instance.Subscribe(_dbgCancelExit);
+        EventBus.Instance.Subscribe(_dbgHit);
+        EventBus.Instance.Subscribe(_dbgBlock);
+        EventBus.Instance.Subscribe(_dbgInput);
+    }
 
-        EventBus.Instance.Subscribe<CancelWindowExitedEvent>(e =>
-            GD.Print($"[DEBUG] CancelExited: P{e.PlayerId} {e.MoveId} cat={e.Category}"));
-
-        EventBus.Instance.Subscribe<HitConnectedEvent>(e =>
-            GD.Print($"[DEBUG] HitConnected: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.HitAdvantage} dmg={e.Damage}"));
-
-        EventBus.Instance.Subscribe<MoveBlockedEvent>(e =>
-            GD.Print($"[DEBUG] MoveBlocked: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.BlockAdvantage} dmg={e.Damage}"));
-
-        EventBus.Instance.Subscribe<InputReceivedEvent>(e =>
-            GD.Print($"[DEBUG] InputRecv: P{e.PlayerId} frame={e.Frame} type={e.InputType} val={e.InputValue}"));
+    private void UnsubscribeDebugEvents()
+    {
+        if (_dbgMoveFrame is not null) EventBus.Instance.Unsubscribe(_dbgMoveFrame);
+        if (_dbgCancelEnter is not null) EventBus.Instance.Unsubscribe(_dbgCancelEnter);
+        if (_dbgCancelExit is not null) EventBus.Instance.Unsubscribe(_dbgCancelExit);
+        if (_dbgHit is not null) EventBus.Instance.Unsubscribe(_dbgHit);
+        if (_dbgBlock is not null) EventBus.Instance.Unsubscribe(_dbgBlock);
+        if (_dbgInput is not null) EventBus.Instance.Unsubscribe(_dbgInput);
     }
 }

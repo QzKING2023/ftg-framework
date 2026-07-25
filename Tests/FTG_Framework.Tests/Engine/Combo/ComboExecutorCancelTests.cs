@@ -52,7 +52,7 @@ public class ComboExecutorCancelTests : IDisposable
         store.SetMove(MakeMove("236P", new[] { "special" }));
         store.SetMove(MakeMove("236236P", new[] { "super" }));
         store.SetGatlingTable(MakeTable("ryu", entries));
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
         executor.Initialize(store);
         return (store, executor);
     }
@@ -265,7 +265,7 @@ public class ComboExecutorCancelTests : IDisposable
         store.SetGatlingTable(MakeTable("ryu",
             MakeEntry("5LP", new[] { "5MP" }, "normal")));
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
         executor.Initialize(store);
 
         OpenWindow(1, "5LP", "normal");
@@ -312,7 +312,7 @@ public class ComboExecutorCancelTests : IDisposable
         store.SetGatlingTable(MakeTable("ken",
             MakeEntry("5LP", new[] { "5MP" }, "normal")));
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
         executor.Initialize(store);
 
         OpenWindow(1, "5LP", "normal");
@@ -337,7 +337,7 @@ public class ComboExecutorCancelTests : IDisposable
             MakeEntry("5MP", new[] { "5HP" }, "normal"),
             MakeEntry("5HP", new[] { "5MP" }, "normal")));
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
         executor.Initialize(store);
 
         // Build chain: 5LP→5MP
@@ -369,7 +369,7 @@ public class ComboExecutorCancelTests : IDisposable
         store.SetGatlingTable(MakeTable("ryu",
             MakeEntry("5LP", new[] { "5LP" }, "normal")));
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
         executor.Initialize(store);
 
         // First cancel: 5LP→5LP
@@ -419,7 +419,7 @@ public class ComboExecutorCancelTests : IDisposable
             MakeEntry("5MP", new[] { "5HP" }, "normal"),
             MakeEntry("5HP", new[] { "5MP" }, "normal")));
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
         executor.Initialize(store);
 
         // Build chain: 5LP→5MP→5HP
@@ -462,7 +462,7 @@ public class ComboExecutorCancelTests : IDisposable
             MakeEntry("5HP", new[] { "5LP" }, "normal"),
             MakeEntry("5LP", new[] { "5MP" }, "normal")));
 
-        var executor = new ComboExecutor(store);
+        var executor = new ComboExecutor(store, new StubFrameDataEngine());
         executor.Initialize(store);
 
         // Player 1 chain: 5LP→5MP→5HP
@@ -491,5 +491,77 @@ public class ComboExecutorCancelTests : IDisposable
         });
 
         Assert.Single(events);
+    }
+
+    // EndFrame precision tests (debt cleanup — TryCancel must not allow cancels past EndFrame)
+
+    [Fact]
+    public void TryCancel_OnFrameAfterEndFrame_ReturnsFalse()
+    {
+        var store = new StubDataStore();
+        store.SetMove(MakeMove("5LP", new[] { "normal" }));
+        store.SetMove(MakeMove("5MP", new[] { "normal" }));
+        store.SetGatlingTable(MakeTable("ryu",
+            MakeEntry("5LP", new[] { "5MP" }, "normal")));
+
+        var frameEngine = new StubFrameDataEngine();
+        var executor = new ComboExecutor(store, frameEngine);
+        executor.Initialize(store);
+
+        OpenWindow(1, "5LP", "normal", start: 3, end: 6);
+        frameEngine.SetCurrentFrame(1, 7);
+
+        var events = CollectMoveCanceled(() =>
+        {
+            Assert.False(executor.TryCancel(1, "5MP"));
+        });
+
+        Assert.Empty(events);
+    }
+
+    [Fact]
+    public void TryCancel_OnEndFrame_StillAllowed()
+    {
+        var store = new StubDataStore();
+        store.SetMove(MakeMove("5LP", new[] { "normal" }));
+        store.SetMove(MakeMove("5MP", new[] { "normal" }));
+        store.SetGatlingTable(MakeTable("ryu",
+            MakeEntry("5LP", new[] { "5MP" }, "normal")));
+
+        var frameEngine = new StubFrameDataEngine();
+        var executor = new ComboExecutor(store, frameEngine);
+        executor.Initialize(store);
+
+        OpenWindow(1, "5LP", "normal", start: 3, end: 6);
+        frameEngine.SetCurrentFrame(1, 6);
+
+        var events = CollectMoveCanceled(() =>
+        {
+            Assert.True(executor.TryCancel(1, "5MP"));
+        });
+
+        Assert.Single(events);
+    }
+
+    [Fact]
+    public void TryCancel_RejectedByEndFrameGuard_WindowNotConsumed()
+    {
+        var store = new StubDataStore();
+        store.SetMove(MakeMove("5LP", new[] { "normal" }));
+        store.SetMove(MakeMove("5MP", new[] { "normal" }));
+        store.SetGatlingTable(MakeTable("ryu",
+            MakeEntry("5LP", new[] { "5MP" }, "normal")));
+
+        var frameEngine = new StubFrameDataEngine();
+        var executor = new ComboExecutor(store, frameEngine);
+        executor.Initialize(store);
+
+        OpenWindow(1, "5LP", "normal", start: 3, end: 6);
+        frameEngine.SetCurrentFrame(1, 7);
+        Assert.False(executor.TryCancel(1, "5MP"));
+
+        // Guard skips without consuming — after a rewind back into the window, cancel works
+        frameEngine.SetCurrentFrame(1, 5);
+        Assert.True(executor.TryCancel(1, "5MP"));
     }
 }

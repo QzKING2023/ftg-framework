@@ -1,6 +1,7 @@
 #nullable enable
 using Godot;
 using System.Collections.Generic;
+using FTG_Framework.UI.Training.ViewModels;
 
 namespace FTG_Framework.UI.Training;
 
@@ -10,22 +11,20 @@ public partial class HitboxOverlay : Control
     [Export] public Color HurtboxColor { get; set; } = new(1, 0, 0, 0.4f);
     [Export] public float LineWidth { get; set; } = 2f;
 
-    private bool _enabled;
-
     [Export]
     public bool Enabled
     {
-        get => _enabled;
+        get => _vm.Enabled;
         set
         {
-            _enabled = value;
+            _vm.Enabled = value;
             QueueRedraw();
         }
     }
 
-    private readonly List<(Rect2 Rect, Color Color, string Label)> _boxes = new();
+    private readonly HitboxOverlayViewModel _vm = new();
 
-    internal int BoxCount => _boxes.Count;
+    internal int BoxCount => _vm.BoxCount;
 
     public override void _Ready()
     {
@@ -33,38 +32,33 @@ public partial class HitboxOverlay : Control
         QueueRedraw();
     }
 
-    // Each Set replaces that category's boxes — the data provider repopulates every
-    // frame, so accumulation would duplicate stale geometry.
     public void SetHitboxes(IReadOnlyList<Rect2> hitboxes)
     {
-        _boxes.RemoveAll(b => b.Label == "Hit");
-        foreach (var r in hitboxes)
-            _boxes.Add((r, OverlayColor, "Hit"));
+        _vm.SetHitboxes(hitboxes);
         QueueRedraw();
     }
 
     public void SetHurtboxes(IReadOnlyList<Rect2> hurtboxes)
     {
-        _boxes.RemoveAll(b => b.Label == "Hurt");
-        foreach (var r in hurtboxes)
-            _boxes.Add((r, HurtboxColor, "Hurt"));
+        _vm.SetHurtboxes(hurtboxes);
         QueueRedraw();
     }
 
     public void Clear()
     {
-        _boxes.Clear();
+        _vm.Clear();
         QueueRedraw();
     }
 
     public override void _Draw()
     {
-        if (!Enabled)
+        if (!_vm.Enabled)
             return;
 
-        foreach (var (rect, color, _) in _boxes)
+        foreach (var box in _vm.Boxes)
         {
-            DrawRect(rect, color, filled: false, LineWidth);
+            var color = box.Category == "Hit" ? OverlayColor : HurtboxColor;
+            DrawRect(box.Rect, color, filled: false, LineWidth);
         }
     }
 }

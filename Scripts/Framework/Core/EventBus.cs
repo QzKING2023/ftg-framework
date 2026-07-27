@@ -30,7 +30,7 @@ namespace FTG_Framework.Core;
 /// <item>Phase 2 — Input System: <c>InputReceivedEvent</c>, <c>InputBufferExpiredEvent</c>, <c>ChargeStateChangedEvent</c></item>
 /// <item>Phase 3 — Frame Data Engine: <c>MoveFrameChangedEvent</c>, <c>CancelWindowEnteredEvent</c>, <c>CancelWindowExitedEvent</c>, <c>HitConnectedEvent</c>, <c>MoveBlockedEvent</c></item>
 /// <item>Phase 4 — Combo Exec: <c>ComboStartedEvent</c>, <c>MoveCanceledEvent</c>, <c>ComboEndedEvent</c></item>
-/// <item>Phase 5 — UI: Read-only observer layer; no events are dispatched here</item>
+/// <item>Phase 5 — UI: <c>CharacterSelectedEvent</c>, <c>MatchInitializedEvent</c> (character select flow)</item>
 /// </list>
 /// </summary>
 public sealed class EventBus
@@ -150,7 +150,9 @@ public sealed class EventBus
             DispatchType<Events.MoveCanceledEvent>();
             DispatchType<Events.ComboEndedEvent>();
 
-            // Phase 5: UI — read-only observer, no events to dispatch
+            // Phase 5: UI — read-only observer
+            DispatchType<Events.CharacterSelectedEvent>();
+            DispatchType<Events.MatchInitializedEvent>();
 
             System.Diagnostics.Debug.Assert(_currentQueue.Count == 0,
                 $"[EventBus] {_currentQueue.Count} unhandled event(s) remain after dispatch — unknown event type in queue.");

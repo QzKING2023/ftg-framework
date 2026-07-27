@@ -10,6 +10,7 @@ internal sealed class DataStore : IDataStore
 {
     private readonly Dictionary<string, MoveDefinition> _moves;
     private readonly Dictionary<string, GatlingTable> _gatlingTables;
+    private readonly Dictionary<string, CharacterDefinition> _characters;
     private readonly HashSet<string> _knownCategories;
 
     public DataStore(MoveDefinition[] moves, GatlingTable[]? gatlingTables = null)
@@ -35,6 +36,8 @@ internal sealed class DataStore : IDataStore
             foreach (var table in gatlingTables)
                 _gatlingTables[table.CharacterId] = ValidateTable(table);
         }
+
+        _characters = new Dictionary<string, CharacterDefinition>();
     }
 
     public void SetGatlingTable(GatlingTable table)
@@ -131,5 +134,29 @@ internal sealed class DataStore : IDataStore
     public IReadOnlyList<GatlingTable> GetAllGatlingTables()
     {
         return _gatlingTables.Values.ToList();
+    }
+
+    public CharacterDefinition? GetCharacter(string characterId)
+    {
+        if (characterId is null)
+            return null;
+        _characters.TryGetValue(characterId, out var character);
+        return character;
+    }
+
+    public IReadOnlyList<CharacterDefinition> GetAllCharacters()
+    {
+        return _characters.Values.ToList();
+    }
+
+    public void RegisterCharacter(CharacterDefinition character)
+    {
+        ArgumentNullException.ThrowIfNull(character);
+        if (string.IsNullOrEmpty(character.CharacterId))
+            throw new ArgumentException("[Data] Character has null or empty CharacterId.", nameof(character));
+        if (string.IsNullOrEmpty(character.DisplayName))
+            throw new ArgumentException("[Data] Character has null or empty DisplayName.", nameof(character));
+        if (!_characters.TryAdd(character.CharacterId, character))
+            throw new InvalidOperationException($"[Data] Duplicate CharacterId registration: '{character.CharacterId}'.");
     }
 }

@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using System.Collections.Generic;
 using FTG_Framework.Core;
 using FTG_Framework.Data;
@@ -9,6 +10,7 @@ internal sealed class StubDataStore : IDataStore
 {
     private readonly Dictionary<string, MoveDefinition> _moves = new();
     private readonly Dictionary<string, GatlingTable> _gatlingTables = new();
+    private readonly Dictionary<string, CharacterDefinition> _characters = new();
 
     public void SetMove(MoveDefinition move) => _moves[move.MoveId] = move;
 
@@ -30,4 +32,24 @@ internal sealed class StubDataStore : IDataStore
 
     public IReadOnlyList<GatlingTable> GetAllGatlingTables() =>
         new List<GatlingTable>(_gatlingTables.Values);
+
+    public CharacterDefinition? GetCharacter(string characterId)
+    {
+        if (characterId is null)
+            return null;
+        _characters.TryGetValue(characterId, out var character);
+        return character;
+    }
+
+    public IReadOnlyList<CharacterDefinition> GetAllCharacters() =>
+        new List<CharacterDefinition>(_characters.Values);
+
+    public void RegisterCharacter(CharacterDefinition character)
+    {
+        ArgumentNullException.ThrowIfNull(character);
+        if (string.IsNullOrEmpty(character.CharacterId))
+            throw new ArgumentException("[Data] Character has null or empty CharacterId.", nameof(character));
+        if (!_characters.TryAdd(character.CharacterId, character))
+            throw new InvalidOperationException($"[Data] Duplicate CharacterId registration: '{character.CharacterId}'.");
+    }
 }

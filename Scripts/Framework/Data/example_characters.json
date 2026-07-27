@@ -1,0 +1,12 @@
+[
+  {
+    "characterId": "ryu",
+    "displayName": "Ryu",
+    "scenePath": "res://Characters/Ryu/Ryu.tscn"
+  },
+  {
+    "characterId": "ken",
+    "displayName": "Ken",
+    "scenePath": "res://Characters/Ken/Ken.tscn"
+  }
+]

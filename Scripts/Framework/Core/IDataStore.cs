@@ -11,4 +11,7 @@ public interface IDataStore
     GatlingTable? GetGatlingTable(string characterId);
     IReadOnlyList<GatlingTable> GetAllGatlingTables();
     void SetGatlingTable(GatlingTable table);
+    CharacterDefinition? GetCharacter(string characterId);
+    IReadOnlyList<CharacterDefinition> GetAllCharacters();
+    void RegisterCharacter(CharacterDefinition character);
 }

@@ -30,6 +30,7 @@ public partial class GameLoop : Node
     private IComboExecutor? _comboExecutor;
     private IComboStateTracker? _comboStateTracker;
     private ISOCDResolver? _socdResolver;
+    private CharacterSelect? _characterSelect;
 
     // Test control state — edge-tracking prevents repeating triggers per press
     private bool _prevPauseKey, _prevStepFwdKey, _prevStepBackKey;
@@ -60,6 +61,19 @@ public partial class GameLoop : Node
 
             _dataStore = new DataStore(moves, gatlingTables);
             GD.Print($"[Data] Loaded {moves.Length} moves.");
+
+            var charactersPath = "res://Scripts/Framework/Data/example_characters.json";
+            if (Godot.FileAccess.FileExists(charactersPath))
+            {
+                var characters = CharacterDataLoader.LoadFromFile(charactersPath);
+                foreach (var c in characters)
+                    _dataStore.RegisterCharacter(c);
+                GD.Print($"[Data] Loaded {characters.Length} characters.");
+            }
+            else
+            {
+                FrameworkLog.Info?.Invoke("[Data] No character roster file found — character select will be inert.");
+            }
 
             var inputHistory = new global::FTG_Framework.Input.InputHistory(capacity: 600);
             RegisterModule(inputHistory);
@@ -161,6 +175,15 @@ public partial class GameLoop : Node
             _hitboxOverlay = new HitboxOverlay();
             AddChild(_hitboxOverlay);
 
+            _characterSelect = new CharacterSelect
+            {
+                DataStore = _dataStore,
+                PanelPosition = new Vector2(200, 200)
+            };
+            AddChild(_characterSelect);
+
+            EventBus.Instance.Subscribe<MatchInitializedEvent>(_OnMatchInitialized);
+
             // --- Debug event logging — outputs to Godot console for verification ---
             SubscribeDebugEvents();
         }
@@ -260,8 +283,14 @@ public partial class GameLoop : Node
 
     public override void _ExitTree()
     {
+        EventBus.Instance.Unsubscribe<MatchInitializedEvent>(_OnMatchInitialized);
         UnsubscribeDebugEvents();
         ShutdownModules(_modules);
+    }
+
+    private void _OnMatchInitialized(MatchInitializedEvent e)
+    {
+        GD.Print($"[GameLoop] Match initialized: P1={e.P1CharacterId} vs P2={e.P2CharacterId}");
     }
 
     // Reverse order: dependents (combo modules) detach before the engines whose

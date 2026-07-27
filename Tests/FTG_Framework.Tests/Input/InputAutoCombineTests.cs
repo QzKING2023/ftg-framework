@@ -4,6 +4,11 @@ using Xunit;
 
 namespace FTG_Framework.Tests;
 
+// Note: SOCD (simultaneous opposite cardinal directions) is now handled upstream by
+// ISOCDResolver before ComputeDirection is called. ComputeDirection receives pre-cleaned
+// inputs in production. The ConflictingKeys_ReturnsNeutral test below validates the
+// defense-in-depth guard in ComputeDirection itself (v > 2 || h > 2 → Neutral).
+// Primary SOCD behavior is tested in DefaultSOCDResolverTests.
 public class InputAutoCombineTests
 {
     [Fact]

@@ -29,6 +29,7 @@ public partial class GameLoop : Node
     private InputLog? _inputLog;
     private IComboExecutor? _comboExecutor;
     private IComboStateTracker? _comboStateTracker;
+    private ISOCDResolver? _socdResolver;
 
     // Test control state — edge-tracking prevents repeating triggers per press
     private bool _prevPauseKey, _prevStepFwdKey, _prevStepBackKey;
@@ -126,6 +127,8 @@ public partial class GameLoop : Node
             _comboStateTracker = comboStateTracker;
             RegisterModule(comboStateTracker);
 
+            _socdResolver = new global::FTG_Framework.Input.DefaultSOCDResolver();
+
             // --- Training-mode UI panels ---
 
             _frameDataPanel = new FrameDataPanel
@@ -210,8 +213,10 @@ public partial class GameLoop : Node
             return;
         }
 
-        // Direction auto-combine
-        var dir = ComputeDirection(back, forward, down, up);
+        // SOCD cleaning + direction combine
+        var dir = _socdResolver is not null
+            ? SafeResolve(_socdResolver, back, forward, down, up)
+            : FallbackDirection(back, forward, down, up);
         _inputHistory?.RecordInput(1, InputType.Directional, (int)dir);
 
         // Button inputs — record once on the rising edge of each press
@@ -276,6 +281,24 @@ public partial class GameLoop : Node
         int h = (back ? 1 : 0) + (forward ? 2 : 0);
         if (v > 2 || h > 2) return DirectionValue.Neutral;
         return s_dirLookup[v, h];
+    }
+
+    internal static DirectionValue SafeResolve(ISOCDResolver resolver, bool left, bool right, bool down, bool up)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+        var result = resolver.Resolve(left, right, down, up);
+        if (!Enum.IsDefined(typeof(DirectionValue), result))
+        {
+            FrameworkLog.Error($"[Input] SOCD resolver returned invalid direction value {(int)result} — falling back to Neutral");
+            return DirectionValue.Neutral;
+        }
+        return result;
+    }
+
+    private static DirectionValue FallbackDirection(bool left, bool right, bool down, bool up)
+    {
+        FrameworkLog.Error("[Input] SOCD resolver is null — falling back to direct ComputeDirection");
+        return ComputeDirection(left, right, down, up);
     }
 
     private static readonly DirectionValue[,] s_dirLookup = new DirectionValue[3, 3]

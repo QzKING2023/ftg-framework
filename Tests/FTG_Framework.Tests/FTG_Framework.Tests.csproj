@@ -21,5 +21,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\FTG_Framework.csproj" />
+    <ProjectReference Include="..\..\Scaffold\ftg-cli\FtgCli.csproj" />
   </ItemGroup>
 </Project>

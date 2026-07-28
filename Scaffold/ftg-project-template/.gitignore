@@ -1,6 +1,5 @@
 # Godot 4+ specific ignores
 .godot/
-.import/
 /android/
 
 # Imported translations (auto-generated)
@@ -18,25 +17,6 @@ export_presets.cfg
 Thumbs.db
 desktop.ini
 
-# AI Agent 相关文件
-.agents/
-.claude/
-_bmad/
-_bmad-output/
-
-# FTG Framework addon (build-generated source; plugin.cfg and README.md are committed)
-addons/ftg-framework/src/
-Scaffold/ftg-framework-*.zip
-
-# IDE
-.idea/
-.vs/
-*.swp
-*.swo
-
 # .NET build artifacts
 bin/
 obj/
-
-# Rider temp files
-~*

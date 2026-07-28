@@ -3,17 +3,10 @@
     <TargetFramework>net8.0</TargetFramework>
     <TargetFramework Condition=" '$(GodotTargetPlatform)' == 'android' ">net9.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>{{FTG_PROJECT_NAME}}</RootNamespace>
+    <AssemblyName>{{FTG_PROJECT_NAME}}</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <Folder Include="Scripts\" />
-  </ItemGroup>
-  <ItemGroup>
-    <InternalsVisibleTo Include="FTG_Framework.Tests" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Remove="Tests\**" />
-    <Compile Remove="Scaffold\**" />
-    <Compile Remove="addons\**" />
-    <None Remove="Tests\**" />
   </ItemGroup>
 </Project>

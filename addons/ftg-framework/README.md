@@ -1,0 +1,81 @@
+# FTG Framework
+
+Modular fighting game framework for Godot 4.x C#.
+
+## Requirements
+
+- Godot 4.5+ (4.7+ recommended)
+- .NET SDK 10+ (install separately from https://dotnet.microsoft.com/download)
+- C# build tools enabled in Godot
+
+## Installation
+
+### Godot Asset Library
+
+1. Open the AssetLib tab in the Godot editor
+2. Search for "FTG Framework"
+3. Click Download, then Install
+
+### Manual Installation
+
+1. Download the latest release zip from GitHub
+2. Extract the zip into your project's `addons/` directory — the archive contains a top-level `ftg-framework/` folder, so the files land in `addons/ftg-framework/`
+
+> The addon ships no EditorPlugin, so there is nothing to enable in
+> Project → Project Settings → Plugins. Setup is the autoload step below.
+
+### Autoload Setup
+
+After installing the addon, configure autoloads in Project → Project Settings → Autoload:
+
+| Name | Path |
+|------|------|
+| FrameRateManager | `res://addons/ftg-framework/src/FrameRateManager.cs` |
+| GameLoop | `res://Scripts/GameLoop.cs` (created in the next step) |
+
+`addons/ftg-framework/src/Core/GameLoop.cs.template` is a reference implementation
+(the `.template` extension keeps it out of compilation). To use the full training setup:
+
+1. Copy `GameLoop.cs.template` into your project's `Scripts/` directory
+2. Rename the copy to `GameLoop.cs`
+3. Add the `GameLoop` autoload pointing at `res://Scripts/GameLoop.cs`
+
+Or write your own GameLoop that instantiates only the modules you need.
+
+### Quick Start with CLI
+
+The fastest way to start a new project is with the `ftg` CLI tool. It runs from an
+FTG Framework repository checkout (it copies the template and framework source from
+the repo on disk):
+
+```bash
+git clone https://github.com/QzKING2023/ftg-framework
+cd ftg-framework
+dotnet run --project Scaffold/ftg-cli -- new MyFighter --output ./projects
+cd projects/MyFighter
+dotnet build
+# Open project.godot in the Godot editor
+```
+
+## Modules Included
+
+| Module | Description |
+|--------|-------------|
+| **EventBus** | Centralized event publishing/subscription system (15 event types) |
+| **Input System** | Dual-track input history, buffer, leniency matching, charge tracking, SOCD cleaning |
+| **Data Layer** | Move definitions, Gatling tables, character roster — loaded from JSON |
+| **Frame Data Engine** | Per-frame move timelines, cancel windows, frame advantage calculation |
+| **Combo Engine** | Combo execution, chain validation, combo state tracking |
+| **Object Pool** | Pre-allocated, recycled pool for frequently-spawned Godot Nodes |
+| **Training UI** | Frame data panel, advantage display, input log, playback controls, hitbox overlay |
+| **Character Select** | Character selection flow with roster management |
+| **EventBus Debug Panel** | Live event type display with subscriber counts and payload traces |
+
+## Documentation
+
+See the [FTG Framework repository](https://github.com/QzKING2023/ftg-framework) for full documentation, architecture guide, and API reference.
+
+## License
+
+This project is open source. A LICENSE file will be bundled with release packages;
+Asset Library submission requires one at the repository root.

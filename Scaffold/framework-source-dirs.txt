@@ -1,0 +1,9 @@
+# Framework source directories copied by the CLI (ProjectScaffolder) and the
+# addon packaging scripts (package-addon.ps1 / package-addon.sh).
+# Paths are relative to the repository root. Add new module directories here.
+Scripts/Framework/Core
+Scripts/Framework/Input
+Scripts/Framework/Data
+Scripts/Framework/Engine/FrameData
+Scripts/Framework/Engine/Combo
+Scripts/Framework/UI/Training

@@ -266,6 +266,7 @@ public class FtgCliTests
     public void PackageAddon_ProducesValidZip()
     {
         var repoRoot = FindRepoRoot();
+        var addonSrc = Path.Combine(repoRoot, "addons", "ftg-framework", "src");
 
         var (fileName, arguments) = OperatingSystem.IsWindows()
             ? ("powershell", "-NoProfile -ExecutionPolicy Bypass -File Scaffold/package-addon.ps1")
@@ -274,37 +275,47 @@ public class FtgCliTests
         Process? process;
         try
         {
-            process = Process.Start(new ProcessStartInfo
+            try
             {
-                FileName = fileName,
-                Arguments = arguments,
-                WorkingDirectory = repoRoot,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            });
+                process = Process.Start(new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    Arguments = arguments,
+                    WorkingDirectory = repoRoot,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                });
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                return; // Script runtime unavailable on this machine — nothing to assert against.
+            }
+            Assert.NotNull(process);
+            Assert.True(process.WaitForExit(120000), "Packaging script timed out");
+            Assert.Equal(0, process.ExitCode);
+
+            // Version comes from plugin.cfg — locate the produced zip by glob.
+            var zips = Directory.GetFiles(Path.Combine(repoRoot, "Scaffold"), "ftg-framework-*.zip");
+            Assert.NotEmpty(zips);
+
+            using var zip = ZipFile.OpenRead(zips[0]);
+            var names = zip.Entries.Select(e => e.FullName.Replace('\\', '/')).ToList();
+
+            Assert.Contains(names, n => n == "ftg-framework/plugin.cfg");
+            Assert.Contains(names, n => n == "ftg-framework/README.md");
+            Assert.Contains(names, n => n.EndsWith("src/Core/GameLoop.cs.template"));
+            Assert.DoesNotContain(names, n => n.EndsWith("GameLoop.template.cs"));
+            Assert.DoesNotContain(names, n => n.EndsWith(".uid", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(names, n => n.Contains("src/UI/Training/ViewModels/"));
+            Assert.Contains(names, n => n.EndsWith("src/FrameRateManager.cs"));
         }
-        catch (System.ComponentModel.Win32Exception)
+        finally
         {
-            return; // Script runtime unavailable on this machine — nothing to assert against.
+            // Clean up generated files so they don't confuse Godot's C# type scanner.
+            TryDelete(addonSrc);
+            foreach (var zip in Directory.GetFiles(Path.Combine(repoRoot, "Scaffold"), "ftg-framework-*.zip"))
+                TryDeleteFile(zip);
         }
-        Assert.NotNull(process);
-        Assert.True(process.WaitForExit(120000), "Packaging script timed out");
-        Assert.Equal(0, process.ExitCode);
-
-        // Version comes from plugin.cfg — locate the produced zip by glob.
-        var zips = Directory.GetFiles(Path.Combine(repoRoot, "Scaffold"), "ftg-framework-*.zip");
-        Assert.NotEmpty(zips);
-
-        using var zip = ZipFile.OpenRead(zips[0]);
-        var names = zip.Entries.Select(e => e.FullName.Replace('\\', '/')).ToList();
-
-        Assert.Contains(names, n => n == "ftg-framework/plugin.cfg");
-        Assert.Contains(names, n => n == "ftg-framework/README.md");
-        Assert.Contains(names, n => n.EndsWith("src/Core/GameLoop.cs.template"));
-        Assert.DoesNotContain(names, n => n.EndsWith("GameLoop.template.cs"));
-        Assert.DoesNotContain(names, n => n.EndsWith(".uid", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(names, n => n.Contains("src/UI/Training/ViewModels/"));
-        Assert.Contains(names, n => n.EndsWith("src/FrameRateManager.cs"));
     }
 
     private static string FindRepoRoot()
@@ -334,6 +345,21 @@ public class FtgCliTests
         catch (IOException)
         {
             // A still-finishing restore process can hold locks; don't mask the test result.
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (IOException)
+        {
         }
         catch (UnauthorizedAccessException)
         {

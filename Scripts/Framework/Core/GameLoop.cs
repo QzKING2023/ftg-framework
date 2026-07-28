@@ -31,6 +31,7 @@ public partial class GameLoop : Node
     private IComboStateTracker? _comboStateTracker;
     private ISOCDResolver? _socdResolver;
     private CharacterSelect? _characterSelect;
+    private EventBusDebugPanel? _debugPanel;
 
     // Test control state — edge-tracking prevents repeating triggers per press
     private bool _prevPauseKey, _prevStepFwdKey, _prevStepBackKey;
@@ -183,6 +184,9 @@ public partial class GameLoop : Node
             AddChild(_characterSelect);
 
             EventBus.Instance.Subscribe<MatchInitializedEvent>(_OnMatchInitialized);
+
+            _debugPanel = new EventBusDebugPanel();
+            AddChild(_debugPanel);
 
             // --- Debug event logging — outputs to Godot console for verification ---
             SubscribeDebugEvents();

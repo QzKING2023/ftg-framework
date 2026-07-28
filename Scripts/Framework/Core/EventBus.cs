@@ -171,6 +171,43 @@ public sealed class EventBus
         }
     }
 
+    // Returns the number of registered handlers for the given event type, or 0
+    // if no handlers are registered. Read-only diagnostic query — no side effects.
+    public int GetSubscriberCount<T>() where T : struct
+    {
+        return _subscribers.TryGetValue(typeof(T), out var handlers) ? handlers.Count : 0;
+    }
+
+    // Returns all event types known to the bus: types that have had subscribers
+    // registered, plus the statically-known dispatch-pipeline types. Used by
+    // diagnostic tooling to discover subscribable event types.
+    // NOTE: when a new event type is added to ProcessFrame, add it here too.
+    public IReadOnlyList<Type> GetKnownEventTypes()
+    {
+        var types = new List<Type>(_subscribers.Keys);
+        void AddIfMissing<T>() where T : struct
+        {
+            var t = typeof(T);
+            if (!types.Contains(t)) types.Add(t);
+        }
+        AddIfMissing<Events.FrameAdvancedEvent>();
+        AddIfMissing<Events.InputReceivedEvent>();
+        AddIfMissing<Events.InputBufferExpiredEvent>();
+        AddIfMissing<Events.ChargeStateChangedEvent>();
+        AddIfMissing<Events.MoveFrameChangedEvent>();
+        AddIfMissing<Events.CancelWindowEnteredEvent>();
+        AddIfMissing<Events.CancelWindowExitedEvent>();
+        AddIfMissing<Events.HitConnectedEvent>();
+        AddIfMissing<Events.MoveBlockedEvent>();
+        AddIfMissing<Events.ComboStartedEvent>();
+        AddIfMissing<Events.MoveCanceledEvent>();
+        AddIfMissing<Events.ComboEndedEvent>();
+        AddIfMissing<Events.CharacterSelectedEvent>();
+        AddIfMissing<Events.MatchInitializedEvent>();
+        AddIfMissing<Events.FrameRewoundEvent>();
+        return types;
+    }
+
     // Dispatches all queued events of type T in LIFO order (reverse iteration).
     // LIFO guarantees that when multiple events of the same type are published
     // within one frame, the most recent one fires first. This is load-bearing

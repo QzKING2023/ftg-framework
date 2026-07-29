@@ -57,6 +57,21 @@ internal sealed class CancelWindowTracker
         _openWindows.Clear();
     }
 
+    // Restores cancel window state silently for replay — no events emitted.
+    // Reconstructs _openWindows from the move definition and current frame.
+    public void SilentRestore(int playerId, MoveDefinition move, int currentFrame)
+    {
+        _windows = move.CancelWindows;
+        _activeMoveId = move.MoveId;
+        _openWindows.Clear();
+        for (int i = 0; i < _windows.Count; i++)
+        {
+            var window = _windows[i];
+            if (currentFrame >= window.StartFrame && currentFrame <= window.EndFrame)
+                _openWindows.Add(i);
+        }
+    }
+
     // Full teardown for rewind-to-idle: closes any open windows with the tracked
     // move's id, then forgets the move entirely.
     public void Reset(int playerId, bool immediate = false)

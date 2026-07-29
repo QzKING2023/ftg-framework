@@ -1,9 +1,8 @@
 #nullable enable
-using FTG_Framework.Core;
 
-namespace FTG_Framework.Engine.FrameData;
+namespace FTG_Framework.Core;
 
-internal readonly record struct FrameStateSnapshot(
+public readonly record struct FrameStateSnapshot(
     int Frame,
     string? P1MoveId,
     int P1CurrentFrame,

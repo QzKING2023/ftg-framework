@@ -59,6 +59,7 @@ public static class ProjectScaffolder
         var dirs = File.ReadAllLines(manifestPath)
             .Select(l => l.Trim())
             .Where(l => l.Length > 0 && !l.StartsWith('#'))
+            .Select(l => l.Replace('\\', '/'))
             .ToArray();
         if (dirs.Length == 0)
             throw new InvalidOperationException($"Framework source manifest is empty: {manifestPath}");
@@ -96,8 +97,10 @@ public static class ProjectScaffolder
 
             var destFile = Path.Combine(targetDir, Path.GetFileName(file));
             File.Copy(file, destFile, overwrite: true);
-            // Make copied file writable (template files may be read-only from source control)
-            File.SetAttributes(destFile, FileAttributes.Normal);
+            // Clear read-only flag (template files may be read-only from source control)
+            var attrs = File.GetAttributes(destFile);
+            if ((attrs & FileAttributes.ReadOnly) != 0)
+                File.SetAttributes(destFile, attrs & ~FileAttributes.ReadOnly);
         }
 
         foreach (var dir in Directory.GetDirectories(sourceDir))
@@ -115,8 +118,9 @@ public static class ProjectScaffolder
         }
     }
 
-    // Restore output flows to the console (no redirected pipes to deadlock);
-    // there is no artificial timeout — first-time NuGet restores can take minutes.
+    // Restore output flows to the console (no redirected pipes to deadlock).
+    // A generous timeout guards against hung NuGet servers; first-time restores
+    // can take minutes, but five minutes is enough for any reasonable connection.
     private static void RunDotnetRestore(string targetDir)
     {
         try
@@ -134,7 +138,12 @@ public static class ProjectScaffolder
                 Console.WriteLine("[Scaffold] Warning: could not start dotnet restore. Run 'dotnet restore' manually.");
                 return;
             }
-            process.WaitForExit();
+            if (!process.WaitForExit(300_000))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
+                Console.WriteLine("[Scaffold] Warning: dotnet restore timed out after 5 minutes. Run 'dotnet restore' manually.");
+                return;
+            }
             if (process.ExitCode != 0)
                 Console.WriteLine($"[Scaffold] Warning: dotnet restore exited with code {process.ExitCode}. Run 'dotnet restore' manually.");
         }

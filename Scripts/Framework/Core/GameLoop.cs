@@ -2,11 +2,12 @@
 using System;
 using System.Collections.Generic;
 using FTG_Framework.Core.Events;
+using FTG_Framework.Core.Replay;
 using FTG_Framework.Data;
 using FTG_Framework.Engine.Combo;
 using FTG_Framework.Engine.FrameData;
 using FTG_Framework.Input;
-using FTG_Framework.UI.Training;
+using FTG_Framework.Scenes;
 using Godot;
 
 namespace FTG_Framework.Core;
@@ -21,23 +22,10 @@ public partial class GameLoop : Node
     private IPriorityResolver? _priorityResolver;
     private IFrameDataEngine? _frameDataEngine;
     private readonly List<IModule> _modules = new();
-    private bool _prevBtnA, _prevBtnB, _prevBtnC, _prevBtnD;
-    private PlaybackControls? _playbackControls;
-    private HitboxOverlay? _hitboxOverlay;
-    private FrameDataPanel? _frameDataPanel;
-    private AdvantageDisplay? _advantageDisplay;
-    private InputLog? _inputLog;
     private IComboExecutor? _comboExecutor;
-    private IComboStateTracker? _comboStateTracker;
     private ISOCDResolver? _socdResolver;
-    private CharacterSelect? _characterSelect;
-    private EventBusDebugPanel? _debugPanel;
-
-    // Test control state — edge-tracking prevents repeating triggers per press
-    private bool _prevPauseKey, _prevStepFwdKey, _prevStepBackKey;
-    private bool _prevHitKey, _prevBlockKey, _prevOverlayKey;
-    private bool _prevShowP1Key, _prevShowP2Key;
-    private bool _overlayEnabled;
+    private ISceneManager? _sceneManager;
+    private ReplayOrchestrator? _replayOrchestrator;
 
     public override void _Ready()
     {
@@ -139,57 +127,40 @@ public partial class GameLoop : Node
             RegisterModule(comboExecutor);
 
             var comboStateTracker = new ComboStateTracker(_dataStore);
-            _comboStateTracker = comboStateTracker;
             RegisterModule(comboStateTracker);
 
             _socdResolver = new global::FTG_Framework.Input.DefaultSOCDResolver();
 
-            // --- Training-mode UI panels ---
+            _replayOrchestrator = new ReplayOrchestrator(_frameDataEngine);
 
-            _frameDataPanel = new FrameDataPanel
+            // ── Scene setup ──
+            _sceneManager = new SceneManager(this);
+
+            var characterSelectScene = new CharacterSelectScene
             {
-                PanelPosition = new Vector2(10, 10),
                 DataStore = _dataStore
             };
-            AddChild(_frameDataPanel);
 
-            _advantageDisplay = new AdvantageDisplay
-            {
-                PanelPosition = new Vector2(10, 75)
-            };
-            AddChild(_advantageDisplay);
-
-            _inputLog = new InputLog
-            {
-                PanelPosition = new Vector2(10, 110),
-                InputHistory = _inputHistory
-            };
-            AddChild(_inputLog);
-
-            _playbackControls = new PlaybackControls
-            {
-                FrameDataEngine = _frameDataEngine,
-                InputLog = _inputLog
-            };
-            AddChild(_playbackControls);
-
-            _hitboxOverlay = new HitboxOverlay();
-            AddChild(_hitboxOverlay);
-
-            _characterSelect = new CharacterSelect
+            var trainingScene = new TrainingScene
             {
                 DataStore = _dataStore,
-                PanelPosition = new Vector2(200, 200)
+                InputHistory = _inputHistory,
+                FrameDataEngine = _frameDataEngine
             };
-            AddChild(_characterSelect);
 
-            EventBus.Instance.Subscribe<MatchInitializedEvent>(_OnMatchInitialized);
+            _sceneManager.RegisterScene("character_select", () => new CharacterSelectScene
+            {
+                DataStore = _dataStore
+            });
 
-            _debugPanel = new EventBusDebugPanel();
-            AddChild(_debugPanel);
+            _sceneManager.RegisterScene("training", () => new TrainingScene
+            {
+                DataStore = _dataStore,
+                InputHistory = _inputHistory,
+                FrameDataEngine = _frameDataEngine
+            });
 
-            // --- Debug event logging — outputs to Godot console for verification ---
-            SubscribeDebugEvents();
+            _sceneManager.GoTo("character_select");
         }
         catch (Exception ex)
         {
@@ -207,9 +178,6 @@ public partial class GameLoop : Node
         bool processFrame = ShouldProcessFrame(EventBus.Instance.Paused, EventBus.Instance.StepRequested);
         EventBus.Instance.StepRequested = false;
 
-        // Keys are polled even while paused so edge state (_prevBtn*) stays current —
-        // a button held across the resume boundary must not produce a synthetic
-        // rising edge. Inputs are only recorded when a frame is processed.
         bool back = Godot.Input.IsKeyPressed(Key.A);
         bool forward = Godot.Input.IsKeyPressed(Key.D);
         bool down = Godot.Input.IsKeyPressed(Key.S);
@@ -219,20 +187,22 @@ public partial class GameLoop : Node
         bool btnC = Godot.Input.IsKeyPressed(Key.K);
         bool btnD = Godot.Input.IsKeyPressed(Key.J);
 
-        // Test-key polling — always active (even while paused).
-        bool pauseKey = Godot.Input.IsKeyPressed(Key.P);
-        bool stepFwd = Godot.Input.IsKeyPressed(Key.Right);
-        bool stepBack = Godot.Input.IsKeyPressed(Key.Left);
-        bool hitKey = Godot.Input.IsKeyPressed(Key.H);
-        bool blockKey = Godot.Input.IsKeyPressed(Key.B);
-        bool overlayKey = Godot.Input.IsKeyPressed(Key.O);
-        bool showP1Key = Godot.Input.IsKeyPressed(Key.Key1);
-        bool showP2Key = Godot.Input.IsKeyPressed(Key.Key2);
-
-        ProcessTestKeys(pauseKey, stepFwd, stepBack, hitKey, blockKey, overlayKey, showP1Key, showP2Key);
-
         if (!processFrame)
         {
+            _prevBtnA = btnA;
+            _prevBtnB = btnB;
+            _prevBtnC = btnC;
+            _prevBtnD = btnD;
+            return;
+        }
+
+        // Replay mode — inject recorded events, skip live input
+        if (_replayOrchestrator is { IsPlaying: true })
+        {
+            if (!_replayOrchestrator.ProcessReplayFrame())
+                return;
+            _frameDataEngine?.Update();
+            EventBus.Instance.ProcessFrame();
             _prevBtnA = btnA;
             _prevBtnB = btnB;
             _prevBtnC = btnC;
@@ -275,6 +245,9 @@ public partial class GameLoop : Node
         _frameDataEngine?.Update();
 
         EventBus.Instance.ProcessFrame();
+
+        // Capture FrameDataEngine snapshot for replay recording.
+        _replayOrchestrator?.CaptureSnapshot(EventBus.Instance.CurrentFrame - 1);
     }
 
     public void RegisterModule(IModule module)
@@ -287,14 +260,7 @@ public partial class GameLoop : Node
 
     public override void _ExitTree()
     {
-        EventBus.Instance.Unsubscribe<MatchInitializedEvent>(_OnMatchInitialized);
-        UnsubscribeDebugEvents();
         ShutdownModules(_modules);
-    }
-
-    private void _OnMatchInitialized(MatchInitializedEvent e)
-    {
-        GD.Print($"[GameLoop] Match initialized: P1={e.P1CharacterId} vs P2={e.P2CharacterId}");
     }
 
     // Reverse order: dependents (combo modules) detach before the engines whose
@@ -341,90 +307,5 @@ public partial class GameLoop : Node
         { DirectionValue.Down, DirectionValue.DownBack, DirectionValue.DownForward }
     };
 
-    private void ProcessTestKeys(bool pauseKey, bool stepFwd, bool stepBack,
-        bool hitKey, bool blockKey, bool overlayKey, bool showP1Key, bool showP2Key)
-    {
-        if (pauseKey && !_prevPauseKey)
-            _playbackControls?.TogglePause();
-
-        if (stepFwd && !_prevStepFwdKey)
-            _playbackControls?.StepForward();
-
-        if (stepBack && !_prevStepBackKey)
-            _playbackControls?.StepBackward();
-
-        if (hitKey && !_prevHitKey)
-            _frameDataEngine?.RegisterHit(attackerId: 1, defenderId: 2, moveId: "5LP", isBlocked: false);
-
-        if (blockKey && !_prevBlockKey)
-            _frameDataEngine?.RegisterHit(attackerId: 1, defenderId: 2, moveId: "5HP", isBlocked: true);
-
-        if (overlayKey && !_prevOverlayKey)
-        {
-            _overlayEnabled = !_overlayEnabled;
-            _hitboxOverlay!.Enabled = _overlayEnabled;
-            GD.Print($"[Test] HitboxOverlay Enabled = {_overlayEnabled}");
-        }
-
-        if (showP1Key && !_prevShowP1Key && _inputLog != null)
-        {
-            _inputLog.ShowP1 = !_inputLog.ShowP1;
-            GD.Print($"[Test] InputLog ShowP1 = {_inputLog.ShowP1}");
-        }
-
-        if (showP2Key && !_prevShowP2Key && _inputLog != null)
-        {
-            _inputLog.ShowP2 = !_inputLog.ShowP2;
-            GD.Print($"[Test] InputLog ShowP2 = {_inputLog.ShowP2}");
-        }
-
-        _prevPauseKey = pauseKey;
-        _prevStepFwdKey = stepFwd;
-        _prevStepBackKey = stepBack;
-        _prevHitKey = hitKey;
-        _prevBlockKey = blockKey;
-        _prevOverlayKey = overlayKey;
-        _prevShowP1Key = showP1Key;
-        _prevShowP2Key = showP2Key;
-    }
-
-    private Action<MoveFrameChangedEvent>? _dbgMoveFrame;
-    private Action<CancelWindowEnteredEvent>? _dbgCancelEnter;
-    private Action<CancelWindowExitedEvent>? _dbgCancelExit;
-    private Action<HitConnectedEvent>? _dbgHit;
-    private Action<MoveBlockedEvent>? _dbgBlock;
-    private Action<InputReceivedEvent>? _dbgInput;
-
-    private void SubscribeDebugEvents()
-    {
-        _dbgMoveFrame ??= e =>
-            GD.Print($"[DEBUG] MoveFrame: P{e.PlayerId} {e.MoveId} phase={e.Phase} frame={e.CurrentFrame}/{e.TotalFrames}");
-        _dbgCancelEnter ??= e =>
-            GD.Print($"[DEBUG] CancelEnter: P{e.PlayerId} {e.MoveId} cat={e.Category} [{e.StartFrame}-{e.EndFrame}]");
-        _dbgCancelExit ??= e =>
-            GD.Print($"[DEBUG] CancelExited: P{e.PlayerId} {e.MoveId} cat={e.Category}");
-        _dbgHit ??= e =>
-            GD.Print($"[DEBUG] HitConnected: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.HitAdvantage} dmg={e.Damage}");
-        _dbgBlock ??= e =>
-            GD.Print($"[DEBUG] MoveBlocked: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.BlockAdvantage} dmg={e.Damage}");
-        _dbgInput ??= e =>
-            GD.Print($"[DEBUG] InputRecv: P{e.PlayerId} frame={e.Frame} type={e.InputType} val={e.InputValue}");
-
-        EventBus.Instance.Subscribe(_dbgMoveFrame);
-        EventBus.Instance.Subscribe(_dbgCancelEnter);
-        EventBus.Instance.Subscribe(_dbgCancelExit);
-        EventBus.Instance.Subscribe(_dbgHit);
-        EventBus.Instance.Subscribe(_dbgBlock);
-        EventBus.Instance.Subscribe(_dbgInput);
-    }
-
-    private void UnsubscribeDebugEvents()
-    {
-        if (_dbgMoveFrame is not null) EventBus.Instance.Unsubscribe(_dbgMoveFrame);
-        if (_dbgCancelEnter is not null) EventBus.Instance.Unsubscribe(_dbgCancelEnter);
-        if (_dbgCancelExit is not null) EventBus.Instance.Unsubscribe(_dbgCancelExit);
-        if (_dbgHit is not null) EventBus.Instance.Unsubscribe(_dbgHit);
-        if (_dbgBlock is not null) EventBus.Instance.Unsubscribe(_dbgBlock);
-        if (_dbgInput is not null) EventBus.Instance.Unsubscribe(_dbgInput);
-    }
+    private bool _prevBtnA, _prevBtnB, _prevBtnC, _prevBtnD;
 }

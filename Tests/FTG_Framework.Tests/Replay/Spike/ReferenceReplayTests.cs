@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Text.Json;
 using FTG_Framework.Core;
 using FTG_Framework.Core.Events;
-using FTG_Framework.Core.Replay.Spike;
+using FTG_Framework.Core.Replay;
 using FTG_Framework.Data;
 using FTG_Framework.Engine.Combo;
 using Xunit;
@@ -57,7 +57,7 @@ public class ReferenceReplayTests : IDisposable
         //
         // This covers all 4 dispatch phases with 3 event types.
 
-        var recorder = new ReplayRecorder();
+        var recorder = new ReplayRecorder { IsRecording = true };
 
         // Build recording manually — simulating what ProcessFrame would dispatch
         recorder.Record(0, new FrameAdvancedEvent(0));
@@ -120,7 +120,7 @@ public class ReferenceReplayTests : IDisposable
     public void RecordAndReplay_FullComboLifecycle_3ReplayRunsIdentical()
     {
         // Scenario: Full combo lifecycle — 2 hits then combo ends via advantage countdown
-        var recorder = new ReplayRecorder();
+        var recorder = new ReplayRecorder { IsRecording = true };
 
         recorder.Record(0, new FrameAdvancedEvent(0));
 
@@ -179,7 +179,7 @@ public class ReferenceReplayTests : IDisposable
     public void RecordAndReplay_WithInputReceivedEvent_CoversPhase2()
     {
         // Covers Phase 2 (Input System): InputReceivedEvent
-        var recorder = new ReplayRecorder();
+        var recorder = new ReplayRecorder { IsRecording = true };
 
         recorder.Record(0, new FrameAdvancedEvent(0));
         recorder.Record(0, new InputReceivedEvent(1, 0, 0, 3)); // Directional input
@@ -215,7 +215,7 @@ public class ReferenceReplayTests : IDisposable
     public void RecordAndReplay_WithComboEndedEvent_CoversPhase4()
     {
         // Covers Phase 4 (Combo): ComboEndedEvent explicitly in recording
-        var recorder = new ReplayRecorder();
+        var recorder = new ReplayRecorder { IsRecording = true };
 
         recorder.Record(0, new FrameAdvancedEvent(0));
         recorder.Record(0, new MoveFrameChangedEvent(1, "5LP", 1, 10, MovePhase.Startup));
@@ -256,17 +256,12 @@ public class ReferenceReplayTests : IDisposable
     [Fact]
     public void ReplayFile_SerializeDeserialize_RoundTrip()
     {
-        var file = new ReplayFile
+        var entries = new List<ReplayEntry>
         {
-            FrameworkVersion = "2.3.0-spike",
-            DataVersion = 1,
-            FrameCount = 5,
-            Entries = new List<ReplayEntry>
-            {
-                new() { Frame = 0, EventType = "FrameAdvancedEvent", Payload = """{"FrameNumber":0}""" },
-                new() { Frame = 1, EventType = "InputReceivedEvent", Payload = """{"PlayerId":1,"Frame":1,"InputType":0,"InputValue":3}""" },
-            }
+            new(0, "FrameAdvancedEvent", """{"FrameNumber":0}"""),
+            new(1, "InputReceivedEvent", """{"PlayerId":1,"Frame":1,"InputType":0,"InputValue":3}"""),
         };
+        var file = new ReplayFile("2.3.0-spike", 1, 5, entries);
 
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, WriteIndented = true };
         var json = JsonSerializer.Serialize(file, options);

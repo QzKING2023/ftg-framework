@@ -13,4 +13,17 @@ public interface IFrameDataEngine
     void InterruptAndStart(int playerId, string moveId);
     bool RestoreFrame(int frameNumber);
     int EarliestSnapshotFrame { get; }
+
+    /// <summary>
+    /// Returns the snapshot at the given frame for replay recording.
+    /// Returns null if no snapshot exists for that frame.
+    /// </summary>
+    FrameStateSnapshot? TryGetSnapshot(int frameNumber);
+
+    /// <summary>
+    /// Restores internal state from a replay snapshot without publishing
+    /// FrameRewoundEvent or calling RewindFrameCounter. Used for replay start,
+    /// not UI rewind.
+    /// </summary>
+    void RestoreFromReplaySnapshot(FrameStateSnapshot snapshot);
 }

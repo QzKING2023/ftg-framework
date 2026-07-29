@@ -203,6 +203,8 @@ public class PlaybackControlsViewModelTests : IDisposable
             return RestoreResult;
         }
         public void InterruptAndStart(int playerId, string moveId) { }
+        public FrameStateSnapshot? TryGetSnapshot(int frameNumber) => null;
+        public void RestoreFromReplaySnapshot(FrameStateSnapshot snapshot) { }
     }
 
     [Fact]

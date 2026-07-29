@@ -50,7 +50,7 @@ foreach ($dir in $sourceDirs) {
         $relFile = $_.FullName.Substring($srcPath.Length).TrimStart('\')
         $parts = $relFile -split '\\'
         if ($parts | Where-Object { $_ -in @('bin', 'obj', '.godot') }) { return }
-        if ($_.Extension -ieq '.uid') { return }
+        if ($_.Name -like '*.uid') { return }
         # Top-level GameLoop.cs ships separately as GameLoop.cs.template
         if ($parts.Count -eq 1 -and $_.Name -eq 'GameLoop.cs') { return }
 
@@ -83,7 +83,9 @@ if (Test-Path $licenseSrc) {
     Write-Host "  WARN no LICENSE at repo root — Asset Library submission requires one"
 }
 
-# Create zip with a top-level ftg-framework/ folder
+# Create zip with a top-level ftg-framework/ folder.
+# Note: Compress-Archive uses OS-native path separators; consumers and tests
+# normalize entries on read (cross-platform zip tools handle both forms).
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 Compress-Archive -Path $addonDir -DestinationPath $zipPath -Force
 

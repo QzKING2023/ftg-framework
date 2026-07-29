@@ -17,7 +17,7 @@ MANIFEST="$SCRIPT_DIR/framework-source-dirs.txt"
 if [ "${1:-}" != "" ]; then
     VERSION="$1"
 else
-    VERSION="$(sed -n 's/^version="\(.*\)"/\1/p' "$PLUGIN_CFG" | head -1)"
+    VERSION="$(sed -n 's/^version="\([^"]*\)".*/\1/p' "$PLUGIN_CFG" | tr -d '\r' | head -1)"
     [ -n "$VERSION" ] || { echo "ERROR: could not read version from $PLUGIN_CFG" >&2; exit 1; }
 fi
 
@@ -36,22 +36,30 @@ copy_framework_dir() {
     local src="$1" dst="$2"
     [ -d "$src" ] || { echo "ERROR: framework source directory missing: $src" >&2; exit 1; }
     mkdir -p "$dst"
-    (cd "$src" && find . -type f \
-        ! -iname '*.uid' \
-        ! -path './bin/*' ! -path './obj/*' ! -path './.godot/*' \
-        ! -path '*/bin/*' ! -path '*/obj/*' ! -path '*/.godot/*' \
-        -print) | while read -r f; do
+    # Process substitution keeps the loop in the main shell so set -e catches cp failures.
+    while read -r f; do
         rel="${f#./}"
         # Top-level GameLoop.cs ships separately as GameLoop.cs.template
         [ "$rel" = "GameLoop.cs" ] && continue
         mkdir -p "$dst/$(dirname "$rel")"
         cp "$src/$rel" "$dst/$rel"
         echo "  COPY $rel"
-    done
+    done < <(cd "$src" && find . -type f \
+        ! -iname '*.uid' \
+        ! -path './bin/*' ! -path './obj/*' ! -path './.godot/*' \
+        ! -path '*/bin/*' ! -path '*/obj/*' ! -path '*/.godot/*' \
+        -print)
 }
 
-# Shared module manifest — single source of truth for CLI and packagers
-grep -v '^\s*#' "$MANIFEST" | grep -v '^\s*$' | while read -r dir; do
+# Shared module manifest — single source of truth for CLI and packagers.
+# Pre-validate the manifest has content before entering the pipeline so an
+# empty/commented-out manifest is caught as an error, not a cryptic pipefail.
+MANIFEST_DIRS="$(grep -v '^\s*#' "$MANIFEST" | grep -v '^\s*$' || true)"
+if [ -z "$MANIFEST_DIRS" ]; then
+    echo "ERROR: manifest is empty or has no entries: $MANIFEST" >&2
+    exit 1
+fi
+echo "$MANIFEST_DIRS" | while read -r dir; do
     # Addon layout strips the Scripts/Framework/ prefix
     rel="${dir#Scripts/Framework/}"
     copy_framework_dir "$REPO_ROOT/$dir" "$SRC_DIR/$rel"

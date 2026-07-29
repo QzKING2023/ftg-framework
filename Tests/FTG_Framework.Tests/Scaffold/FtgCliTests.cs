@@ -236,18 +236,90 @@ public class FtgCliTests
             // Data
             Assert.True(File.Exists(Path.Combine(scriptsDir, "Data", "DataStore.cs")));
             Assert.True(File.Exists(Path.Combine(scriptsDir, "Data", "example_moves.json")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "Data", "example_characters.json")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "Data", "example_gatling.json")));
 
-            // Engine
+            // Engine — FrameData
             Assert.True(File.Exists(Path.Combine(scriptsDir, "Engine", "FrameData", "FrameDataEngine.cs")));
-            Assert.True(File.Exists(Path.Combine(scriptsDir, "Engine", "Combo", "ComboExecutor.cs")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "Engine", "FrameData", "CancelWindowTracker.cs")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "Engine", "FrameData", "MoveTimeline.cs")));
 
-            // UI
+            // Engine — Combo
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "Engine", "Combo", "ComboExecutor.cs")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "Engine", "Combo", "ChainValidator.cs")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "Engine", "Combo", "ComboStateTracker.cs")));
+
+            // UI — Training panels
             Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "FrameDataPanel.cs")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "AdvantageDisplay.cs")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "InputLog.cs")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "PlaybackControls.cs")));
             Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "EventBusDebugPanel.cs")));
             Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "CharacterSelect.cs")));
 
+            // UI — ViewModels
+            Assert.True(Directory.Exists(Path.Combine(scriptsDir, "UI", "Training", "ViewModels")));
+
             // FrameRateManager
             Assert.True(File.Exists(Path.Combine(tmpDir, "FullModules", "Scripts", "FrameRateManager.cs")));
+        }
+        finally
+        {
+            TryDelete(tmpDir);
+        }
+    }
+
+    [Fact]
+    public void ScaffoldedProject_BuildsSuccessfully()
+    {
+        // Skip if dotnet is not on PATH (e.g., CI without .NET SDK).
+        try
+        {
+            using var probe = Process.Start(new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = "--version",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true
+            });
+            if (probe is null || !probe.WaitForExit(10000) || probe.ExitCode != 0)
+                return;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return;
+        }
+
+        var tmpDir = Path.Combine(Path.GetTempPath(), $"ftg_test_build_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+        try
+        {
+            var projectName = "BuildTest";
+            var exitCode = ProgramHarness.Run("new", projectName, "--output", tmpDir);
+            Assert.Equal(0, exitCode);
+
+            var projectDir = Path.Combine(tmpDir, projectName);
+
+            using var build = Process.Start(new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = "build --no-restore",
+                WorkingDirectory = projectDir,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            });
+            Assert.NotNull(build);
+            Assert.True(build.WaitForExit(120000), "dotnet build timed out");
+
+            if (build.ExitCode != 0)
+            {
+                var stdout = build.StandardOutput.ReadToEnd();
+                var stderr = build.StandardError.ReadToEnd();
+                Assert.Fail($"dotnet build failed with exit code {build.ExitCode}.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}");
+            }
         }
         finally
         {

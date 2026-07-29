@@ -144,6 +144,40 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
             _snapshots.RemoveAt(0);
     }
 
+    public FrameStateSnapshot? TryGetSnapshot(int frameNumber)
+    {
+        for (int i = _snapshots.Count - 1; i >= 0; i--)
+        {
+            if (_snapshots[i].Frame == frameNumber)
+                return _snapshots[i];
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Restores internal state from a replay snapshot silently — no FrameRewoundEvent,
+    /// no RewindFrameCounter, no CancelTracker resync. Used for replay initialization,
+    /// not UI rewind.
+    /// </summary>
+    public void RestoreFromReplaySnapshot(FrameStateSnapshot snapshot)
+    {
+        _snapshots.Clear();
+
+        _p1Timeline.Restore(snapshot.P1MoveId, snapshot.P1CurrentFrame, snapshot.P1Phase);
+        _p2Timeline.Restore(snapshot.P2MoveId, snapshot.P2CurrentFrame, snapshot.P2Phase);
+
+        // Reconstruct cancel tracker state silently — no events emitted during replay setup
+        RestoreCancelTrackerSilent(1, _p1Timeline, _p1CancelTracker);
+        RestoreCancelTrackerSilent(2, _p2Timeline, _p2CancelTracker);
+    }
+
+    private void RestoreCancelTrackerSilent(int playerId, MoveTimeline timeline, CancelWindowTracker tracker)
+    {
+        tracker.Reset(playerId, immediate: true);
+        if (timeline.Phase != MovePhase.Idle && timeline.ActiveMove is not null)
+            tracker.SilentRestore(playerId, timeline.ActiveMove, timeline.CurrentFrame);
+    }
+
     // Restores the exact observable state of frame `frameNumber`. Snapshot k is
     // the pre-tick state of frame k — the state the panel displayed at frame k.
     // The timeline, however, must resume from snapshot frameNumber+1 (the

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FTG_Framework.Core.Replay;
 
 namespace FTG_Framework.Core;
 
@@ -50,6 +51,22 @@ public sealed class EventBus
     public bool Paused { get; set; }
     public bool StepRequested { get; set; }
 
+    /// <summary>
+    /// Attach a recorder to capture all dispatched events for replay.
+    /// Set to null (default) when not recording — zero overhead.
+    /// Must be null during replay playback to prevent double-recording of injected events.
+    /// </summary>
+    internal IReplayRecorder? Recorder { get; set; }
+
+    /// <summary>
+    /// When true, ProcessFrame skips the auto-generated FrameAdvancedEvent in Phase 1.
+    /// Set during replay playback to prevent double-dispatch of FrameAdvancedEvent
+    /// (once from the injected recording, once from ProcessFrame).
+    /// </summary>
+    internal bool SuppressFrameAdvanced { get; set; }
+
+    private int _dispatchFrame;
+
     // Rewinds after a state restore: the next processed frame re-executes as
     // nextFrame, keeping snapshots, input history, and displays in one frame
     // domain. Queued events from the abandoned future are purged.
@@ -98,6 +115,11 @@ public sealed class EventBus
     // events would either never arrive or arrive stale (LIFO) on resume.
     public void PublishImmediate<T>(T evt) where T : struct
     {
+        // Record rewind/restore events that bypass the queue.
+        // IMPORTANT: During replay playback, Recorder must be null to prevent
+        // double-recording of injected events. See ReplayOrchestrator.
+        Recorder?.Record(_dispatchFrame, evt);
+
         if (_subscribers.TryGetValue(typeof(T), out var handlers))
         {
             var snapshot = handlers.ToArray();
@@ -127,10 +149,13 @@ public sealed class EventBus
     public void ProcessFrame()
     {
         _dispatching = true;
+        _dispatchFrame = _frameNumber;
         try
         {
             // Phase 1: Frame tick
-            _currentQueue.Add(new Events.FrameAdvancedEvent(_frameNumber++));
+            if (!SuppressFrameAdvanced)
+                _currentQueue.Add(new Events.FrameAdvancedEvent(_frameNumber));
+            _frameNumber++;
             DispatchType<Events.FrameAdvancedEvent>();
 
             // Phase 2: Input System events
@@ -153,6 +178,11 @@ public sealed class EventBus
             // Phase 5: UI — read-only observer
             DispatchType<Events.CharacterSelectedEvent>();
             DispatchType<Events.MatchInitializedEvent>();
+            DispatchType<Events.SceneChangingEvent>();
+            DispatchType<Events.SceneChangedEvent>();
+            DispatchType<Events.ReplayStartedEvent>();
+            DispatchType<Events.ReplayEndedEvent>();
+            DispatchType<Events.ReplayPausedEvent>();
 
             System.Diagnostics.Debug.Assert(_currentQueue.Count == 0,
                 $"[EventBus] {_currentQueue.Count} unhandled event(s) remain after dispatch — unknown event type in queue.");
@@ -205,6 +235,11 @@ public sealed class EventBus
         AddIfMissing<Events.CharacterSelectedEvent>();
         AddIfMissing<Events.MatchInitializedEvent>();
         AddIfMissing<Events.FrameRewoundEvent>();
+        AddIfMissing<Events.SceneChangingEvent>();
+        AddIfMissing<Events.SceneChangedEvent>();
+        AddIfMissing<Events.ReplayStartedEvent>();
+        AddIfMissing<Events.ReplayEndedEvent>();
+        AddIfMissing<Events.ReplayPausedEvent>();
         return types;
     }
 
@@ -221,6 +256,7 @@ public sealed class EventBus
             if (_currentQueue[i] is T evt)
             {
                 _currentQueue.RemoveAt(i);
+                Recorder?.Record(_dispatchFrame, evt);
                 if (_subscribers.TryGetValue(typeof(T), out var handlers))
                 {
                     var snapshot = handlers.ToArray();

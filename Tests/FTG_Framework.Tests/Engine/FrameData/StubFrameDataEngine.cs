@@ -28,4 +28,8 @@ internal sealed class StubFrameDataEngine : IFrameDataEngine
     public void Update() { }
 
     public bool RestoreFrame(int frameNumber) => false;
+
+    public FrameStateSnapshot? TryGetSnapshot(int frameNumber) => null;
+
+    public void RestoreFromReplaySnapshot(FrameStateSnapshot snapshot) { }
 }

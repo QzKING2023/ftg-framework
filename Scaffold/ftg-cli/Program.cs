@@ -1,4 +1,5 @@
 #nullable enable
+
 namespace FTG_Framework.Scaffold;
 
 public static class Program
@@ -8,6 +9,20 @@ public static class Program
         "CON", "PRN", "AUX", "NUL",
         "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+    };
+
+    private static readonly HashSet<string> CSharpKeywords = new()
+    {
+        "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char",
+        "checked", "class", "const", "continue", "decimal", "default", "delegate", "do",
+        "double", "else", "enum", "event", "explicit", "extern", "false", "finally",
+        "fixed", "float", "for", "foreach", "goto", "if", "implicit", "in", "int",
+        "interface", "internal", "is", "lock", "long", "namespace", "new", "null",
+        "object", "operator", "out", "override", "params", "private", "protected",
+        "public", "readonly", "ref", "return", "sbyte", "sealed", "short", "sizeof",
+        "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true",
+        "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using",
+        "var", "virtual", "void", "volatile", "while"
     };
 
     public static int Main(string[] args)
@@ -58,6 +73,11 @@ public static class Program
                     return 1;
                 }
                 outputPath = args[++i];
+                if (string.IsNullOrEmpty(outputPath))
+                {
+                    Console.Error.WriteLine("[Scaffold] --output value must not be empty.");
+                    return 1;
+                }
             }
             else
             {
@@ -79,16 +99,32 @@ public static class Program
             ? Path.Combine(outputPath, projectName)
             : Path.Combine(Directory.GetCurrentDirectory(), projectName);
 
-        targetDir = Path.GetFullPath(targetDir);
+        try
+        {
+            targetDir = Path.GetFullPath(targetDir);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Scaffold] Invalid target path: {ex.Message}");
+            return 1;
+        }
 
         // Check if target exists
         var targetExisted = Directory.Exists(targetDir);
         if (targetExisted)
         {
-            var entries = Directory.GetFileSystemEntries(targetDir);
-            if (entries.Length > 0)
+            try
             {
-                Console.Error.WriteLine($"[Scaffold] Directory already exists and is not empty: {targetDir}");
+                var entries = Directory.GetFileSystemEntries(targetDir);
+                if (entries.Length > 0)
+                {
+                    Console.Error.WriteLine($"[Scaffold] Directory already exists and is not empty: {targetDir}");
+                    return 1;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Scaffold] Cannot read target directory: {ex.Message}");
                 return 1;
             }
         }
@@ -118,7 +154,6 @@ public static class Program
             Console.WriteLine();
             Console.WriteLine("Next steps:");
             Console.WriteLine($"  cd {targetDir}");
-            Console.WriteLine("  dotnet restore");
             Console.WriteLine("  dotnet build");
             Console.WriteLine("  Open project.godot in the Godot editor");
             return 0;
@@ -131,8 +166,6 @@ public static class Program
         }
     }
 
-    // The scaffold only runs against a non-existent or empty target, so on failure
-    // deleting everything under it restores the pre-run state and unblocks retries.
     private static void CleanupPartialScaffold(string targetDir, bool targetExisted)
     {
         try
@@ -142,10 +175,17 @@ public static class Program
             {
                 foreach (var entry in Directory.GetFileSystemEntries(targetDir))
                 {
-                    if (Directory.Exists(entry))
-                        Directory.Delete(entry, recursive: true);
-                    else
-                        File.Delete(entry);
+                    try
+                    {
+                        if (Directory.Exists(entry))
+                            Directory.Delete(entry, recursive: true);
+                        else
+                            File.Delete(entry);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[Scaffold] Warning: could not remove '{entry}': {ex.Message}");
+                    }
                 }
             }
             else
@@ -170,8 +210,12 @@ public static class Program
         if (ReservedNames.Contains(name))
             return "Project name is a reserved operating system name.";
 
-        // The name becomes the C# RootNamespace/AssemblyName and is substituted into
-        // XML (csproj) and INI (project.godot), so it must be a valid C# identifier.
+        if (name.All(c => c == '_'))
+            return "Project name must not be only underscores.";
+
+        if (CSharpKeywords.Contains(name))
+            return "Project name must not be a C# reserved keyword (it becomes the namespace).";
+
         if (!char.IsLetter(name[0]) && name[0] != '_')
             return "Project name must start with a letter or underscore (it becomes the C# namespace).";
 
@@ -212,29 +256,45 @@ public static class Program
                 FileName = "dotnet",
                 Arguments = "--version",
                 UseShellExecute = false,
-                CreateNoWindow = true
+                CreateNoWindow = true,
+                RedirectStandardOutput = true
             });
             if (process is null)
             {
                 PrintDotnetMissing();
                 return false;
             }
+
             if (!process.WaitForExit(10000))
             {
-                try { process.Kill(); } catch { /* best effort */ }
+                try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
                 Console.Error.WriteLine("[Scaffold] 'dotnet --version' timed out. Check your .NET SDK installation.");
                 return false;
             }
+
             if (process.ExitCode != 0)
             {
                 PrintDotnetMissing();
                 return false;
             }
+
+            var versionOutput = process.StandardOutput.ReadToEnd().Trim();
+            if (!TryParseMajorVersion(versionOutput, out var major))
+            {
+                Console.Error.WriteLine("[Scaffold] Could not determine .NET SDK version. Install .NET SDK 10+ from https://dotnet.microsoft.com/download");
+                return false;
+            }
+
+            if (major < 10)
+            {
+                Console.Error.WriteLine($"[Scaffold] .NET SDK {major}.x detected, but SDK 10+ is required. Install .NET SDK 10+ from https://dotnet.microsoft.com/download");
+                return false;
+            }
+
             return true;
         }
         catch (System.ComponentModel.Win32Exception)
         {
-            // dotnet executable not found on PATH
             PrintDotnetMissing();
             return false;
         }
@@ -243,6 +303,16 @@ public static class Program
             Console.Error.WriteLine($"[Scaffold] Failed to probe dotnet: {ex.Message}");
             return false;
         }
+    }
+
+    private static bool TryParseMajorVersion(string versionOutput, out int major)
+    {
+        major = 0;
+        if (string.IsNullOrWhiteSpace(versionOutput)) return false;
+        var trimmed = versionOutput.TrimStart('v', 'V');
+        var dotIndex = trimmed.IndexOf('.');
+        var numberPart = dotIndex > 0 ? trimmed[..dotIndex] : trimmed;
+        return int.TryParse(numberPart, out major);
     }
 
     private static void PrintDotnetMissing()

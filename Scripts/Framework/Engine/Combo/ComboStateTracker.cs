@@ -9,7 +9,6 @@ namespace FTG_Framework.Engine.Combo;
 internal sealed class ComboStateTracker : IModule, IComboStateTracker
 {
     private readonly Dictionary<int, ComboTrack> _tracks = new();
-    private readonly HashSet<int> _moveStartedThisFrame = new();
     private Action<string, int>? _onComboHit;
     private bool _initialized;
 
@@ -21,6 +20,7 @@ internal sealed class ComboStateTracker : IModule, IComboStateTracker
         public int StartFrame;
         public int PendingAdvantage;
         public bool AttackerIdle;
+        public string LastObservedMoveId = string.Empty;
     }
 
     public ComboStateTracker(IDataStore dataStore)
@@ -45,7 +45,6 @@ internal sealed class ComboStateTracker : IModule, IComboStateTracker
         EventBus.Instance.Unsubscribe<MoveBlockedEvent>(OnMoveBlocked);
         EventBus.Instance.Unsubscribe<MoveFrameChangedEvent>(OnMoveFrameChanged);
         _tracks.Clear();
-        _moveStartedThisFrame.Clear();
         _initialized = false;
     }
 
@@ -83,8 +82,6 @@ internal sealed class ComboStateTracker : IModule, IComboStateTracker
 
     private void OnFrameAdvanced(FrameAdvancedEvent evt)
     {
-        _moveStartedThisFrame.Clear();
-
         foreach (var (playerId, track) in _tracks)
         {
             if (!track.Active || !track.AttackerIdle || track.PendingAdvantage <= 0)
@@ -104,11 +101,13 @@ internal sealed class ComboStateTracker : IModule, IComboStateTracker
         if (evt.Phase != MovePhase.Idle)
         {
             track.AttackerIdle = false;
-            _moveStartedThisFrame.Add(evt.PlayerId);
+            track.LastObservedMoveId = evt.MoveId;
             return;
         }
 
-        if (_moveStartedThisFrame.Remove(evt.PlayerId))
+        if (track.LastObservedMoveId.Length > 0 &&
+            evt.MoveId.Length > 0 &&
+            track.LastObservedMoveId != evt.MoveId)
             return;
 
         track.AttackerIdle = true;
@@ -124,6 +123,7 @@ internal sealed class ComboStateTracker : IModule, IComboStateTracker
         track.CurrentMoveId = string.Empty;
         track.PendingAdvantage = 0;
         track.AttackerIdle = false;
+        track.LastObservedMoveId = string.Empty;
     }
 
     public bool IsActive(int playerId) =>

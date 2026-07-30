@@ -73,15 +73,20 @@ internal sealed class MoveTimeline
         int activeEnd = startupEnd + _move.Active;
         int recoveryEnd = activeEnd + _move.Recovery;
 
-        if (_phase == MovePhase.Startup && _currentFrame >= startupEnd)
-            _phase = MovePhase.Active;
-        else if (_phase == MovePhase.Active && _currentFrame >= activeEnd)
-            _phase = MovePhase.Recovery;
-        else if (_phase == MovePhase.Recovery && _currentFrame >= recoveryEnd)
+        while (_move is not null)
         {
-            _phase = MovePhase.Idle;
-            _move = null;
-            _currentFrame = 0;
+            if (_phase == MovePhase.Startup && _currentFrame >= startupEnd)
+                _phase = MovePhase.Active;
+            else if (_phase == MovePhase.Active && _currentFrame >= activeEnd)
+                _phase = MovePhase.Recovery;
+            else if (_phase == MovePhase.Recovery && _currentFrame >= recoveryEnd)
+            {
+                _phase = MovePhase.Idle;
+                _move = null;
+                _currentFrame = 0;
+            }
+            else
+                break;
         }
     }
 }

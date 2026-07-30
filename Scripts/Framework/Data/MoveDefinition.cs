@@ -1,3 +1,4 @@
+#nullable enable
 using System.Collections.Generic;
 
 namespace FTG_Framework.Data;
@@ -13,4 +14,6 @@ public sealed class MoveDefinition
     public int Damage { get; init; }
     public IReadOnlyList<CancelWindow> CancelWindows { get; init; } = new List<CancelWindow>();
     public bool ChainRepeatable { get; init; }
+    public string? KnockbackProfileId { get; init; }
+    public string? MoveName { get; init; }
 }

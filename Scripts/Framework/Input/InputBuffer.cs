@@ -59,6 +59,14 @@ internal sealed class InputBuffer : IModule, IInputBuffer
         var results = new List<MatchResult>();
         foreach (var match in directionMatches)
         {
+            bool isNeutralNormal =
+                match.SequenceLength == 1 &&
+                match.RequiredButton is ButtonValue.A or ButtonValue.B;
+            if (isNeutralNormal &&
+                (match.MatchedAtFrame != currentFrame ||
+                 !ButtonExistsAtFrame(buttonHistory, match.RequiredButton, currentFrame)))
+                continue;
+
             if (ButtonExistsInWindow(buttonHistory, match.RequiredButton, bufferFrom, currentFrame))
                 results.Add(match);
         }
@@ -76,6 +84,20 @@ internal sealed class InputBuffer : IModule, IInputBuffer
         {
             var entry = buttonHistory[i];
             if (entry.Frame >= fromFrame && entry.Frame <= toFrame && entry.Value == (int)requiredButton)
+                return true;
+        }
+        return false;
+    }
+
+    private static bool ButtonExistsAtFrame(
+        IReadOnlyList<InputEntry> buttonHistory,
+        ButtonValue requiredButton,
+        int frame)
+    {
+        for (int i = 0; i < buttonHistory.Count; i++)
+        {
+            var entry = buttonHistory[i];
+            if (entry.Frame == frame && entry.Value == (int)requiredButton)
                 return true;
         }
         return false;

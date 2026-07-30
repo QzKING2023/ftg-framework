@@ -46,6 +46,12 @@ public static class ProjectScaffolder
             throw new FileNotFoundException($"FrameRateManager.cs not found: {frameRateManagerSrc}");
         File.Copy(frameRateManagerSrc, frameRateManagerDst, overwrite: true);
 
+        // 5.5 Copy Characters/ directory (scene template .tscn)
+        var charactersSrc = Path.Combine(repoRoot, "Characters");
+        var charactersDst = Path.Combine(targetDir, "Characters");
+        if (Directory.Exists(charactersSrc))
+            CopyDirectory(charactersSrc, charactersDst);
+
         // 6. Run dotnet restore
         RunDotnetRestore(targetDir);
     }

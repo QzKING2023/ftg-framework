@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using FTG_Framework.Characters;
 using FTG_Framework.Core;
 using FTG_Framework.Core.Events;
 using FTG_Framework.Data;
@@ -13,14 +14,20 @@ public partial class TrainingScene : Node, IScene
     public IDataStore? DataStore { get; set; }
     public IInputHistory? InputHistory { get; set; }
     public IFrameDataEngine? FrameDataEngine { get; set; }
+    public IStateMachine? StateMachine { get; set; }
 
     private PlaybackControls? _playbackControls;
     private HitboxOverlay? _hitboxOverlay;
     private InputLog? _inputLog;
     private bool _overlayEnabled;
+    private readonly TrainingStateRecovery _stateRecovery = new();
+    private bool _pendingTrainingHitRecovery;
+    private bool _pendingTrainingBlockRecovery;
 
     public void Enter(ISceneManager manager)
     {
+        InstantiateCharacters();
+
         var frameDataPanel = new FrameDataPanel
         {
             PanelPosition = new Vector2(10, 10),
@@ -57,8 +64,97 @@ public partial class TrainingScene : Node, IScene
         SubscribeDebugEvents();
     }
 
+    private void InstantiateCharacters()
+    {
+        var templatePath = "res://Characters/character_template.tscn";
+        if (!Godot.FileAccess.FileExists(templatePath))
+        {
+            GD.PushWarning($"[TrainingScene] Character template not found at {templatePath}");
+            return;
+        }
+
+        var scene = ResourceLoader.Load<PackedScene>(templatePath);
+        if (scene is null)
+        {
+            GD.PushError($"[TrainingScene] Failed to load PackedScene from {templatePath}");
+            return;
+        }
+
+        var visibleRect = GetViewport().GetVisibleRect();
+        if (!TryCalculateCharacterSpawnPositions(visibleRect, out var p1Position, out var p2Position))
+        {
+            GD.PushWarning(
+                $"[TrainingScene] Visible viewport {visibleRect.Size} is unsupported; " +
+                "character labels require at least 500x120.");
+            return;
+        }
+
+        var p1Node = scene.Instantiate();
+        if (p1Node is not CharacterController p1)
+        {
+            GD.PushError("[TrainingScene] Template root node is not CharacterController.");
+            p1Node.QueueFree();
+            return;
+        }
+
+        p1.PlayerId = 1;
+        p1.Position = p1Position;
+
+        var p2Node = scene.Instantiate();
+        if (p2Node is not CharacterController p2)
+        {
+            GD.PushError("[TrainingScene] Template root node is not CharacterController (P2).");
+            p2Node.QueueFree();
+            p1.Free();
+            return;
+        }
+
+        p2.PlayerId = 2;
+        p2.Position = p2Position;
+
+        AddChild(p1);
+        AddChild(p2);
+    }
+
+    internal static bool TryCalculateCharacterSpawnPositions(
+        Rect2 visibleRect, out Vector2 p1Position, out Vector2 p2Position)
+    {
+        const float halfSeparation = 200.0f;
+        const float labelHalfWidth = 50.0f;
+        const float labelTopOffset = -60.0f;
+        const float minimumWidth = 2.0f * (halfSeparation + labelHalfWidth);
+        const float minimumHeight = -2.0f * labelTopOffset;
+
+        if (!visibleRect.Position.IsFinite() ||
+            !visibleRect.Size.IsFinite() ||
+            visibleRect.Size.X < minimumWidth ||
+            visibleRect.Size.Y < minimumHeight)
+        {
+            p1Position = Vector2.Zero;
+            p2Position = Vector2.Zero;
+            return false;
+        }
+
+        var center = visibleRect.Position + visibleRect.Size / 2.0f;
+        p1Position = center - new Vector2(halfSeparation, 0);
+        p2Position = center + new Vector2(halfSeparation, 0);
+
+        if (!p1Position.IsFinite() ||
+            !p2Position.IsFinite() ||
+            p2Position.X - p1Position.X != 2.0f * halfSeparation)
+        {
+            p1Position = Vector2.Zero;
+            p2Position = Vector2.Zero;
+            return false;
+        }
+
+        return true;
+    }
+
     public void Exit()
     {
+        if (StateMachine is not null)
+            _stateRecovery.RestoreIfOwned(StateMachine);
         UnsubscribeDebugEvents();
     }
 
@@ -98,10 +194,16 @@ public partial class TrainingScene : Node, IScene
             _playbackControls?.StepBackward();
 
         if (hitKey && !_prevHitKey)
+        {
+            _pendingTrainingHitRecovery = true;
             FrameDataEngine?.RegisterHit(attackerId: 1, defenderId: 2, moveId: "5LP", isBlocked: false);
+        }
 
         if (blockKey && !_prevBlockKey)
+        {
+            _pendingTrainingBlockRecovery = true;
             FrameDataEngine?.RegisterHit(attackerId: 1, defenderId: 2, moveId: "5HP", isBlocked: true);
+        }
 
         if (overlayKey && !_prevOverlayKey)
         {
@@ -138,6 +240,7 @@ public partial class TrainingScene : Node, IScene
     private Action<InputReceivedEvent>? _dbgInput;
     private Action<ReplayStartedEvent>? _dbgReplayStart;
     private Action<ReplayEndedEvent>? _dbgReplayEnd;
+    private Action<FrameAdvancedEvent>? _trainingFrameAdvanced;
 
     private void SubscribeDebugEvents()
     {
@@ -148,15 +251,38 @@ public partial class TrainingScene : Node, IScene
         _dbgCancelExit ??= e =>
             GD.Print($"[DEBUG] CancelExited: P{e.PlayerId} {e.MoveId} cat={e.Category}");
         _dbgHit ??= e =>
+        {
             GD.Print($"[DEBUG] HitConnected: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.HitAdvantage} dmg={e.Damage}");
+            if (_pendingTrainingHitRecovery && e.AttackerId == 1 && e.DefenderId == 2)
+            {
+                _pendingTrainingHitRecovery = false;
+                _stateRecovery.Start(CharacterState.Hitstun);
+                EventBus.Instance.Publish(new MoveFrameChangedEvent(
+                    1, e.MoveId, 0, 0, MovePhase.Idle));
+            }
+        };
         _dbgBlock ??= e =>
+        {
             GD.Print($"[DEBUG] MoveBlocked: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.BlockAdvantage} dmg={e.Damage}");
+            if (_pendingTrainingBlockRecovery && e.AttackerId == 1 && e.DefenderId == 2)
+            {
+                _pendingTrainingBlockRecovery = false;
+                _stateRecovery.Start(CharacterState.Blockstun);
+                EventBus.Instance.Publish(new MoveFrameChangedEvent(
+                    1, e.MoveId, 0, 0, MovePhase.Idle));
+            }
+        };
         _dbgInput ??= e =>
             GD.Print($"[DEBUG] InputRecv: P{e.PlayerId} frame={e.Frame} type={e.InputType} val={e.InputValue}");
         _dbgReplayStart ??= e =>
             GD.Print($"[DEBUG] ReplayStarted: {e.TotalFrames} frames, dataVersion={e.DataVersion}");
         _dbgReplayEnd ??= e =>
             GD.Print($"[DEBUG] ReplayEnded: {e.TotalFramesPlayed} frames played");
+        _trainingFrameAdvanced ??= _ =>
+        {
+            if (StateMachine is not null)
+                _stateRecovery.AdvanceProcessedFrame(StateMachine);
+        };
 
         EventBus.Instance.Subscribe(_dbgMoveFrame);
         EventBus.Instance.Subscribe(_dbgCancelEnter);
@@ -166,6 +292,7 @@ public partial class TrainingScene : Node, IScene
         EventBus.Instance.Subscribe(_dbgInput);
         EventBus.Instance.Subscribe(_dbgReplayStart!);
         EventBus.Instance.Subscribe(_dbgReplayEnd!);
+        EventBus.Instance.Subscribe(_trainingFrameAdvanced);
     }
 
     private void UnsubscribeDebugEvents()
@@ -178,5 +305,53 @@ public partial class TrainingScene : Node, IScene
         if (_dbgInput is not null) EventBus.Instance.Unsubscribe(_dbgInput);
         if (_dbgReplayStart is not null) EventBus.Instance.Unsubscribe(_dbgReplayStart);
         if (_dbgReplayEnd is not null) EventBus.Instance.Unsubscribe(_dbgReplayEnd);
+        if (_trainingFrameAdvanced is not null) EventBus.Instance.Unsubscribe(_trainingFrameAdvanced);
+        _pendingTrainingHitRecovery = false;
+        _pendingTrainingBlockRecovery = false;
+    }
+}
+
+internal sealed class TrainingStateRecovery
+{
+    internal const int HitstunFrames = 30;
+    internal const int BlockstunFrames = 20;
+    private CharacterState? _expectedState;
+    private int _remainingFrames;
+
+    internal void Start(CharacterState state)
+    {
+        _expectedState = state;
+        _remainingFrames = state == CharacterState.Hitstun ? HitstunFrames : BlockstunFrames;
+    }
+
+    internal void Cancel()
+    {
+        _expectedState = null;
+        _remainingFrames = 0;
+    }
+
+    internal void AdvanceProcessedFrame(IStateMachine stateMachine)
+    {
+        if (_expectedState is not { } expected) return;
+        if (stateMachine.GetCurrentState(2) != expected)
+        {
+            Cancel();
+            return;
+        }
+
+        _remainingFrames--;
+        if (_remainingFrames > 0) return;
+        Cancel();
+        stateMachine.PopState(2);
+    }
+
+    internal void RestoreIfOwned(IStateMachine stateMachine)
+    {
+        if (_expectedState is { } expected &&
+            stateMachine.GetCurrentState(2) == expected)
+        {
+            stateMachine.PopState(2);
+        }
+        Cancel();
     }
 }

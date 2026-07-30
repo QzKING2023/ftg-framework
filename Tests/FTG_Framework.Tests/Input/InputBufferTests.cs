@@ -144,4 +144,42 @@ public class InputBufferTests : System.IDisposable
         Assert.Single(results);
         Assert.Equal("dp_c", results[0].MoveId);
     }
+
+    [Fact]
+    public void TryMatch_NeutralNormal_RequiresDirectionMatchOnCurrentFrame()
+    {
+        for (int i = 0; i < 10; i++) EventBus.Instance.ProcessFrame();
+        int currentFrame = EventBus.Instance.CurrentFrame;
+        var history = new StubInputHistory();
+        history.AddButtonEntry(1, currentFrame, ButtonValue.A);
+        var leniency = new StubInputLeniency
+        {
+            TryMatchResult = new List<MatchResult>
+            {
+                new("5LP", ButtonValue.A, currentFrame - 1, 1)
+            }
+        };
+        var buffer = new InputBuffer(history, leniency, bufferDuration: 6);
+
+        Assert.Empty(buffer.TryMatch(1));
+
+        leniency.TryMatchResult = new List<MatchResult>
+        {
+            new("5LP", ButtonValue.A, currentFrame, 1),
+            new("dp_c", ButtonValue.C, currentFrame - 5, 3)
+        };
+        history.AddButtonEntry(1, currentFrame, ButtonValue.C);
+        var matches = buffer.TryMatch(1);
+        Assert.Contains(matches, match => match.MoveId == "5LP");
+        Assert.Contains(matches, match => match.MoveId == "dp_c");
+
+        history = new StubInputHistory();
+        history.AddButtonEntry(1, currentFrame - 1, ButtonValue.A);
+        buffer = new InputBuffer(history, leniency, bufferDuration: 6);
+        leniency.TryMatchResult = new List<MatchResult>
+        {
+            new("5LP", ButtonValue.A, currentFrame, 1)
+        };
+        Assert.Empty(buffer.TryMatch(1));
+    }
 }

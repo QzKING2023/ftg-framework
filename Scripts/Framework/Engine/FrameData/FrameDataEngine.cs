@@ -115,7 +115,14 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
         }
         timeline.StartMove(move);
         GetCancelTracker(playerId)!.TrackMove(playerId, move);
-        EventBus.Instance.Publish(new MoveStartedEvent(playerId, moveId));
+        if (timeline.Phase == MovePhase.Idle)
+        {
+            EventBus.Instance.Publish(new MoveFrameChangedEvent(
+                playerId, string.Empty, 0, 0, MovePhase.Idle));
+            return;
+        }
+        if (timeline.Phase == MovePhase.Startup)
+            EventBus.Instance.Publish(new MoveStartedEvent(playerId, moveId));
         FrameworkLog.Info?.Invoke($"[FrameData] P{playerId} started '{moveId}' — startup {move.Startup}f, active {move.Active}f, recovery {move.Recovery}f.");
     }
 
@@ -272,15 +279,27 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
     {
         if (timeline.Phase == MovePhase.Idle) return;
 
-        EventBus.Instance.Publish(new MoveFrameChangedEvent(
-            playerId, timeline.MoveId!, timeline.CurrentFrame, timeline.TotalFrames, timeline.Phase));
-        tracker.EvaluateFrame(playerId, timeline.MoveId!, timeline.CurrentFrame);
+        string moveIdBeforeTick = timeline.MoveId!;
+        int frameBeforeTick = timeline.CurrentFrame;
+        int totalFrames = timeline.TotalFrames;
+        MovePhase phaseBeforeTick = timeline.Phase;
 
-        string? moveIdBeforeTick = timeline.MoveId;
+        tracker.EvaluateFrame(playerId, moveIdBeforeTick, frameBeforeTick);
         timeline.Tick();
 
         if (timeline.Phase == MovePhase.Idle)
-            tracker.CloseAll(playerId, moveIdBeforeTick!);
+        {
+            // Same-type dispatch is LIFO: publish terminal Idle first so consumers
+            // observe the captured final phase followed by Idle.
+            EventBus.Instance.Publish(new MoveFrameChangedEvent(
+                playerId, moveIdBeforeTick, 0, totalFrames, MovePhase.Idle));
+        }
+
+        EventBus.Instance.Publish(new MoveFrameChangedEvent(
+            playerId, moveIdBeforeTick, frameBeforeTick, totalFrames, phaseBeforeTick));
+
+        if (timeline.Phase == MovePhase.Idle)
+            tracker.CloseAll(playerId, moveIdBeforeTick);
     }
 
     private void FlushPendingHits()

@@ -1,0 +1,46 @@
+{
+  "moves": [
+    {
+      "move_id": "5A",
+      "move_name": "Light Punch",
+      "startup": 4,
+      "active": 2,
+      "recovery": 6,
+      "hit_advantage": 2,
+      "block_advantage": -2,
+      "damage": 30,
+      "knockback_profile_id": "light_hit",
+      "cancel_windows": [
+        { "start_frame": 8, "end_frame": 10, "target_category": "normal" }
+      ]
+    },
+    {
+      "move_id": "5B",
+      "move_name": "Medium Punch",
+      "startup": 6,
+      "active": 3,
+      "recovery": 9,
+      "hit_advantage": 4,
+      "block_advantage": -4,
+      "damage": 60,
+      "knockback_profile_id": "medium_hit",
+      "cancel_windows": [
+        { "start_frame": 13, "end_frame": 16, "target_category": "special" }
+      ]
+    },
+    {
+      "move_id": "2A",
+      "move_name": "Crouch Light",
+      "startup": 3,
+      "active": 2,
+      "recovery": 5,
+      "hit_advantage": 4,
+      "block_advantage": -1,
+      "damage": 20,
+      "knockback_profile_id": "light_hit",
+      "cancel_windows": [
+        { "start_frame": 6, "end_frame": 8, "target_category": "normal" }
+      ]
+    }
+  ]
+}

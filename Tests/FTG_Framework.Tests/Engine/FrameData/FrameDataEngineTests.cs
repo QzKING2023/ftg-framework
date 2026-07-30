@@ -120,7 +120,7 @@ public class FrameDataEngineTests : IDisposable
             }
         });
 
-        Assert.Equal(15, events.Count);
+        Assert.Equal(16, events.Count);
         for (int f = 0; f < 15; f++)
         {
             Assert.Equal(f, events[f].CurrentFrame);
@@ -128,6 +128,7 @@ public class FrameDataEngineTests : IDisposable
             var expected = f < 5 ? MovePhase.Startup : f < 8 ? MovePhase.Active : MovePhase.Recovery;
             Assert.Equal(expected, events[f].Phase);
         }
+        Assert.Equal(MovePhase.Idle, events[^1].Phase);
     }
 
     // --- Dual players (AC 4) ---
@@ -357,6 +358,7 @@ public class FrameDataEngineTests : IDisposable
             if (f == 3) expected.Add("entered:special:3-7");
             if (f == 8) expected.Add("exited:special");
         }
+        expected.Add("mfc:0");
         Assert.Equal(expected, log);
     }
 
@@ -372,7 +374,8 @@ public class FrameDataEngineTests : IDisposable
                 engine.Update();
         });
 
-        Assert.Equal(15, mfc.Count);
+        Assert.Equal(16, mfc.Count);
+        Assert.Single(mfc, evt => evt.Phase == MovePhase.Idle);
         Assert.Empty(entered);
         Assert.Empty(exited);
     }

@@ -22,6 +22,15 @@ public partial class CharacterSelect : Control
 
     internal CharacterSelectViewModel? ViewModel => _vm;
 
+    public void AutoConfirmBoth()
+    {
+        if (_vm is null) return;
+        if (_vm.Roster.Count == 0) return;
+        _vm.ConfirmP1();
+        _vm.ConfirmP2();
+        _RefreshDisplay();
+    }
+
     public override void _Ready()
     {
         if (DataStore is null)

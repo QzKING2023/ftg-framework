@@ -26,6 +26,13 @@ public partial class CharacterSelectScene : Node, IScene
         AddChild(_characterSelect);
 
         manager.Subscribe<MatchInitializedEvent>(OnMatchInitialized);
+
+        CallDeferred(nameof(AutoStartMatch));
+    }
+
+    private void AutoStartMatch()
+    {
+        _characterSelect?.AutoConfirmBoth();
     }
 
     public void Exit()

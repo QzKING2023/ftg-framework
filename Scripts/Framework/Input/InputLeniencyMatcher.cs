@@ -90,14 +90,22 @@ internal sealed class InputLeniencyMatcher : IModule, IInputLeniency
         var results = new List<MatchResult>();
         foreach (var config in _registeredMoves)
         {
+            MatchResult? latestMatch = null;
             foreach (var sequence in config.AcceptedSequences)
             {
                 if (TryMatchSequence(sequence, windowedHistory, out int lastFrame))
                 {
-                    results.Add(new MatchResult(config.MoveId, config.RequiredButton, lastFrame, sequence.Length));
-                    break;
+                    var match = new MatchResult(
+                        config.MoveId, config.RequiredButton, lastFrame, sequence.Length);
+                    if (latestMatch is null ||
+                        match.MatchedAtFrame > latestMatch.Value.MatchedAtFrame)
+                    {
+                        latestMatch = match;
+                    }
                 }
             }
+            if (latestMatch is { } best)
+                results.Add(best);
         }
         return results;
     }
@@ -107,19 +115,32 @@ internal sealed class InputLeniencyMatcher : IModule, IInputLeniency
         IReadOnlyList<InputEntry> history,
         out int lastFrame)
     {
-        int seqIdx = 0;
         lastFrame = 0;
 
-        for (int i = 0; i < history.Count; i++)
+        // Prefer the newest possible completion, then validate preceding sequence
+        // elements backwards. This retains ordered-subsequence leniency while making
+        // MatchedAtFrame represent the latest complete input in the requested window.
+        for (int completion = history.Count - 1; completion >= 0; completion--)
         {
-            if ((int)sequence[seqIdx] == history[i].Value)
+            if (history[completion].Value != (int)sequence[^1])
+                continue;
+
+            int sequenceIndex = sequence.Length - 2;
+            for (int historyIndex = completion - 1;
+                 historyIndex >= 0 && sequenceIndex >= 0;
+                 historyIndex--)
             {
-                lastFrame = history[i].Frame;
-                seqIdx++;
-                if (seqIdx == sequence.Length)
-                    return true;
+                if (history[historyIndex].Value == (int)sequence[sequenceIndex])
+                    sequenceIndex--;
             }
+
+            if (sequenceIndex >= 0)
+                continue;
+
+            lastFrame = history[completion].Frame;
+            return true;
         }
+
         return false;
     }
 }

@@ -6,6 +6,8 @@ Scripts/Framework/Input
 Scripts/Framework/Data
 Scripts/Framework/Engine/FrameData
 Scripts/Framework/Engine/Combo
+Scripts/Framework/Engine/StateMachine
 Scripts/Framework/UI/Training
 Scripts/Framework/Scenes
+Scripts/Framework/Characters
 Scripts/Framework/Editor

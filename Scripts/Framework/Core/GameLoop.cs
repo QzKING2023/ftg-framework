@@ -30,6 +30,9 @@ public partial class GameLoop : Node
     private ReplayOrchestrator? _replayOrchestrator;
     private FileWatcher? _fileWatcher;
 
+    public IStateMachine? StateMachine => _stateMachine;
+    public IInputHistory? InputHistory => _inputHistory;
+
     public override void _Ready()
     {
         try
@@ -80,39 +83,7 @@ public partial class GameLoop : Node
             _chargeTracker = chargeTracker;
 
             var leniencyMatcher = new global::FTG_Framework.Input.InputLeniencyMatcher(inputHistory);
-
-            leniencyMatcher.RegisterMove(new MoveInputConfig
-            {
-                MoveId = "dp_c",
-                AcceptedSequences = new DirectionValue[][]
-                {
-                    new[] { DirectionValue.Forward, DirectionValue.Down, DirectionValue.DownForward }
-                },
-                RequiredButton = ButtonValue.C,
-                Category = MoveCategory.Special
-            });
-
-            leniencyMatcher.RegisterMove(new MoveInputConfig
-            {
-                MoveId = "dp_d",
-                AcceptedSequences = new DirectionValue[][]
-                {
-                    new[] { DirectionValue.Forward, DirectionValue.Down, DirectionValue.DownForward }
-                },
-                RequiredButton = ButtonValue.D,
-                Category = MoveCategory.Special
-            });
-
-            leniencyMatcher.RegisterMove(new MoveInputConfig
-            {
-                MoveId = "fireball_c",
-                AcceptedSequences = new DirectionValue[][]
-                {
-                    new[] { DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward }
-                },
-                RequiredButton = ButtonValue.C,
-                Category = MoveCategory.Special
-            });
+            RegisterDefaultMoves(leniencyMatcher);
 
             RegisterModule(leniencyMatcher);
             _leniencyMatcher = leniencyMatcher;
@@ -165,7 +136,8 @@ public partial class GameLoop : Node
             {
                 DataStore = _dataStore,
                 InputHistory = _inputHistory,
-                FrameDataEngine = _frameDataEngine
+                FrameDataEngine = _frameDataEngine,
+                StateMachine = _stateMachine
             };
 
             _sceneManager.RegisterScene("character_select", () => new CharacterSelectScene
@@ -177,7 +149,8 @@ public partial class GameLoop : Node
             {
                 DataStore = _dataStore,
                 InputHistory = _inputHistory,
-                FrameDataEngine = _frameDataEngine
+                FrameDataEngine = _frameDataEngine,
+                StateMachine = _stateMachine
             });
 
             _sceneManager.GoTo("character_select");
@@ -313,6 +286,31 @@ public partial class GameLoop : Node
             return DirectionValue.Neutral;
         }
         return result;
+    }
+
+    internal static void RegisterDefaultMoves(global::FTG_Framework.Input.InputLeniencyMatcher matcher)
+    {
+        ArgumentNullException.ThrowIfNull(matcher);
+
+        Register("5LP", ButtonValue.A, MoveCategory.Normal, DirectionValue.Neutral);
+        Register("5HP", ButtonValue.B, MoveCategory.Normal, DirectionValue.Neutral);
+        Register("dp_c", ButtonValue.C, MoveCategory.Special,
+            DirectionValue.Forward, DirectionValue.Down, DirectionValue.DownForward);
+        Register("dp_d", ButtonValue.D, MoveCategory.Special,
+            DirectionValue.Forward, DirectionValue.Down, DirectionValue.DownForward);
+        Register("fireball_c", ButtonValue.C, MoveCategory.Special,
+            DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward);
+
+        void Register(string id, ButtonValue button, MoveCategory category, params DirectionValue[] sequence)
+        {
+            matcher.RegisterMove(new MoveInputConfig
+            {
+                MoveId = id,
+                AcceptedSequences = new[] { sequence },
+                RequiredButton = button,
+                Category = category
+            });
+        }
     }
 
     private static DirectionValue FallbackDirection(bool left, bool right, bool down, bool up)

@@ -91,4 +91,9 @@ internal sealed class StubDataStore : IDataStore
         foreach (var p in profiles)
             _physicsResponseProfiles[p.ProfileId] = p;
     }
+
+    public void SetPhysicsResponseProfile(PhysicsResponseProfile profile)
+    {
+        _physicsResponseProfiles[profile.ProfileId] = profile;
+    }
 }

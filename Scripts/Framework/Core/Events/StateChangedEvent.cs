@@ -2,4 +2,4 @@
 
 namespace FTG_Framework.Core.Events;
 
-public readonly record struct StateChangedEvent(int PlayerId);
+public readonly record struct StateChangedEvent(int PlayerId, CharacterState[] OldStack, CharacterState[] NewStack);

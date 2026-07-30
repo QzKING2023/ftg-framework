@@ -6,6 +6,7 @@ using FTG_Framework.Core.Replay;
 using FTG_Framework.Data;
 using FTG_Framework.Engine.Combo;
 using FTG_Framework.Engine.FrameData;
+using FTG_Framework.Engine.StateMachine;
 using FTG_Framework.Input;
 using FTG_Framework.Scenes;
 using Godot;
@@ -21,6 +22,7 @@ public partial class GameLoop : Node
     private IChargeTracker? _chargeTracker;
     private IPriorityResolver? _priorityResolver;
     private IFrameDataEngine? _frameDataEngine;
+    private IStateMachine? _stateMachine;
     private readonly List<IModule> _modules = new();
     private IComboExecutor? _comboExecutor;
     private ISOCDResolver? _socdResolver;
@@ -126,6 +128,19 @@ public partial class GameLoop : Node
             var frameDataEngine = new FrameDataEngine(_dataStore);
             RegisterModule(frameDataEngine);
             _frameDataEngine = frameDataEngine;
+
+            var stateMachine = new global::FTG_Framework.Engine.StateMachine.StateMachine(_dataStore);
+            RegisterModule(stateMachine);
+            _stateMachine = stateMachine;
+
+            stateMachine.InitializePlayer(1);
+            stateMachine.InitializePlayer(2);
+
+            // Register default state→profile mappings
+            stateMachine.RegisterStateProfile(CharacterState.Idle, "default");
+            stateMachine.RegisterStateProfile(CharacterState.Hitstun, "default");
+            stateMachine.RegisterStateProfile(CharacterState.Blockstun, "default");
+            stateMachine.RegisterStateProfile(CharacterState.Airborne, "default");
 
             var comboExecutor = new ComboExecutor(_dataStore, frameDataEngine);
             _comboExecutor = comboExecutor;

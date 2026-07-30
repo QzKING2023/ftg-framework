@@ -1,0 +1,804 @@
+#nullable enable
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using FTG_Framework.Core;
+using FTG_Framework.Core.Events;
+using FTG_Framework.Data;
+using FTG_Framework.Engine.StateMachine;
+using Xunit;
+
+using StateMachineImpl = FTG_Framework.Engine.StateMachine.StateMachine;
+
+namespace FTG_Framework.Tests.Engine.StateMachine;
+
+public class StateMachineTests : IDisposable
+{
+    public StateMachineTests()
+    {
+        EventBusTestHelper.Drain();
+    }
+
+    public void Dispose()
+    {
+        EventBusTestHelper.Drain();
+    }
+
+    private static (StubDataStore store, StateMachineImpl sm, Action dispose) CreateMachine()
+    {
+        var store = new StubDataStore();
+        var sm = new StateMachineImpl(store);
+        sm.Initialize(store);
+        return (store, sm, () => sm.Shutdown());
+    }
+
+    private static void RunWithMachine(Action<StubDataStore, StateMachineImpl> action)
+    {
+        var (store, sm, dispose) = CreateMachine();
+        try
+        {
+            sm.InitializePlayer(1);
+            sm.InitializePlayer(2);
+            action(store, sm);
+        }
+        finally { dispose(); }
+    }
+
+    // ── AC 1: Initial State ──
+
+    [Fact]
+    public void InitializePlayer_SetsIdleState()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(1));
+            Assert.Equal(1, sm.GetStackDepth(1));
+            var stack = sm.GetStack(1);
+            Assert.Single(stack);
+            Assert.Equal(CharacterState.Idle, stack[0]);
+        });
+    }
+
+    [Fact]
+    public void InitializePlayer_Reinitialization_IsRejected()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.Walk);
+            Assert.Equal(2, sm.GetStackDepth(1));
+
+            // Second InitializePlayer should not clobber the existing stack
+            sm.InitializePlayer(1);
+            Assert.Equal(2, sm.GetStackDepth(1));
+            Assert.Equal(CharacterState.Walk, sm.GetCurrentState(1));
+        });
+    }
+
+    [Fact]
+    public void InitializePlayer_PublishesNoEvents()
+    {
+        var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+        {
+            var store = new StubDataStore();
+            var sm = new StateMachineImpl(store);
+            sm.Initialize(store);
+            sm.InitializePlayer(1);
+        });
+        Assert.Empty(events);
+    }
+
+    // ── AC 2: Push State + Event ──
+
+    [Fact]
+    public void PushState_TransitionsCorrectly()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.JumpStartup);
+
+            Assert.Equal(CharacterState.JumpStartup, sm.GetCurrentState(1));
+            Assert.Equal(2, sm.GetStackDepth(1));
+            var stack = sm.GetStack(1);
+            Assert.Equal(2, stack.Count);
+            Assert.Equal(CharacterState.Idle, stack[0]);
+            Assert.Equal(CharacterState.JumpStartup, stack[1]);
+        });
+    }
+
+    [Fact]
+    public void PushState_PublishesStateChangedEvent()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+            {
+                sm.PushState(1, CharacterState.JumpStartup);
+            });
+
+            Assert.Single(events);
+            var e = events[0];
+            Assert.Equal(1, e.PlayerId);
+            Assert.Equal(new[] { CharacterState.Idle }, e.OldStack);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.JumpStartup }, e.NewStack);
+        });
+    }
+
+    [Fact]
+    public void PushState_PublishesStateStackChangedEvent()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            var events = EventBusTestHelper.Collect<StateStackChangedEvent>(() =>
+            {
+                sm.PushState(1, CharacterState.Walk);
+            });
+
+            Assert.Single(events);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Walk }, events[0].Stack);
+        });
+    }
+
+    [Fact]
+    public void PushState_Idle_IsRejected()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+            {
+                sm.PushState(1, CharacterState.Idle);
+            });
+
+            Assert.Empty(events);
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(1));
+        });
+    }
+
+    // ── AC 3: ReplaceState (atomic) ──
+
+    [Fact]
+    public void ReplaceState_AtomicOperation()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.JumpStartup);
+            EventBusTestHelper.Drain();
+
+            var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+            {
+                sm.ReplaceState(1, CharacterState.Hitstun);
+            });
+
+            Assert.Single(events);
+            var e = events[0];
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.JumpStartup }, e.OldStack);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Hitstun }, e.NewStack);
+        });
+    }
+
+    [Fact]
+    public void ReplaceState_WhenTopIsIdle_PushesWithoutPop()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+            {
+                sm.ReplaceState(1, CharacterState.Hitstun);
+            });
+
+            Assert.Single(events);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Hitstun }, events[0].NewStack);
+        });
+    }
+
+    [Fact]
+    public void ReplaceState_PublishesSingleEvent()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.AttackStartup);
+            EventBusTestHelper.Drain();
+
+            var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+            {
+                sm.ReplaceState(1, CharacterState.Hitstun);
+            });
+
+            Assert.Single(events);
+        });
+    }
+
+    // ── AC 4: Transition Guards ──
+
+    [Fact]
+    public void InvalidTransition_FromHitstun_Rejected()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.ReplaceState(1, CharacterState.Hitstun);
+
+            var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+            {
+                sm.PushState(1, CharacterState.Walk);
+            });
+
+            Assert.Empty(events);
+            Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(1));
+        });
+    }
+
+    [Fact]
+    public void InvalidTransition_FromHitstun_JumpRejected()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.ReplaceState(1, CharacterState.Hitstun);
+
+            var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+            {
+                sm.PushState(1, CharacterState.JumpStartup);
+            });
+
+            Assert.Empty(events);
+        });
+    }
+
+    [Fact]
+    public void ValidTransition_FromIdle_ToWalk_Allowed()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+            {
+                sm.PushState(1, CharacterState.Walk);
+            });
+
+            Assert.Single(events);
+            Assert.Equal(CharacterState.Walk, sm.GetCurrentState(1));
+        });
+    }
+
+    // ── AC 5: Multiple Coexisting States ──
+
+    [Fact]
+    public void MultipleStates_CoexistOnStack()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.JumpStartup);
+            sm.PushState(1, CharacterState.JumpActive);
+            sm.PushState(1, CharacterState.Airborne);
+            sm.PushState(1, CharacterState.AttackStartup);
+
+            var stack = sm.GetStack(1);
+            Assert.Equal(5, stack.Count);
+            Assert.Equal(CharacterState.Idle, stack[0]);
+            Assert.Equal(CharacterState.JumpStartup, stack[1]);
+            Assert.Equal(CharacterState.JumpActive, stack[2]);
+            Assert.Equal(CharacterState.Airborne, stack[3]);
+            Assert.Equal(CharacterState.AttackStartup, stack[4]);
+        });
+    }
+
+    [Fact]
+    public void TopOfStack_IsCurrentState()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.Airborne);
+            sm.PushState(1, CharacterState.AttackStartup);
+
+            Assert.Equal(CharacterState.AttackStartup, sm.GetCurrentState(1));
+        });
+    }
+
+    // ── AC 6: Pop State ──
+
+    [Fact]
+    public void PopState_ReturnsToPrevious()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            // Build stack: Idle → JumpStartup → JumpActive → Airborne
+            sm.PushState(1, CharacterState.JumpStartup);
+            sm.PushState(1, CharacterState.JumpActive);
+            sm.PushState(1, CharacterState.Airborne);
+            sm.PushState(1, CharacterState.AttackStartup);
+
+            var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+            {
+                sm.PopState(1);
+            });
+
+            Assert.Single(events);
+            Assert.Equal(CharacterState.Airborne, sm.GetCurrentState(1));
+            Assert.Equal(5, events[0].OldStack.Length);
+            Assert.Equal(4, events[0].NewStack.Length);
+        });
+    }
+
+    [Fact]
+    public void PopState_PublishesBothEvents()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.Walk);
+
+            var (changed, stack) = EventBusTestHelper.Collect<StateChangedEvent, StateStackChangedEvent>(() =>
+            {
+                sm.PopState(1);
+            });
+
+            Assert.Single(changed);
+            Assert.Single(stack);
+            Assert.Equal(new[] { CharacterState.Idle }, stack[0].Stack);
+        });
+    }
+
+    // ── AC 7: Pop Idle Guarded ──
+
+    [Fact]
+    public void PopState_WhenOnlyIdle_IsRejected()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+            {
+                sm.PopState(1);
+            });
+
+            Assert.Empty(events);
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(1));
+            Assert.Equal(1, sm.GetStackDepth(1));
+        });
+    }
+
+    // ── AC 8: GetEffectivePhysicsProfile ──
+
+    [Fact]
+    public void GetEffectivePhysicsProfile_MergesTopDown()
+    {
+        RunWithMachine((store, sm) =>
+        {
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "default",
+                KnockbackMultiplier = 1.0f,
+                GravityScale = 1.0f,
+                Friction = 0.5f,
+                AirFriction = 0.2f,
+                ParticipatesInHitstop = true
+            });
+
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "hitstun",
+                KnockbackMultiplier = 0.8f,
+                GravityScale = 1.0f,
+                Friction = 0.3f,
+                AirFriction = 0.1f,
+                ParticipatesInHitstop = true
+            });
+
+            sm.RegisterStateProfile(CharacterState.Idle, "default");
+            sm.RegisterStateProfile(CharacterState.Hitstun, "hitstun");
+
+            sm.ReplaceState(1, CharacterState.Hitstun);
+
+            var profile = sm.GetEffectivePhysicsProfile(1);
+
+            Assert.Equal(0.8f, profile.KnockbackMultiplier);
+            Assert.Equal(0.3f, profile.Friction);
+            Assert.Equal(0.1f, profile.AirFriction);
+        });
+    }
+
+    [Fact]
+    public void GetEffectivePhysicsProfile_TopOverridesBottom()
+    {
+        RunWithMachine((store, sm) =>
+        {
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "idle_profile",
+                KnockbackMultiplier = 1.0f,
+                Friction = 0.5f
+            });
+
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "air_profile",
+                KnockbackMultiplier = 0.5f,
+                Friction = 0.2f
+            });
+
+            sm.RegisterStateProfile(CharacterState.Idle, "idle_profile");
+            sm.RegisterStateProfile(CharacterState.Airborne, "air_profile");
+
+            // Build stack: Idle → JumpStartup → JumpActive → Airborne
+            sm.PushState(1, CharacterState.JumpStartup);
+            sm.PushState(1, CharacterState.JumpActive);
+            sm.PushState(1, CharacterState.Airborne);
+
+            var profile = sm.GetEffectivePhysicsProfile(1);
+
+            Assert.Equal(0.5f, profile.KnockbackMultiplier);
+            Assert.Equal(0.2f, profile.Friction);
+        });
+    }
+
+    // ── AC 9: Custom State + Custom Profile ──
+
+    [Fact]
+    public void RegisterStateProfile_AssociatesCorrectly()
+    {
+        RunWithMachine((store, sm) =>
+        {
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "custom_blockstun",
+                KnockbackMultiplier = 0.3f
+            });
+
+            sm.RegisterStateProfile(CharacterState.Blockstun, "custom_blockstun");
+            sm.ReplaceState(1, CharacterState.Blockstun);
+
+            var profile = sm.GetEffectivePhysicsProfile(1);
+
+            Assert.Equal(0.3f, profile.KnockbackMultiplier);
+        });
+    }
+
+    // ── AC 10: Empty Stack Default ──
+
+    [Fact]
+    public void GetEffectivePhysicsProfile_UninitializedPlayer_ReturnsDefault()
+    {
+        var (store, sm, dispose) = CreateMachine();
+        try
+        {
+            var profile = sm.GetEffectivePhysicsProfile(1);
+
+            Assert.Equal(1.0f, profile.KnockbackMultiplier);
+            Assert.Equal(1.0f, profile.GravityScale);
+            Assert.Equal(0.5f, profile.Friction);
+            Assert.Equal(0.2f, profile.AirFriction);
+            Assert.True(profile.ParticipatesInHitstop);
+        }
+        finally { dispose(); }
+    }
+
+    [Fact]
+    public void GetEffectivePhysicsProfile_UnregisteredState_UsesDefault()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.Walk);
+
+            var profile = sm.GetEffectivePhysicsProfile(1);
+
+            Assert.Equal(1.0f, profile.KnockbackMultiplier);
+        });
+    }
+
+    // ── AC 11: Event Payloads ──
+
+    [Fact]
+    public void EventPayload_ContainsFullStacks()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.JumpStartup);
+            sm.PushState(1, CharacterState.JumpActive);
+
+            EventBusTestHelper.Drain();
+
+            var events = EventBusTestHelper.Collect<StateChangedEvent>(() =>
+            {
+                sm.PushState(1, CharacterState.AttackStartup);
+            });
+
+            Assert.Single(events);
+            Assert.Equal(3, events[0].OldStack.Length);
+            Assert.Equal(4, events[0].NewStack.Length);
+            Assert.Equal(CharacterState.Idle, events[0].OldStack[0]);
+            Assert.Equal(CharacterState.AttackStartup, events[0].NewStack[^1]);
+        });
+    }
+
+    // ── Player 2 independence ──
+
+    [Fact]
+    public void Player2_IndependentStack()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.Walk);
+
+            Assert.Equal(CharacterState.Walk, sm.GetCurrentState(1));
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(2));
+            Assert.Equal(2, sm.GetStackDepth(1));
+            Assert.Equal(1, sm.GetStackDepth(2));
+        });
+    }
+
+    // ── Stack copy safety ──
+
+    [Fact]
+    public void GetStack_ReturnsCopy()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            var stack = (List<CharacterState>)sm.GetStack(1);
+            stack.Add(CharacterState.Walk);
+
+            Assert.Equal(1, sm.GetStackDepth(1));
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(1));
+        });
+    }
+
+    [Fact]
+    public void GetStackDepth_MatchesStackCount()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            Assert.Equal(1, sm.GetStackDepth(1));
+            sm.PushState(1, CharacterState.Walk);
+            Assert.Equal(2, sm.GetStackDepth(1));
+            sm.PushState(1, CharacterState.JumpStartup);
+            Assert.Equal(3, sm.GetStackDepth(1));
+        });
+    }
+
+    // ── Shutdown ──
+
+    [Fact]
+    public void Shutdown_ClearsState()
+    {
+        var (store, sm, dispose) = CreateMachine();
+        sm.InitializePlayer(1);
+        sm.PushState(1, CharacterState.Walk);
+        dispose();
+
+        Assert.Equal(0, sm.GetStackDepth(1));
+    }
+
+    [Fact]
+    public void Shutdown_PreventsEventHandlers()
+    {
+        var (store, sm, dispose) = CreateMachine();
+        sm.InitializePlayer(1);
+        dispose();
+
+        // After shutdown, event handlers should not fire
+        EventBusTestHelper.Drain();
+        EventBus.Instance.Publish(new HitConnectedEvent(1, 2, "5A", 5, 50));
+        EventBus.Instance.ProcessFrame();
+
+        Assert.Equal(0, sm.GetStackDepth(1));
+    }
+
+    // ── RegisterStateProfile ──
+
+    [Fact]
+    public void RegisterStateProfile_NonexistentProfileId_LogsWarning()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            // Should not throw — just logs warning for unknown profile
+            sm.RegisterStateProfile(CharacterState.Hitstun, "nonexistent_profile");
+
+            // Querying effective profile with this mapping returns defaults
+            sm.ReplaceState(1, CharacterState.Hitstun);
+            var profile = sm.GetEffectivePhysicsProfile(1);
+            Assert.Equal(1.0f, profile.KnockbackMultiplier);
+        });
+    }
+
+    // ── Merge direction: top-of-stack wins ──
+
+    [Fact]
+    public void GetEffectivePhysicsProfile_TopWins_NotBottom()
+    {
+        RunWithMachine((store, sm) =>
+        {
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "bottom_hit",
+                KnockbackMultiplier = 0.3f
+            });
+
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "top_hit",
+                KnockbackMultiplier = 0.8f
+            });
+
+            sm.RegisterStateProfile(CharacterState.Idle, "bottom_hit");
+            sm.RegisterStateProfile(CharacterState.Hitstun, "top_hit");
+
+            sm.ReplaceState(1, CharacterState.Hitstun);
+
+            var profile = sm.GetEffectivePhysicsProfile(1);
+
+            // Top (Hitstun: 0.8) should win, not bottom (Idle: 0.3)
+            Assert.Equal(0.8f, profile.KnockbackMultiplier);
+        });
+    }
+
+    // ── Event-Driven Transitions ──
+
+    [Fact]
+    public void OnMoveStarted_PushesAttackStartup()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            EventBusTestHelper.Drain();
+
+            EventBus.Instance.Publish(new MoveStartedEvent(1, "5A"));
+            EventBus.Instance.ProcessFrame();
+
+            Assert.Equal(CharacterState.AttackStartup, sm.GetCurrentState(1));
+        });
+    }
+
+    [Fact]
+    public void OnMoveFrameChanged_TransitionsPhases()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.AttackStartup);
+            EventBusTestHelper.Drain();
+
+            EventBus.Instance.Publish(new MoveFrameChangedEvent(1, "5A", 3, 10, MovePhase.Active));
+            EventBus.Instance.ProcessFrame();
+
+            Assert.Equal(CharacterState.AttackActive, sm.GetCurrentState(1));
+
+            EventBus.Instance.Publish(new MoveFrameChangedEvent(1, "5A", 8, 10, MovePhase.Recovery));
+            EventBus.Instance.ProcessFrame();
+
+            Assert.Equal(CharacterState.AttackRecovery, sm.GetCurrentState(1));
+        });
+    }
+
+    [Fact]
+    public void OnHitConnected_DefenderGoesToHitstun()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            EventBusTestHelper.Drain();
+
+            EventBus.Instance.Publish(new HitConnectedEvent(1, 2, "5A", 5, 50));
+            EventBus.Instance.ProcessFrame();
+
+            Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(1));
+        });
+    }
+
+    [Fact]
+    public void OnMoveBlocked_DefenderGoesToBlockstun()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            EventBusTestHelper.Drain();
+
+            EventBus.Instance.Publish(new MoveBlockedEvent(1, 2, "5A", 2, 40));
+            EventBus.Instance.ProcessFrame();
+
+            Assert.Equal(CharacterState.Blockstun, sm.GetCurrentState(2));
+        });
+    }
+
+    [Fact]
+    public void OnMoveFrameChanged_Idle_ResetsToIdle()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.AttackStartup);
+            sm.PushState(1, CharacterState.AttackActive);
+            sm.PushState(1, CharacterState.AttackRecovery);
+            EventBusTestHelper.Drain();
+
+            // Simulate move ending — FrameDataEngine sends Idle phase
+            EventBus.Instance.Publish(new MoveFrameChangedEvent(1, string.Empty, 0, 0, MovePhase.Idle));
+            EventBus.Instance.ProcessFrame();
+
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(1));
+            Assert.Equal(1, sm.GetStackDepth(1));
+        });
+    }
+
+    [Fact]
+    public void OnMoveStarted_BypassesGuard_WhenGuardWouldReject()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            // Put player in Hitstun — guard table says Hitstun → AttackStartup is NOT allowed
+            sm.ReplaceState(1, CharacterState.Hitstun);
+            EventBusTestHelper.Drain();
+
+            // MoveStarted is authoritative — should bypass guard and push AttackStartup
+            EventBus.Instance.Publish(new MoveStartedEvent(1, "5A"));
+            EventBus.Instance.ProcessFrame();
+
+            Assert.Equal(CharacterState.AttackStartup, sm.GetCurrentState(1));
+        });
+    }
+
+    [Fact]
+    public void OnMoveCanceled_PopsAttackStates()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.AttackStartup);
+            sm.PushState(1, CharacterState.AttackActive);
+            EventBusTestHelper.Drain();
+
+            EventBus.Instance.Publish(new MoveCanceledEvent(1, "5B", "5C", "special"));
+            EventBus.Instance.ProcessFrame();
+
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(1));
+        });
+    }
+
+    [Fact]
+    public void OnComboEnded_ResetsToIdle()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.ReplaceState(1, CharacterState.Hitstun);
+            EventBusTestHelper.Drain();
+
+            EventBus.Instance.Publish(new ComboEndedEvent(1, 3, "5B"));
+            EventBus.Instance.ProcessFrame();
+
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(1));
+        });
+    }
+
+    // ── PlayerId Validation ──
+
+    [Fact]
+    public void InvalidPlayerId_Throws()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => sm.PushState(0, CharacterState.Walk));
+            Assert.Throws<ArgumentOutOfRangeException>(() => sm.PushState(3, CharacterState.Walk));
+        });
+    }
+
+    [Fact]
+    public void InvalidPlayerId_QueryMethods_Throws()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => sm.GetCurrentState(0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => sm.GetCurrentState(3));
+            Assert.Throws<ArgumentOutOfRangeException>(() => sm.GetStack(0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => sm.GetStackDepth(3));
+            Assert.Throws<ArgumentOutOfRangeException>(() => sm.GetEffectivePhysicsProfile(-1));
+        });
+    }
+
+    // ── StateStackChangedEvent on all mutation operations ──
+
+    [Fact]
+    public void ReplaceState_PublishesStateStackChangedEvent()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.PushState(1, CharacterState.JumpStartup);
+            EventBusTestHelper.Drain();
+
+            var events = EventBusTestHelper.Collect<StateStackChangedEvent>(() =>
+            {
+                sm.ReplaceState(1, CharacterState.Hitstun);
+            });
+
+            Assert.Single(events);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Hitstun }, events[0].Stack);
+        });
+    }
+}

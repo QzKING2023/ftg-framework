@@ -115,6 +115,7 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
         }
         timeline.StartMove(move);
         GetCancelTracker(playerId)!.TrackMove(playerId, move);
+        EventBus.Instance.Publish(new MoveStartedEvent(playerId, moveId));
         FrameworkLog.Info?.Invoke($"[FrameData] P{playerId} started '{moveId}' — startup {move.Startup}f, active {move.Active}f, recovery {move.Recovery}f.");
     }
 

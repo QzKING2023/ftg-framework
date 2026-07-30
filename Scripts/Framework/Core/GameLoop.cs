@@ -26,6 +26,7 @@ public partial class GameLoop : Node
     private ISOCDResolver? _socdResolver;
     private ISceneManager? _sceneManager;
     private ReplayOrchestrator? _replayOrchestrator;
+    private FileWatcher? _fileWatcher;
 
     public override void _Ready()
     {
@@ -63,6 +64,10 @@ public partial class GameLoop : Node
             {
                 FrameworkLog.Info?.Invoke("[Data] No character roster file found — character select will be inert.");
             }
+
+            _fileWatcher = new FileWatcher(
+                ProjectSettings.GlobalizePath("res://Scripts/Framework/Data/"),
+                "*.json");
 
             var inputHistory = new global::FTG_Framework.Input.InputHistory(capacity: 600);
             RegisterModule(inputHistory);
@@ -260,6 +265,7 @@ public partial class GameLoop : Node
 
     public override void _ExitTree()
     {
+        _fileWatcher?.Dispose();
         ShutdownModules(_modules);
     }
 

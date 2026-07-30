@@ -14,4 +14,10 @@ public interface IDataStore
     CharacterDefinition? GetCharacter(string characterId);
     IReadOnlyList<CharacterDefinition> GetAllCharacters();
     void RegisterCharacter(CharacterDefinition character);
+    KnockbackProfile? GetKnockbackProfile(string profileId);
+    IReadOnlyList<KnockbackProfile> GetAllKnockbackProfiles();
+    void SetKnockbackProfiles(KnockbackProfile[] profiles);
+    PhysicsResponseProfile? GetPhysicsResponseProfile(string profileId);
+    IReadOnlyList<PhysicsResponseProfile> GetAllPhysicsResponseProfiles();
+    void SetPhysicsResponseProfiles(PhysicsResponseProfile[] profiles);
 }

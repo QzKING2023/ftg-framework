@@ -11,9 +11,15 @@ internal sealed class DataStore : IDataStore
     private readonly Dictionary<string, MoveDefinition> _moves;
     private readonly Dictionary<string, GatlingTable> _gatlingTables;
     private readonly Dictionary<string, CharacterDefinition> _characters;
+    private readonly Dictionary<string, KnockbackProfile> _knockbackProfiles;
+    private readonly Dictionary<string, PhysicsResponseProfile> _physicsResponseProfiles;
     private readonly HashSet<string> _knownCategories;
 
-    public DataStore(MoveDefinition[] moves, GatlingTable[]? gatlingTables = null)
+    public DataStore(
+        MoveDefinition[] moves,
+        GatlingTable[]? gatlingTables = null,
+        KnockbackProfile[]? knockbackProfiles = null,
+        PhysicsResponseProfile[]? physicsResponseProfiles = null)
     {
         ArgumentNullException.ThrowIfNull(moves);
         _moves = new Dictionary<string, MoveDefinition>();
@@ -38,6 +44,13 @@ internal sealed class DataStore : IDataStore
         }
 
         _characters = new Dictionary<string, CharacterDefinition>();
+
+        _knockbackProfiles = new Dictionary<string, KnockbackProfile>();
+        _physicsResponseProfiles = new Dictionary<string, PhysicsResponseProfile>();
+        if (knockbackProfiles is not null)
+            SetKnockbackProfiles(knockbackProfiles);
+        if (physicsResponseProfiles is not null)
+            SetPhysicsResponseProfiles(physicsResponseProfiles);
     }
 
     public void SetGatlingTable(GatlingTable table)
@@ -158,5 +171,57 @@ internal sealed class DataStore : IDataStore
             throw new ArgumentException("[Data] Character has null or empty DisplayName.", nameof(character));
         if (!_characters.TryAdd(character.CharacterId, character))
             throw new InvalidOperationException($"[Data] Duplicate CharacterId registration: '{character.CharacterId}'.");
+    }
+
+    public KnockbackProfile? GetKnockbackProfile(string profileId)
+    {
+        if (profileId is null)
+            return null;
+        _knockbackProfiles.TryGetValue(profileId, out var profile);
+        return profile;
+    }
+
+    public IReadOnlyList<KnockbackProfile> GetAllKnockbackProfiles()
+    {
+        return _knockbackProfiles.Values.ToList();
+    }
+
+    public void SetKnockbackProfiles(KnockbackProfile[] profiles)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        _knockbackProfiles.Clear();
+        foreach (var profile in profiles)
+        {
+            if (string.IsNullOrEmpty(profile.ProfileId))
+                throw new FormatException("[Data] KnockbackProfile has null or empty profile_id.");
+            if (!_knockbackProfiles.TryAdd(profile.ProfileId, profile))
+                throw new FormatException($"[Data] Duplicate knockback_profile_id: '{profile.ProfileId}'.");
+        }
+    }
+
+    public PhysicsResponseProfile? GetPhysicsResponseProfile(string profileId)
+    {
+        if (profileId is null)
+            return null;
+        _physicsResponseProfiles.TryGetValue(profileId, out var profile);
+        return profile;
+    }
+
+    public IReadOnlyList<PhysicsResponseProfile> GetAllPhysicsResponseProfiles()
+    {
+        return _physicsResponseProfiles.Values.ToList();
+    }
+
+    public void SetPhysicsResponseProfiles(PhysicsResponseProfile[] profiles)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        _physicsResponseProfiles.Clear();
+        foreach (var profile in profiles)
+        {
+            if (string.IsNullOrEmpty(profile.ProfileId))
+                throw new FormatException("[Data] PhysicsResponseProfile has null or empty profile_id.");
+            if (!_physicsResponseProfiles.TryAdd(profile.ProfileId, profile))
+                throw new FormatException($"[Data] Duplicate physics_response_profile_id: '{profile.ProfileId}'.");
+        }
     }
 }

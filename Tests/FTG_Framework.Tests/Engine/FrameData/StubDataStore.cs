@@ -52,4 +52,43 @@ internal sealed class StubDataStore : IDataStore
         if (!_characters.TryAdd(character.CharacterId, character))
             throw new InvalidOperationException($"[Data] Duplicate CharacterId registration: '{character.CharacterId}'.");
     }
+
+    private readonly Dictionary<string, KnockbackProfile> _knockbackProfiles = new();
+    private readonly Dictionary<string, PhysicsResponseProfile> _physicsResponseProfiles = new();
+
+    public KnockbackProfile? GetKnockbackProfile(string profileId)
+    {
+        if (profileId is null)
+            return null;
+        _knockbackProfiles.TryGetValue(profileId, out var profile);
+        return profile;
+    }
+
+    public IReadOnlyList<KnockbackProfile> GetAllKnockbackProfiles() =>
+        new List<KnockbackProfile>(_knockbackProfiles.Values);
+
+    public void SetKnockbackProfiles(KnockbackProfile[] profiles)
+    {
+        _knockbackProfiles.Clear();
+        foreach (var p in profiles)
+            _knockbackProfiles[p.ProfileId] = p;
+    }
+
+    public PhysicsResponseProfile? GetPhysicsResponseProfile(string profileId)
+    {
+        if (profileId is null)
+            return null;
+        _physicsResponseProfiles.TryGetValue(profileId, out var profile);
+        return profile;
+    }
+
+    public IReadOnlyList<PhysicsResponseProfile> GetAllPhysicsResponseProfiles() =>
+        new List<PhysicsResponseProfile>(_physicsResponseProfiles.Values);
+
+    public void SetPhysicsResponseProfiles(PhysicsResponseProfile[] profiles)
+    {
+        _physicsResponseProfiles.Clear();
+        foreach (var p in profiles)
+            _physicsResponseProfiles[p.ProfileId] = p;
+    }
 }

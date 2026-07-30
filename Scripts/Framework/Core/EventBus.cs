@@ -1,13 +1,14 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using FTG_Framework.Core.Replay;
 
 namespace FTG_Framework.Core;
 
 /// <summary>
-/// Process-global, single-threaded event bus with a 5-phase frame pipeline.
+/// Process-global, single-threaded event bus with an 8-phase frame pipeline (AD-12).
 ///
-/// <b>AD-4 Dispatch Semantics</b>
+/// <b>Dispatch Semantics</b>
 ///
 /// <b>1. LIFO same-type dispatch.</b> Within a single dispatch phase, events of the
 /// same type are dispatched in last-in-first-out order — the most recently published
@@ -15,7 +16,7 @@ namespace FTG_Framework.Core;
 /// of the same type during one frame (e.g., all CancelWindowEntered fire before any
 /// CancelWindowExited within the same phase group).
 ///
-/// <b>2. Per-phase grouping.</b> <c>ProcessFrame()</c> partitions dispatch into five
+/// <b>2. Per-phase grouping.</b> <c>ProcessFrame()</c> partitions dispatch into eight
 /// ordered phases. All events of a given type are dispatched together before moving
 /// to the next type. Types within a phase are dispatched in the order listed in
 /// <c>ProcessFrame()</c>.
@@ -25,13 +26,16 @@ namespace FTG_Framework.Core;
 /// and dispatched during the following frame. This prevents unbounded re-entry and
 /// keeps frame boundaries well-defined.
 ///
-/// <b>Five-phase pipeline:</b>
+/// <b>Eight-phase pipeline (AD-12):</b>
 /// <list type="number">
+/// <item>Phase 0 — Hot-Reload: drain <c>DataReloadedEvent</c> from FileWatcher</item>
 /// <item>Phase 1 — Frame tick: <c>FrameAdvancedEvent</c> (auto-injected)</item>
 /// <item>Phase 2 — Input System: <c>InputReceivedEvent</c>, <c>InputBufferExpiredEvent</c>, <c>ChargeStateChangedEvent</c></item>
-/// <item>Phase 3 — Frame Data Engine: <c>MoveFrameChangedEvent</c>, <c>CancelWindowEnteredEvent</c>, <c>CancelWindowExitedEvent</c>, <c>HitConnectedEvent</c>, <c>MoveBlockedEvent</c></item>
-/// <item>Phase 4 — Combo Exec: <c>ComboStartedEvent</c>, <c>MoveCanceledEvent</c>, <c>ComboEndedEvent</c></item>
-/// <item>Phase 5 — UI: <c>CharacterSelectedEvent</c>, <c>MatchInitializedEvent</c> (character select flow)</item>
+/// <item>Phase 3 — Frame Data Engine: <c>MoveFrameChangedEvent</c>, <c>CancelWindowEnteredEvent</c>, <c>CancelWindowExitedEvent</c>, <c>MoveStartedEvent</c></item>
+/// <item>Phase 4 — Physics: <c>HitConnectedEvent</c>, <c>MoveBlockedEvent</c>, <c>KnockbackAppliedEvent</c></item>
+/// <item>Phase 5 — State Machine: <c>StateChangedEvent</c>, <c>StateStackChangedEvent</c></item>
+/// <item>Phase 6 — Combo System: <c>ComboStartedEvent</c>, <c>MoveCanceledEvent</c>, <c>ComboEndedEvent</c></item>
+/// <item>Phase 7 — UI: <c>CharacterSelectedEvent</c>, <c>MatchInitializedEvent</c>, <c>SceneChangingEvent</c>, <c>SceneChangedEvent</c>, <c>ReplayStartedEvent</c>, <c>ReplayEndedEvent</c>, <c>ReplayPausedEvent</c></item>
 /// </list>
 /// </summary>
 public sealed class EventBus
@@ -43,6 +47,7 @@ public sealed class EventBus
     private readonly Dictionary<Type, List<Delegate>> _subscribers = new();
     private readonly List<object> _currentQueue = new();
     private readonly List<object> _nextQueue = new();
+    private readonly ConcurrentQueue<Events.DataReloadedEvent> _pendingReloads = new();
     private bool _dispatching;
     private int _frameNumber;
 
@@ -75,6 +80,14 @@ public sealed class EventBus
         _frameNumber = nextFrame;
         _currentQueue.Clear();
         _nextQueue.Clear();
+        while (_pendingReloads.TryDequeue(out _)) { }
+    }
+
+    // Thread-safe enqueue for FileWatcher running on OS background threads.
+    // Drained at step 0 of ProcessFrame on the main thread.
+    internal void EnqueueDataReload(Events.DataReloadedEvent evt)
+    {
+        _pendingReloads.Enqueue(evt);
     }
 
     private EventBus() { }
@@ -137,13 +150,16 @@ public sealed class EventBus
         }
     }
 
-    // 5-phase dispatch pipeline. Each phase dispatches all queued events of its
-    // declared types before the next phase begins. The ordering is fixed:
+    // 8-phase dispatch pipeline (AD-12). Each phase dispatches all queued events
+    // of its declared types before the next phase begins. The ordering is fixed:
+    //   0. Hot-Reload      (DataReloaded — drained from FileWatcher)
     //   1. Frame tick      (FrameAdvanced — auto-injected)
     //   2. Input System    (InputReceived, InputBufferExpired, ChargeStateChanged)
-    //   3. Frame Data Engine (MoveFrameChanged, CancelWindow*, HitConnected, MoveBlocked)
-    //   4. Combo Exec      (ComboStarted, MoveCanceled, ComboEnded)
-    //   5. UI              (read-only observer; no events dispatched here)
+    //   3. Frame Data Engine (MoveFrameChanged, CancelWindow*, MoveStarted)
+    //   4. Physics         (HitConnected, MoveBlocked, KnockbackApplied)
+    //   5. State Machine   (StateChanged, StateStackChanged)
+    //   6. Combo System    (ComboStarted, MoveCanceled, ComboEnded)
+    //   7. UI              (CharacterSelected, MatchInitialized, Scene*, Replay*)
     // This ordering guarantees that downstream systems see the upstream
     // system's events before their own subscribers run.
     public void ProcessFrame()
@@ -152,6 +168,11 @@ public sealed class EventBus
         _dispatchFrame = _frameNumber;
         try
         {
+            // Phase 0: Hot-Reload — drain DataReloadedEvent from FileWatcher
+            while (_pendingReloads.TryDequeue(out var reloadEvt))
+                _currentQueue.Add(reloadEvt);
+            DispatchType<Events.DataReloadedEvent>();
+
             // Phase 1: Frame tick
             if (!SuppressFrameAdvanced)
                 _currentQueue.Add(new Events.FrameAdvancedEvent(_frameNumber));
@@ -167,15 +188,23 @@ public sealed class EventBus
             DispatchType<Events.MoveFrameChangedEvent>();
             DispatchType<Events.CancelWindowEnteredEvent>();
             DispatchType<Events.CancelWindowExitedEvent>();
+            DispatchType<Events.MoveStartedEvent>();
+
+            // Phase 4: Physics events
             DispatchType<Events.HitConnectedEvent>();
             DispatchType<Events.MoveBlockedEvent>();
+            DispatchType<Events.KnockbackAppliedEvent>();
 
-            // Phase 4: Combo Exec events
+            // Phase 5: State Machine events
+            DispatchType<Events.StateChangedEvent>();
+            DispatchType<Events.StateStackChangedEvent>();
+
+            // Phase 6: Combo System events
             DispatchType<Events.ComboStartedEvent>();
             DispatchType<Events.MoveCanceledEvent>();
             DispatchType<Events.ComboEndedEvent>();
 
-            // Phase 5: UI — read-only observer
+            // Phase 7: UI — read-only observer
             DispatchType<Events.CharacterSelectedEvent>();
             DispatchType<Events.MatchInitializedEvent>();
             DispatchType<Events.SceneChangingEvent>();
@@ -220,6 +249,7 @@ public sealed class EventBus
             var t = typeof(T);
             if (!types.Contains(t)) types.Add(t);
         }
+        AddIfMissing<Events.DataReloadedEvent>();
         AddIfMissing<Events.FrameAdvancedEvent>();
         AddIfMissing<Events.InputReceivedEvent>();
         AddIfMissing<Events.InputBufferExpiredEvent>();
@@ -227,8 +257,12 @@ public sealed class EventBus
         AddIfMissing<Events.MoveFrameChangedEvent>();
         AddIfMissing<Events.CancelWindowEnteredEvent>();
         AddIfMissing<Events.CancelWindowExitedEvent>();
+        AddIfMissing<Events.MoveStartedEvent>();
         AddIfMissing<Events.HitConnectedEvent>();
         AddIfMissing<Events.MoveBlockedEvent>();
+        AddIfMissing<Events.KnockbackAppliedEvent>();
+        AddIfMissing<Events.StateChangedEvent>();
+        AddIfMissing<Events.StateStackChangedEvent>();
         AddIfMissing<Events.ComboStartedEvent>();
         AddIfMissing<Events.MoveCanceledEvent>();
         AddIfMissing<Events.ComboEndedEvent>();

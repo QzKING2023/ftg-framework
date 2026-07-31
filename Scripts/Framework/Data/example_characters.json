@@ -2,11 +2,21 @@
   {
     "characterId": "ryu",
     "displayName": "Ryu",
-    "scenePath": "res://Characters/Ryu/Ryu.tscn"
+    "scenePath": "res://Characters/character_template.tscn",
+    "neutralHurtboxes": [
+      { "boxId": "head", "x": 0, "y": -44, "width": 20, "height": 20 },
+      { "boxId": "body", "x": 0, "y": -20, "width": 24, "height": 28 },
+      { "boxId": "legs", "x": 0, "y": 4, "width": 20, "height": 24 }
+    ]
   },
   {
     "characterId": "ken",
     "displayName": "Ken",
-    "scenePath": "res://Characters/Ken/Ken.tscn"
+    "scenePath": "res://Characters/character_template.tscn",
+    "neutralHurtboxes": [
+      { "boxId": "head", "x": 0, "y": -44, "width": 20, "height": 20 },
+      { "boxId": "body", "x": 0, "y": -20, "width": 24, "height": 28 },
+      { "boxId": "legs", "x": 0, "y": 4, "width": 20, "height": 24 }
+    ]
   }
 ]

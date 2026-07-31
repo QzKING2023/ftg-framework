@@ -16,4 +16,5 @@ public sealed class MoveDefinition
     public bool ChainRepeatable { get; init; }
     public string? KnockbackProfileId { get; init; }
     public string? MoveName { get; init; }
+    public IReadOnlyList<CollisionFrameDefinition> CollisionFrames { get; init; } = new List<CollisionFrameDefinition>();
 }

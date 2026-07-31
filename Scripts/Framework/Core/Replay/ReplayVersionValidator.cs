@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Reflection;
 using System.Text.Json;
 
 namespace FTG_Framework.Core.Replay;
@@ -9,7 +10,8 @@ namespace FTG_Framework.Core.Replay;
 /// </summary>
 public static class ReplayVersionValidator
 {
-    public const int CurrentDataVersion = 1;
+    public const int CurrentDataVersion = 2;
+    public const int PreviousDataVersion = 1;
 
     public static void ValidateDeserializedEvent(object? evt, string eventTypeName)
     {
@@ -17,9 +19,11 @@ public static class ReplayVersionValidator
             throw new InvalidOperationException($"[Replay] Deserialized event '{eventTypeName}' is null.");
 
         var type = evt.GetType();
+        var nullability = new NullabilityInfoContext();
         foreach (var prop in type.GetProperties())
         {
-            if (prop.PropertyType == typeof(string))
+            if (prop.PropertyType == typeof(string) &&
+                nullability.Create(prop).ReadState == NullabilityState.NotNull)
             {
                 var value = prop.GetValue(evt) as string;
                 if (value is null)
@@ -34,7 +38,7 @@ public static class ReplayVersionValidator
     /// </summary>
     public static void ValidateVersion(int fileDataVersion)
     {
-        if (fileDataVersion != CurrentDataVersion)
+        if (fileDataVersion != CurrentDataVersion && fileDataVersion != PreviousDataVersion)
             throw new InvalidOperationException(
                 $"[Replay] Version mismatch: file v{fileDataVersion}, framework v{CurrentDataVersion}. The replay file was created with a different event schema and cannot be played back.");
     }

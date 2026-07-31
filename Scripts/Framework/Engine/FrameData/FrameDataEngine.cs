@@ -15,11 +15,12 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
     private readonly CancelWindowTracker _p1CancelTracker = new();
     private readonly CancelWindowTracker _p2CancelTracker = new();
     private readonly List<FrameStateSnapshot> _snapshots = new();
-    private readonly List<HitRegistration> _pendingHits = new();
+    private EvaluatedMoveFrame _p1LastEvaluated = EvaluatedMoveFrame.Idle;
+    private EvaluatedMoveFrame _p2LastEvaluated = EvaluatedMoveFrame.Idle;
+    private long _p1MoveInstanceId;
+    private long _p2MoveInstanceId;
     private int _snapshotCapacity = 600;
     private bool _initialized;
-
-    internal readonly record struct HitRegistration(int AttackerId, int DefenderId, string MoveId, bool IsBlocked);
 
     internal IReadOnlyList<FrameStateSnapshot> Snapshots => _snapshots.AsReadOnly();
 
@@ -89,6 +90,7 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
 
         cancelTracker.Reset(playerId);
         timeline.StartMove(move);
+        IncrementMoveInstance(playerId);
         cancelTracker.TrackMove(playerId, move);
     }
 
@@ -114,6 +116,7 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
             return;
         }
         timeline.StartMove(move);
+        IncrementMoveInstance(playerId);
         GetCancelTracker(playerId)!.TrackMove(playerId, move);
         if (timeline.Phase == MovePhase.Idle)
         {
@@ -126,17 +129,11 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
         FrameworkLog.Info?.Invoke($"[FrameData] P{playerId} started '{moveId}' — startup {move.Startup}f, active {move.Active}f, recovery {move.Recovery}f.");
     }
 
-    public void RegisterHit(int attackerId, int defenderId, string moveId, bool isBlocked)
-    {
-        _pendingHits.Add(new HitRegistration(attackerId, defenderId, moveId, isBlocked));
-    }
-
     public void Update()
     {
         SaveSnapshot();
         UpdatePlayer(1, _p1Timeline, _p1CancelTracker);
         UpdatePlayer(2, _p2Timeline, _p2CancelTracker);
-        FlushPendingHits();
     }
 
     private void SaveSnapshot()
@@ -170,6 +167,8 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
     public void RestoreFromReplaySnapshot(FrameStateSnapshot snapshot)
     {
         _snapshots.Clear();
+        _p1MoveInstanceId++;
+        _p2MoveInstanceId++;
 
         _p1Timeline.Restore(snapshot.P1MoveId, snapshot.P1CurrentFrame, snapshot.P1Phase);
         _p2Timeline.Restore(snapshot.P2MoveId, snapshot.P2CurrentFrame, snapshot.P2Phase);
@@ -215,6 +214,8 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
         var timelineSnapshot = _snapshots[foundIndex + 1];
         _p1Timeline.Restore(timelineSnapshot.P1MoveId, timelineSnapshot.P1CurrentFrame, timelineSnapshot.P1Phase);
         _p2Timeline.Restore(timelineSnapshot.P2MoveId, timelineSnapshot.P2CurrentFrame, timelineSnapshot.P2Phase);
+        _p1MoveInstanceId++;
+        _p2MoveInstanceId++;
 
         // Rewinding abandons the old future — drop snapshots past the restore
         // point; snapshot frameNumber+1 is re-saved when that frame re-executes.
@@ -275,14 +276,28 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
     public int GetCurrentFrame(int playerId) => GetTimeline(playerId)?.CurrentFrame ?? 0;
     public string? GetCurrentMoveId(int playerId) => GetTimeline(playerId)?.MoveId;
 
-    private static void UpdatePlayer(int playerId, MoveTimeline timeline, CancelWindowTracker tracker)
+    public EvaluatedMoveFrame GetLastEvaluatedFrame(int playerId) => playerId switch
     {
-        if (timeline.Phase == MovePhase.Idle) return;
+        1 => _p1LastEvaluated,
+        2 => _p2LastEvaluated,
+        _ => EvaluatedMoveFrame.Idle
+    };
+
+    private void UpdatePlayer(int playerId, MoveTimeline timeline, CancelWindowTracker tracker)
+    {
+        if (timeline.Phase == MovePhase.Idle)
+        {
+            SetLastEvaluated(playerId, EvaluatedMoveFrame.Idle);
+            return;
+        }
 
         string moveIdBeforeTick = timeline.MoveId!;
         int frameBeforeTick = timeline.CurrentFrame;
         int totalFrames = timeline.TotalFrames;
         MovePhase phaseBeforeTick = timeline.Phase;
+        long instanceId = playerId == 1 ? _p1MoveInstanceId : _p2MoveInstanceId;
+        SetLastEvaluated(playerId, new EvaluatedMoveFrame(
+            moveIdBeforeTick, instanceId, frameBeforeTick, phaseBeforeTick));
 
         tracker.EvaluateFrame(playerId, moveIdBeforeTick, frameBeforeTick);
         timeline.Tick();
@@ -302,19 +317,16 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
             tracker.CloseAll(playerId, moveIdBeforeTick);
     }
 
-    private void FlushPendingHits()
+    private void IncrementMoveInstance(int playerId)
     {
-        foreach (var reg in _pendingHits)
-        {
-            var move = _dataStore.GetMove(reg.MoveId);
-            if (move is null) continue;
+        if (playerId == 1) _p1MoveInstanceId++;
+        else if (playerId == 2) _p2MoveInstanceId++;
+    }
 
-            if (reg.IsBlocked)
-                EventBus.Instance.Publish(new MoveBlockedEvent(reg.AttackerId, reg.DefenderId, reg.MoveId, move.BlockAdvantage, move.Damage));
-            else
-                EventBus.Instance.Publish(new HitConnectedEvent(reg.AttackerId, reg.DefenderId, reg.MoveId, move.HitAdvantage, move.Damage));
-        }
-        _pendingHits.Clear();
+    private void SetLastEvaluated(int playerId, EvaluatedMoveFrame frame)
+    {
+        if (playerId == 1) _p1LastEvaluated = frame;
+        else if (playerId == 2) _p2LastEvaluated = frame;
     }
 
     private MoveTimeline? GetTimeline(int playerId) => playerId switch

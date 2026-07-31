@@ -1,12 +1,49 @@
-[gd_scene load_steps=5 format=3 uid="uid://blgpk5wxbajnk"]
+[gd_scene load_steps=12 format=3 uid="uid://blgpk5wxbajnk"]
 
-[ext_resource type="Script" uid="uid://dgjg11cg3dgn1" path="res://Scripts/Framework/Characters/CharacterController.cs" id="1_char_script"]
+[ext_resource type="Script" path="res://Scripts/Framework/Characters/CharacterController.cs" id="1_char_script"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_fuf0h"]
+size = Vector2(20, 20)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_85wrw"]
+size = Vector2(24, 28)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_vpuha"]
+size = Vector2(20, 24)
+
+[sub_resource type="Animation" id="Animation_idle"]
+resource_name = "idle"
+length = 0.1
+
+[sub_resource type="Animation" id="Animation_attack_startup"]
+resource_name = "attack_startup"
+length = 0.1
+
+[sub_resource type="Animation" id="Animation_attack_active"]
+resource_name = "attack_active"
+length = 0.1
+
+[sub_resource type="Animation" id="Animation_attack_recovery"]
+resource_name = "attack_recovery"
+length = 0.1
+
+[sub_resource type="Animation" id="Animation_hitstun"]
+resource_name = "hitstun"
+length = 0.1
+
+[sub_resource type="Animation" id="Animation_blockstun"]
+resource_name = "blockstun"
+length = 0.1
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_template"]
+_data = {
+&"attack_active": SubResource("Animation_attack_active"),
+&"attack_recovery": SubResource("Animation_attack_recovery"),
+&"attack_startup": SubResource("Animation_attack_startup"),
+&"blockstun": SubResource("Animation_blockstun"),
+&"hitstun": SubResource("Animation_hitstun"),
+&"idle": SubResource("Animation_idle")
+}
 
 [node name="Character" type="Node2D" node_paths=PackedStringArray("SpriteContainer", "HurtboxContainer", "AnimationPlayer", "StateDebugLabel")]
 script = ExtResource("1_char_script")
@@ -22,24 +59,30 @@ StateDebugLabel = NodePath("StateDebugLabel")
 [node name="HurtboxContainer" type="Node2D" parent="."]
 
 [node name="HeadHurtbox" type="Area2D" parent="HurtboxContainer"]
+position = Vector2(0, -44)
 monitoring = false
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="HurtboxContainer/HeadHurtbox"]
 shape = SubResource("RectangleShape2D_fuf0h")
 
 [node name="BodyHurtbox" type="Area2D" parent="HurtboxContainer"]
+position = Vector2(0, -20)
 monitoring = false
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="HurtboxContainer/BodyHurtbox"]
 shape = SubResource("RectangleShape2D_85wrw")
 
 [node name="LegsHurtbox" type="Area2D" parent="HurtboxContainer"]
+position = Vector2(0, 4)
 monitoring = false
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="HurtboxContainer/LegsHurtbox"]
 shape = SubResource("RectangleShape2D_vpuha")
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+libraries = {
+&"": SubResource("AnimationLibrary_template")
+}
 
 [node name="StateDebugLabel" type="Label" parent="."]
 offset_left = -50.0

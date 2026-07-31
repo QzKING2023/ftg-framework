@@ -8,13 +8,17 @@ Modular fighting game framework for Godot 4.x C#.
 - .NET SDK 10+ (install separately from https://dotnet.microsoft.com/download)
 - C# build tools enabled in Godot
 
+The SDK 10+ requirement applies to scaffold/build tooling. Generated projects
+continue to target `net8.0` (`net9.0` for Android) with
+`Godot.NET.Sdk/4.5.1`.
+
 ## Installation
 
-### Godot Asset Library
+### Godot Asset Library (planned)
 
-1. Open the AssetLib tab in the Godot editor
-2. Search for "FTG Framework"
-3. Click Download, then Install
+The framework has not yet been submitted to the Godot Asset Library. Until that
+release work is complete, use the repository-checkout CLI or manual installation
+below.
 
 ### Manual Installation
 
@@ -56,6 +60,22 @@ cd projects/MyFighter
 dotnet build
 # Open project.godot in the Godot editor
 ```
+
+The name becomes a C# identifier, assembly, project file, and directory, so use a
+valid identifier such as `MyFighter`; `my-fighter` and `9Lives` are rejected.
+This command currently requires a repository checkout. A standalone CLI has not
+been published.
+
+With the repository, .NET SDK 10+, and matching editor already installed, this
+onboarding path is intended to reach training in under five minutes; a cold restore
+or first import can add environment-dependent time. Press Play to auto-confirm both
+characters. At a viewport of at least 500×120, `[P1] Idle` and `[P2] Idle` are
+visible. Press A, D, S, and Space to populate P1's visible input history, then press
+U from neutral to run `5LP` and return to `[P1] Idle`.
+
+Asset Library submission and standalone CLI publishing remain unresolved
+release/distribution work; this repository-checkout workflow is the current
+dogfood entry point, not a claim of final public distribution.
 
 ## Modules Included
 

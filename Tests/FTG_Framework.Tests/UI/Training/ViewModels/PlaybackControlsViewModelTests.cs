@@ -191,8 +191,8 @@ public class PlaybackControlsViewModelTests : IDisposable
         public bool RestoreResult = true;
 
         public void StartMove(int playerId, string moveId) { }
-        public void RegisterHit(int attackerId, int defenderId, string moveId, bool isBlocked) { }
         public void Update() { }
+        public EvaluatedMoveFrame GetLastEvaluatedFrame(int playerId) => EvaluatedMoveFrame.Idle;
         public MovePhase GetPhase(int playerId) => MovePhase.Idle;
         public int GetCurrentFrame(int playerId) => 0;
         public string? GetCurrentMoveId(int playerId) => null;

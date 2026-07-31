@@ -3,11 +3,12 @@ using System;
 using System.Collections.Generic;
 using FTG_Framework.Core;
 using FTG_Framework.Core.Events;
+using FTG_Framework.Data;
 using Godot;
 
 namespace FTG_Framework.Characters;
 
-public partial class CharacterController : Node2D
+public partial class CharacterController : Node2D, IPhysicsParticipant
 {
     [Export] public Node2D? SpriteContainer { get; set; }
     [Export] public Node2D? HurtboxContainer { get; set; }
@@ -18,6 +19,7 @@ public partial class CharacterController : Node2D
 
     private CharacterViewModel _viewModel = null!;
     private readonly List<Area2D> _hurtboxes = new();
+    private readonly List<CollisionBoxDefinition> _neutralHurtboxes = new();
     private bool _facingRight = true;
     private System.Action<StateChangedEvent>? _stateChangedHandler;
     private GameLoop? _gameLoop;
@@ -55,6 +57,7 @@ public partial class CharacterController : Node2D
         EventBus.Instance.Subscribe(_stateChangedHandler);
 
         CollectHurtboxes();
+        _gameLoop.PhysicsEngine?.Register(this);
 
         ApplyAuthoritativeState();
     }
@@ -69,9 +72,26 @@ public partial class CharacterController : Node2D
         if (_stateChangedHandler is not null)
             EventBus.Instance.Unsubscribe(_stateChangedHandler);
         _stateChangedHandler = null;
+        _gameLoop?.PhysicsEngine?.Unregister(this);
     }
 
     public IReadOnlyList<Area2D> GetHurtboxes() => _hurtboxes;
+
+    public PhysicsParticipantSnapshot CapturePhysicsSnapshot()
+    {
+        DirectionValue direction = DirectionValue.Neutral;
+        var history = _gameLoop?.InputHistory?.GetDirectionalHistory(PlayerId);
+        if (history is { Count: > 0 } && Enum.IsDefined(typeof(DirectionValue), history[^1].Value))
+            direction = (DirectionValue)history[^1].Value;
+        return new PhysicsParticipantSnapshot(
+            PlayerId,
+            string.IsNullOrWhiteSpace(CharacterId) ? $"player-{PlayerId}" : CharacterId,
+            GlobalPosition.X,
+            GlobalPosition.Y,
+            direction,
+            _facingRight,
+            _neutralHurtboxes);
+    }
 
     private void OnStateChanged(StateChangedEvent e)
     {
@@ -88,14 +108,14 @@ public partial class CharacterController : Node2D
             : fallbackEvent is { NewStack.Length: > 0 } e
                 ? e.NewStack[^1]
                 : CharacterState.Idle;
+        UpdateFacing();
+
         if (_displayedState == top)
             return;
 
         _displayedState = top;
         var animName = _viewModel.GetAnimationName(top);
         AnimationPlayer?.Play(animName);
-
-        UpdateFacing();
 
         if (StateDebugLabel is not null)
             StateDebugLabel.Text = $"[P{PlayerId}] {top}";
@@ -133,6 +153,12 @@ public partial class CharacterController : Node2D
     private void CollectHurtboxes()
     {
         _hurtboxes.Clear();
+        _neutralHurtboxes.Clear();
+        var configured = string.IsNullOrWhiteSpace(CharacterId)
+            ? null
+            : _gameLoop?.DataStore?.GetCharacter(CharacterId);
+        if (configured is not null)
+            _neutralHurtboxes.AddRange(configured.NeutralHurtboxes);
         if (HurtboxContainer is null)
             return;
 
@@ -143,7 +169,37 @@ public partial class CharacterController : Node2D
                 area.Monitoring = false;
                 area.Monitorable = true;
                 _hurtboxes.Add(area);
+                if (configured is null)
+                    CollectRectangleShapes(area);
             }
+        }
+    }
+
+    private void CollectRectangleShapes(Area2D area)
+    {
+        foreach (var child in area.GetChildren())
+        {
+            if (child is not CollisionShape2D collision || collision.Disabled)
+                continue;
+            if (collision.Shape is not RectangleShape2D rectangle)
+                throw new InvalidOperationException(
+                    $"[Physics] P{PlayerId}: only RectangleShape2D hurtboxes are supported.");
+            if (!Godot.Mathf.IsZeroApprox(collision.GlobalRotation))
+                throw new InvalidOperationException(
+                    $"[Physics] P{PlayerId}: rotated hurtboxes are not supported.");
+            var scale = collision.GlobalScale;
+            if (scale.X <= 0 || scale.Y <= 0)
+                throw new InvalidOperationException(
+                    $"[Physics] P{PlayerId}: hurtbox scale must be positive.");
+            var offset = collision.GlobalPosition - GlobalPosition;
+            _neutralHurtboxes.Add(new CollisionBoxDefinition
+            {
+                BoxId = $"{area.Name}/{collision.Name}",
+                X = offset.X,
+                Y = offset.Y,
+                Width = rectangle.Size.X * scale.X,
+                Height = rectangle.Size.Y * scale.Y
+            });
         }
     }
 }

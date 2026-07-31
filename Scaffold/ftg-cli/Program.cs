@@ -26,6 +26,9 @@ public static class Program
     };
 
     public static int Main(string[] args)
+        => Run(args, new ScaffoldHooks());
+
+    internal static int Run(string[] args, ScaffoldHooks hooks)
     {
         if (args.Length == 0)
         {
@@ -38,7 +41,7 @@ public static class Program
         switch (command)
         {
             case "new":
-                return HandleNew(args.AsSpan(1));
+                return HandleNew(args.AsSpan(1), hooks);
             case "help":
             case "--help":
             case "-h":
@@ -51,7 +54,7 @@ public static class Program
         }
     }
 
-    private static int HandleNew(ReadOnlySpan<string> args)
+    private static int HandleNew(ReadOnlySpan<string> args, ScaffoldHooks hooks)
     {
         if (args.Length == 0)
         {
@@ -145,10 +148,11 @@ public static class Program
 
         // Scaffold
         Console.WriteLine($"Creating project '{projectName}' in {targetDir}...");
+        var artifacts = new ScaffoldArtifactTracker();
 
         try
         {
-            ProjectScaffolder.Scaffold(repoRoot, targetDir, projectName);
+            ProjectScaffolder.Scaffold(repoRoot, targetDir, projectName, artifacts, hooks);
             Console.WriteLine();
             Console.WriteLine($"Project '{projectName}' created successfully!");
             Console.WriteLine();
@@ -161,36 +165,40 @@ public static class Program
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Scaffold] Failed to create project: {ex.Message}");
-            CleanupPartialScaffold(targetDir, targetExisted);
+            CleanupPartialScaffold(targetDir, artifacts);
             return 1;
         }
     }
 
-    private static void CleanupPartialScaffold(string targetDir, bool targetExisted)
+    private static void CleanupPartialScaffold(string targetDir, ScaffoldArtifactTracker artifacts)
     {
         try
         {
-            if (!Directory.Exists(targetDir)) return;
-            if (targetExisted)
+            foreach (var file in artifacts.Files)
             {
-                foreach (var entry in Directory.GetFileSystemEntries(targetDir))
+                try
                 {
-                    try
-                    {
-                        if (Directory.Exists(entry))
-                            Directory.Delete(entry, recursive: true);
-                        else
-                            File.Delete(entry);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.Error.WriteLine($"[Scaffold] Warning: could not remove '{entry}': {ex.Message}");
-                    }
+                    if (File.Exists(file))
+                        File.Delete(file);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Scaffold] Warning: could not remove '{file}': {ex.Message}");
                 }
             }
-            else
+
+            foreach (var directory in artifacts.Directories.OrderByDescending(path => path.Length))
             {
-                Directory.Delete(targetDir, recursive: true);
+                try
+                {
+                    if (Directory.Exists(directory) &&
+                        Directory.GetFileSystemEntries(directory).Length == 0)
+                        Directory.Delete(directory);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Scaffold] Warning: could not remove '{directory}': {ex.Message}");
+                }
             }
         }
         catch (Exception cleanupEx)
@@ -285,7 +293,7 @@ public static class Program
                 return false;
             }
 
-            if (major < 10)
+            if (!IsSupportedSdkVersion(versionOutput, out major))
             {
                 Console.Error.WriteLine($"[Scaffold] .NET SDK {major}.x detected, but SDK 10+ is required. Install .NET SDK 10+ from https://dotnet.microsoft.com/download");
                 return false;
@@ -315,6 +323,11 @@ public static class Program
         return int.TryParse(numberPart, out major);
     }
 
+    internal static bool IsSupportedSdkVersion(string versionOutput, out int major)
+    {
+        return TryParseMajorVersion(versionOutput, out major) && major >= 10;
+    }
+
     private static void PrintDotnetMissing()
     {
         Console.Error.WriteLine("[Scaffold] .NET SDK not found. Install .NET SDK 10+ from https://dotnet.microsoft.com/download");
@@ -330,9 +343,14 @@ public static class Program
         writer.WriteLine();
         writer.WriteLine("The CLI runs from an FTG Framework repository checkout:");
         writer.WriteLine("  dotnet run --project Scaffold/ftg-cli -- new <project-name>");
+        writer.WriteLine("  Requires .NET SDK 10+; generated projects target net8.0.");
+        writer.WriteLine("  Project names must be valid C# identifiers (for example, MyFighter).");
         writer.WriteLine();
         writer.WriteLine("Examples:");
         writer.WriteLine("  ftg new MyFighter");
         writer.WriteLine("  ftg new MyFighter --output ./projects");
+        writer.WriteLine();
+        writer.WriteLine("First run: open project.godot, press Play, use A/D/S/Space for directions and U for 5LP.");
+        writer.WriteLine("Standalone CLI publishing and Asset Library submission remain future release work.");
     }
 }

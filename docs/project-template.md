@@ -2,6 +2,19 @@
 
 The project template enables developers to scaffold a working Godot project with FTG Framework integrated in a single command.
 
+## Prerequisites and Scope
+
+- Use the .NET-enabled Godot 4.5.1 editor (or a compatible newer 4.x release).
+- Install .NET SDK 10+ for the scaffold and build tooling.
+- The generated game deliberately targets `net8.0` (`net9.0` for Android) and
+  uses `Godot.NET.Sdk/4.5.1`; the selected tooling SDK does not change that target.
+- Run the CLI from an FTG Framework repository checkout. There is no published
+  standalone CLI payload yet.
+
+With the repository, SDK, and editor already installed, the documented path from
+scaffold command through a visible training scene is expected to complete in
+under five minutes. Network restore and first Godot import time depend on cache state.
+
 ## Template Directory Structure
 
 ```
@@ -57,10 +70,16 @@ When a new module is added to the framework (e.g., Physics engine):
 
 ### Updating SDK or .NET Version
 
-1. Update `Scaffold/ftg-project-template/global.json` with the new SDK version
-2. Update `Scaffold/ftg-project-template/FTG_Game.csproj` with any target framework changes
-3. Update the minimum requirements in `addons/ftg-framework/README.md`
-   and the CLI's missing-dotnet message in `Scaffold/ftg-cli/Program.cs`
+1. Update both the repository-root `global.json` and
+   `Scaffold/ftg-project-template/global.json` with the new tooling SDK policy.
+2. Update `Program.IsSupportedSdkVersion` and all SDK error/help text in
+   `Scaffold/ftg-cli/Program.cs`.
+3. Update the static and effective SDK policy tests in
+   `Tests/FTG_Framework.Tests/Scaffold/FtgCliTests.cs`.
+4. Update `Scaffold/ftg-project-template/FTG_Game.csproj` if the target framework
+   or Godot SDK package changes.
+5. Update the requirements and tooling-versus-target explanation in
+   `addons/ftg-framework/README.md` and this guide.
 
 ## CLI Architecture
 
@@ -86,10 +105,27 @@ framework source on disk relative to the repo root:
 dotnet run --project Scaffold/ftg-cli -- new MyFighter [--output <path>]
 ```
 
+Project names are used as C# identifiers, assemblies, filenames, and directories.
+Use a valid identifier such as `MyFighter`; names such as `my-fighter` and `9Lives`
+are rejected instead of rewritten.
+
 There is no standalone binary distribution: a published `ftg` executable outside
 a repo checkout cannot find the template/framework payload and exits with an error.
 (If standalone distribution is ever needed, the template and framework source must
 be embedded into the binary first.)
+
+### First Run
+
+Open the generated `project.godot` in the .NET-enabled editor and press Play. The
+template automatically confirms both character slots and enters training. At a
+viewport of at least 500×120, `[P1] Idle` and `[P2] Idle` appear.
+
+- Press A, D, S, and Space to add P1 directions to the visible input history.
+- Press U from neutral to run `5LP`; P1's debug label shows the attack phases and
+  then returns to `[P1] Idle`.
+
+No placeholder art or physics movement is expected; labels and training UI are the
+observable starter experience.
 
 ## Addon Packaging
 
@@ -142,7 +178,9 @@ dotnet test FTG_Framework.sln
 
 ## Distribution
 
-1. **Godot Asset Library:** Upload `Scaffold/ftg-framework-<version>.zip` to the Asset Library.
-   Submission requires a `LICENSE` file at the repo root (the packagers bundle it automatically).
+1. **Godot Asset Library:** Asset Library submission remains unresolved release
+   work. A future submission will upload `Scaffold/ftg-framework-<version>.zip`
+   and requires a `LICENSE` file at the repo root.
 2. **GitHub Releases:** Attach the addon zip.
-3. **CLI:** Distributed as source — users run it from a repo checkout (see above).
+3. **CLI:** Currently distributed as source for use from a repository checkout.
+   Publishing a standalone CLI remains unresolved release work.

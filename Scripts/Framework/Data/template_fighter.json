@@ -10,6 +10,17 @@
       "block_advantage": -2,
       "damage": 30,
       "knockback_profile_id": "light_hit",
+      "collision_frames": [
+        {
+          "frame": 5,
+          "hitboxes": [
+            { "box_id": "5a-main", "x": 30, "y": -20, "width": 40, "height": 20 }
+          ],
+          "hurtboxes": [
+            { "box_id": "body-active", "x": 0, "y": -20, "width": 24, "height": 56 }
+          ]
+        }
+      ],
       "cancel_windows": [
         { "start_frame": 8, "end_frame": 10, "target_category": "normal" }
       ]

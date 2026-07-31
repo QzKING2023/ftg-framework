@@ -23,9 +23,8 @@ internal sealed class StubFrameDataEngine : IFrameDataEngine
 
     public void InterruptAndStart(int playerId, string moveId) { }
 
-    public void RegisterHit(int attackerId, int defenderId, string moveId, bool isBlocked) { }
-
     public void Update() { }
+    public EvaluatedMoveFrame GetLastEvaluatedFrame(int playerId) => EvaluatedMoveFrame.Idle;
 
     public bool RestoreFrame(int frameNumber) => false;
 

@@ -8,6 +8,28 @@
       "hit_advantage": 2,
       "block_advantage": -3,
       "damage": 30,
+      "knockback_profile_id": "light_hit",
+      "collision_frames": [
+        {
+          "frame": 5,
+          "hitboxes": [
+            { "box_id": "punch-1", "x": 30, "y": -20, "width": 40, "height": 20 }
+          ],
+          "hurtboxes": [
+            { "box_id": "body-active", "x": 0, "y": -20, "width": 24, "height": 56 }
+          ]
+        },
+        {
+          "frame": 6,
+          "hitboxes": [
+            { "box_id": "punch-1", "x": 34, "y": -20, "width": 44, "height": 20 },
+            { "box_id": "punch-2", "x": 22, "y": -12, "width": 18, "height": 18 }
+          ],
+          "hurtboxes": [
+            { "box_id": "body-active", "x": -2, "y": -20, "width": 26, "height": 56 }
+          ]
+        }
+      ],
       "cancel_windows": [
         {
           "start_frame": 3,

@@ -32,7 +32,6 @@ public class FrameDataStateLifecycleTests : IDisposable
         try
         {
             engine.StartMove(1, "test");
-            engine.RegisterHit(1, 2, "test", false);
             Run(engine, 3);
             EventBus.Instance.ProcessFrame();
 

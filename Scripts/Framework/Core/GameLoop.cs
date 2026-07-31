@@ -6,6 +6,7 @@ using FTG_Framework.Core.Replay;
 using FTG_Framework.Data;
 using FTG_Framework.Engine.Combo;
 using FTG_Framework.Engine.FrameData;
+using FTG_Framework.Engine.Physics;
 using FTG_Framework.Engine.StateMachine;
 using FTG_Framework.Input;
 using FTG_Framework.Scenes;
@@ -23,15 +24,21 @@ public partial class GameLoop : Node
     private IPriorityResolver? _priorityResolver;
     private IFrameDataEngine? _frameDataEngine;
     private IStateMachine? _stateMachine;
+    private IPhysicsEngine? _physicsEngine;
     private readonly List<IModule> _modules = new();
     private IComboExecutor? _comboExecutor;
     private ISOCDResolver? _socdResolver;
     private ISceneManager? _sceneManager;
     private ReplayOrchestrator? _replayOrchestrator;
     private FileWatcher? _fileWatcher;
+    private Action<MatchInitializedEvent>? _matchInitializedHandler;
+    private string _p1CharacterId = string.Empty;
+    private string _p2CharacterId = string.Empty;
 
     public IStateMachine? StateMachine => _stateMachine;
     public IInputHistory? InputHistory => _inputHistory;
+    public IPhysicsEngine? PhysicsEngine => _physicsEngine;
+    internal IDataStore? DataStore => _dataStore;
 
     public override void _Ready()
     {
@@ -54,7 +61,19 @@ public partial class GameLoop : Node
                 gatlingTables = Array.Empty<GatlingTable>();
             }
 
-            _dataStore = new DataStore(moves, gatlingTables);
+            var knockbackPath = "res://Scripts/Framework/Data/example_knockback_profiles.json";
+            KnockbackProfile[] knockbackProfiles = Array.Empty<KnockbackProfile>();
+            if (Godot.FileAccess.FileExists(knockbackPath))
+            {
+                using var profileFile = Godot.FileAccess.Open(
+                    knockbackPath, Godot.FileAccess.ModeFlags.Read);
+                if (profileFile is null)
+                    throw new FormatException($"[Data] Cannot open file: {knockbackPath}");
+                knockbackProfiles = PhysicsDataLoader.LoadKnockbackProfilesFromJson(
+                    profileFile.GetAsText());
+            }
+
+            _dataStore = new DataStore(moves, gatlingTables, knockbackProfiles);
             GD.Print($"[Data] Loaded {moves.Length} moves.");
 
             var charactersPath = "res://Scripts/Framework/Data/example_characters.json";
@@ -100,6 +119,10 @@ public partial class GameLoop : Node
             RegisterModule(frameDataEngine);
             _frameDataEngine = frameDataEngine;
 
+            var physicsEngine = new PhysicsEngine(_dataStore, frameDataEngine);
+            RegisterModule(physicsEngine);
+            _physicsEngine = physicsEngine;
+
             var stateMachine = new global::FTG_Framework.Engine.StateMachine.StateMachine(_dataStore);
             RegisterModule(stateMachine);
             _stateMachine = stateMachine;
@@ -123,6 +146,12 @@ public partial class GameLoop : Node
             _socdResolver = new global::FTG_Framework.Input.DefaultSOCDResolver();
 
             _replayOrchestrator = new ReplayOrchestrator(_frameDataEngine);
+            _matchInitializedHandler = e =>
+            {
+                _p1CharacterId = e.P1CharacterId;
+                _p2CharacterId = e.P2CharacterId;
+            };
+            EventBus.Instance.Subscribe(_matchInitializedHandler);
 
             // ── Scene setup ──
             _sceneManager = new SceneManager(this);
@@ -137,7 +166,9 @@ public partial class GameLoop : Node
                 DataStore = _dataStore,
                 InputHistory = _inputHistory,
                 FrameDataEngine = _frameDataEngine,
-                StateMachine = _stateMachine
+                StateMachine = _stateMachine,
+                P1CharacterId = _p1CharacterId,
+                P2CharacterId = _p2CharacterId
             };
 
             _sceneManager.RegisterScene("character_select", () => new CharacterSelectScene
@@ -150,7 +181,9 @@ public partial class GameLoop : Node
                 DataStore = _dataStore,
                 InputHistory = _inputHistory,
                 FrameDataEngine = _frameDataEngine,
-                StateMachine = _stateMachine
+                StateMachine = _stateMachine,
+                P1CharacterId = _p1CharacterId,
+                P2CharacterId = _p2CharacterId
             });
 
             _sceneManager.GoTo("character_select");
@@ -195,6 +228,8 @@ public partial class GameLoop : Node
             if (!_replayOrchestrator.ProcessReplayFrame())
                 return;
             _frameDataEngine?.Update();
+            // Recorded physics events are authoritative during replay.
+            System.Diagnostics.Debug.Assert(!ShouldRunPhysics(replayPlaying: true));
             EventBus.Instance.ProcessFrame();
             _prevBtnA = btnA;
             _prevBtnB = btnB;
@@ -236,6 +271,8 @@ public partial class GameLoop : Node
         }
 
         _frameDataEngine?.Update();
+        if (ShouldRunPhysics(_replayOrchestrator is { IsPlaying: true }))
+            _physicsEngine?.Update();
 
         EventBus.Instance.ProcessFrame();
 
@@ -253,6 +290,9 @@ public partial class GameLoop : Node
 
     public override void _ExitTree()
     {
+        if (_matchInitializedHandler is not null)
+            EventBus.Instance.Unsubscribe(_matchInitializedHandler);
+        _matchInitializedHandler = null;
         _fileWatcher?.Dispose();
         ShutdownModules(_modules);
     }
@@ -267,6 +307,7 @@ public partial class GameLoop : Node
     }
 
     internal static bool ShouldProcessFrame(bool paused, bool stepRequested) => !paused || stepRequested;
+    internal static bool ShouldRunPhysics(bool replayPlaying) => !replayPlaying;
 
     internal static DirectionValue ComputeDirection(bool back, bool forward, bool down, bool up)
     {

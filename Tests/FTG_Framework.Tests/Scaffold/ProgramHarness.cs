@@ -1,4 +1,6 @@
 #nullable enable
+using FTG_Framework.Scaffold;
+
 namespace FTG_Framework.Tests.Scaffold;
 
 /// <summary>
@@ -11,5 +13,10 @@ public static class ProgramHarness
     public static int Run(params string[] args)
     {
         return FTG_Framework.Scaffold.Program.Main(args);
+    }
+
+    internal static int RunWithHooks(ScaffoldHooks hooks, params string[] args)
+    {
+        return FTG_Framework.Scaffold.Program.Run(args, hooks);
     }
 }

@@ -15,14 +15,14 @@ public partial class TrainingScene : Node, IScene
     public IInputHistory? InputHistory { get; set; }
     public IFrameDataEngine? FrameDataEngine { get; set; }
     public IStateMachine? StateMachine { get; set; }
+    public string P1CharacterId { get; set; } = string.Empty;
+    public string P2CharacterId { get; set; } = string.Empty;
 
     private PlaybackControls? _playbackControls;
     private HitboxOverlay? _hitboxOverlay;
     private InputLog? _inputLog;
     private bool _overlayEnabled;
     private readonly TrainingStateRecovery _stateRecovery = new();
-    private bool _pendingTrainingHitRecovery;
-    private bool _pendingTrainingBlockRecovery;
 
     public void Enter(ISceneManager manager)
     {
@@ -98,6 +98,7 @@ public partial class TrainingScene : Node, IScene
         }
 
         p1.PlayerId = 1;
+        p1.CharacterId = P1CharacterId;
         p1.Position = p1Position;
 
         var p2Node = scene.Instantiate();
@@ -110,6 +111,7 @@ public partial class TrainingScene : Node, IScene
         }
 
         p2.PlayerId = 2;
+        p2.CharacterId = P2CharacterId;
         p2.Position = p2Position;
 
         AddChild(p1);
@@ -193,17 +195,8 @@ public partial class TrainingScene : Node, IScene
         if (stepBack && !_prevStepBackKey)
             _playbackControls?.StepBackward();
 
-        if (hitKey && !_prevHitKey)
-        {
-            _pendingTrainingHitRecovery = true;
-            FrameDataEngine?.RegisterHit(attackerId: 1, defenderId: 2, moveId: "5LP", isBlocked: false);
-        }
-
-        if (blockKey && !_prevBlockKey)
-        {
-            _pendingTrainingBlockRecovery = true;
-            FrameDataEngine?.RegisterHit(attackerId: 1, defenderId: 2, moveId: "5HP", isBlocked: true);
-        }
+        // H/B event injection was removed with FrameDataEngine's legacy hit
+        // publisher. Use configured collision geometry to exercise hit/block paths.
 
         if (overlayKey && !_prevOverlayKey)
         {
@@ -253,24 +246,14 @@ public partial class TrainingScene : Node, IScene
         _dbgHit ??= e =>
         {
             GD.Print($"[DEBUG] HitConnected: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.HitAdvantage} dmg={e.Damage}");
-            if (_pendingTrainingHitRecovery && e.AttackerId == 1 && e.DefenderId == 2)
-            {
-                _pendingTrainingHitRecovery = false;
+            if (e.DefenderId == 2)
                 _stateRecovery.Start(CharacterState.Hitstun);
-                EventBus.Instance.Publish(new MoveFrameChangedEvent(
-                    1, e.MoveId, 0, 0, MovePhase.Idle));
-            }
         };
         _dbgBlock ??= e =>
         {
             GD.Print($"[DEBUG] MoveBlocked: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.BlockAdvantage} dmg={e.Damage}");
-            if (_pendingTrainingBlockRecovery && e.AttackerId == 1 && e.DefenderId == 2)
-            {
-                _pendingTrainingBlockRecovery = false;
+            if (e.DefenderId == 2)
                 _stateRecovery.Start(CharacterState.Blockstun);
-                EventBus.Instance.Publish(new MoveFrameChangedEvent(
-                    1, e.MoveId, 0, 0, MovePhase.Idle));
-            }
         };
         _dbgInput ??= e =>
             GD.Print($"[DEBUG] InputRecv: P{e.PlayerId} frame={e.Frame} type={e.InputType} val={e.InputValue}");
@@ -306,8 +289,6 @@ public partial class TrainingScene : Node, IScene
         if (_dbgReplayStart is not null) EventBus.Instance.Unsubscribe(_dbgReplayStart);
         if (_dbgReplayEnd is not null) EventBus.Instance.Unsubscribe(_dbgReplayEnd);
         if (_trainingFrameAdvanced is not null) EventBus.Instance.Unsubscribe(_trainingFrameAdvanced);
-        _pendingTrainingHitRecovery = false;
-        _pendingTrainingBlockRecovery = false;
     }
 }
 

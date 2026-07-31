@@ -7,6 +7,7 @@ Scripts/Framework/Data
 Scripts/Framework/Engine/FrameData
 Scripts/Framework/Engine/Combo
 Scripts/Framework/Engine/StateMachine
+Scripts/Framework/Engine/Physics
 Scripts/Framework/UI/Training
 Scripts/Framework/Scenes
 Scripts/Framework/Characters

@@ -323,6 +323,9 @@ public class FtgCliTests
                 "Scripts/Framework/Data/example_characters.json",
                 "Scripts/Framework/Data/example_gatling.json",
                 "Scripts/Framework/Data/example_knockback_profiles.json",
+                "Scripts/Framework/Data/example_physics_response_profiles.json",
+                "Scripts/Framework/Data/PhysicsProfileHotReloadService.cs",
+                "Scripts/Framework/Data/PhysicsProfileReferenceValidator.cs",
                 "Scripts/Framework/Data/template_fighter.json",
             };
             foreach (var relativePath in requiredFiles)
@@ -819,7 +822,8 @@ public class FtgCliTests
         foreach (var name in new[]
                  {
                      "example_moves.json", "example_characters.json", "example_gatling.json",
-                     "example_knockback_profiles.json", "template_fighter.json"
+                     "example_knockback_profiles.json", "example_physics_response_profiles.json",
+                     "template_fighter.json"
                  })
             File.WriteAllText(Path.Combine(dataDir, name), "[]");
 

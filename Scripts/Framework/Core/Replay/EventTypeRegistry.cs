@@ -24,6 +24,7 @@ public static class EventTypeRegistry
         typeof(HitConnectedEvent),
         typeof(InputBufferExpiredEvent),
         typeof(InputReceivedEvent),
+        typeof(KnockbackAppliedEvent),
         typeof(MatchInitializedEvent),
         typeof(MoveBlockedEvent),
         typeof(MoveCanceledEvent),

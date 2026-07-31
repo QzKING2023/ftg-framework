@@ -73,7 +73,22 @@ public partial class GameLoop : Node
                     profileFile.GetAsText());
             }
 
-            _dataStore = new DataStore(moves, gatlingTables, knockbackProfiles);
+            var responsePath = "res://Scripts/Framework/Data/example_physics_response_profiles.json";
+            if (!Godot.FileAccess.FileExists(responsePath))
+                throw new FormatException($"[Data] Required physics response profile file is missing: {responsePath}");
+            using var responseFile = Godot.FileAccess.Open(
+                responsePath, Godot.FileAccess.ModeFlags.Read);
+            if (responseFile is null)
+                throw new FormatException($"[Data] Cannot open file: {responsePath}");
+            var responseProfiles = PhysicsDataLoader.LoadPhysicsResponseProfilesFromJson(
+                responseFile.GetAsText());
+
+            _dataStore = new DataStore(
+                moves, gatlingTables, knockbackProfiles, responseProfiles);
+            ValidateMoveKnockbackProfiles(_dataStore);
+            if (_dataStore.GetPhysicsResponseProfile("default") is null)
+                throw new FormatException(
+                    "[Data] Required PhysicsResponseProfile 'default' is missing.");
             GD.Print($"[Data] Loaded {moves.Length} moves.");
 
             var charactersPath = "res://Scripts/Framework/Data/example_characters.json";
@@ -88,6 +103,23 @@ public partial class GameLoop : Node
             {
                 FrameworkLog.Info?.Invoke("[Data] No character roster file found — character select will be inert.");
             }
+
+            var stateMachine = new global::FTG_Framework.Engine.StateMachine.StateMachine(_dataStore);
+            RegisterModule(stateMachine);
+            _stateMachine = stateMachine;
+
+            stateMachine.RegisterStateProfile(CharacterState.Idle, "default");
+            stateMachine.RegisterStateProfile(CharacterState.Hitstun, "default");
+            stateMachine.RegisterStateProfile(CharacterState.Blockstun, "default");
+            stateMachine.RegisterStateProfile(CharacterState.Airborne, "default");
+            stateMachine.InitializePlayer(1);
+            stateMachine.InitializePlayer(2);
+
+            var profileReload = new PhysicsProfileHotReloadService(
+                ProjectSettings.GlobalizePath(knockbackPath),
+                ProjectSettings.GlobalizePath(responsePath),
+                stateMachine.GetRegisteredPhysicsProfileIds);
+            RegisterModule(profileReload);
 
             _fileWatcher = new FileWatcher(
                 ProjectSettings.GlobalizePath("res://Scripts/Framework/Data/"),
@@ -119,22 +151,9 @@ public partial class GameLoop : Node
             RegisterModule(frameDataEngine);
             _frameDataEngine = frameDataEngine;
 
-            var physicsEngine = new PhysicsEngine(_dataStore, frameDataEngine);
+            var physicsEngine = new PhysicsEngine(_dataStore, frameDataEngine, stateMachine);
             RegisterModule(physicsEngine);
             _physicsEngine = physicsEngine;
-
-            var stateMachine = new global::FTG_Framework.Engine.StateMachine.StateMachine(_dataStore);
-            RegisterModule(stateMachine);
-            _stateMachine = stateMachine;
-
-            stateMachine.InitializePlayer(1);
-            stateMachine.InitializePlayer(2);
-
-            // Register default state→profile mappings
-            stateMachine.RegisterStateProfile(CharacterState.Idle, "default");
-            stateMachine.RegisterStateProfile(CharacterState.Hitstun, "default");
-            stateMachine.RegisterStateProfile(CharacterState.Blockstun, "default");
-            stateMachine.RegisterStateProfile(CharacterState.Airborne, "default");
 
             var comboExecutor = new ComboExecutor(_dataStore, frameDataEngine);
             _comboExecutor = comboExecutor;
@@ -192,6 +211,12 @@ public partial class GameLoop : Node
         {
             GD.PrintErr(ex.Message);
             SetProcess(false);
+            if (_matchInitializedHandler is not null)
+                EventBus.Instance.Unsubscribe(_matchInitializedHandler);
+            _matchInitializedHandler = null;
+            _fileWatcher?.Dispose();
+            _fileWatcher = null;
+            ShutdownModules(_modules);
             throw;
         }
     }
@@ -294,6 +319,7 @@ public partial class GameLoop : Node
             EventBus.Instance.Unsubscribe(_matchInitializedHandler);
         _matchInitializedHandler = null;
         _fileWatcher?.Dispose();
+        _fileWatcher = null;
         ShutdownModules(_modules);
     }
 
@@ -308,6 +334,13 @@ public partial class GameLoop : Node
 
     internal static bool ShouldProcessFrame(bool paused, bool stepRequested) => !paused || stepRequested;
     internal static bool ShouldRunPhysics(bool replayPlaying) => !replayPlaying;
+
+    internal static void ValidateMoveKnockbackProfiles(IDataStore dataStore)
+    {
+        ArgumentNullException.ThrowIfNull(dataStore);
+        PhysicsProfileReferenceValidator.ValidateKnockbackProfiles(
+            dataStore, dataStore.GetAllKnockbackProfiles());
+    }
 
     internal static DirectionValue ComputeDirection(bool back, bool forward, bool down, bool up)
     {

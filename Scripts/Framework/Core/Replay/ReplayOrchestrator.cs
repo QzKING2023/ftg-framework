@@ -117,7 +117,7 @@ internal sealed class ReplayOrchestrator
                 _frameDataEngine.RestoreFromReplaySnapshot(snapshot);
         }
 
-        EventBus.Instance.Publish(new ReplayStartedEvent(file.FrameCount, file.DataVersion));
+        EventBus.Instance.PublishImmediate(new ReplayStartedEvent(file.FrameCount, file.DataVersion));
         FrameworkLog.Info?.Invoke($"[Replay] Playback started: {file.EventCount} events, {file.FrameCount} frames.");
     }
 
@@ -137,7 +137,7 @@ internal sealed class ReplayOrchestrator
         // ProcessFrame continues from where live gameplay left off.
         EventBus.Instance.RewindFrameCounter(_preReplayFrameNumber);
 
-        EventBus.Instance.Publish(new ReplayEndedEvent(framesPlayed));
+        EventBus.Instance.PublishImmediate(new ReplayEndedEvent(framesPlayed));
         FrameworkLog.Info?.Invoke($"[Replay] Playback ended after {framesPlayed} frames.");
     }
 

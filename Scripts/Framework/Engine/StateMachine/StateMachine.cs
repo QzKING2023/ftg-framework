@@ -14,6 +14,9 @@ internal sealed class StateMachine : IModule, IStateMachine
     private readonly Dictionary<int, List<CharacterState>> _stacks = new();
     private readonly Dictionary<CharacterState, string> _stateProfiles = new();
     private readonly Dictionary<CharacterState, HashSet<CharacterState>> _allowedTransitions = new();
+    private readonly Dictionary<int, PhysicsResponseProfile> _effectiveProfileSnapshots = new();
+    private readonly Dictionary<int, long> _latestTrajectoryGenerations = new();
+    private readonly Dictionary<int, long> _completedTrajectoryGenerations = new();
     private bool _initialized;
 
     public StateMachine(IDataStore dataStore)
@@ -34,6 +37,10 @@ internal sealed class StateMachine : IModule, IStateMachine
         EventBus.Instance.Subscribe<MoveBlockedEvent>(OnMoveBlocked);
         EventBus.Instance.Subscribe<MoveCanceledEvent>(OnMoveCanceled);
         EventBus.Instance.Subscribe<ComboEndedEvent>(OnComboEnded);
+        EventBus.Instance.Subscribe<KnockbackAppliedEvent>(OnKnockbackApplied);
+        EventBus.Instance.Subscribe<ReplayStartedEvent>(OnReplayStarted);
+        EventBus.Instance.Subscribe<ReplayEndedEvent>(OnReplayEnded);
+        EventBus.Instance.Subscribe<MatchInitializedEvent>(OnMatchInitialized);
 
         FrameworkLog.Info?.Invoke("[StateMachine] StateMachine initialized.");
     }
@@ -46,9 +53,16 @@ internal sealed class StateMachine : IModule, IStateMachine
         EventBus.Instance.Unsubscribe<MoveBlockedEvent>(OnMoveBlocked);
         EventBus.Instance.Unsubscribe<MoveCanceledEvent>(OnMoveCanceled);
         EventBus.Instance.Unsubscribe<ComboEndedEvent>(OnComboEnded);
+        EventBus.Instance.Unsubscribe<KnockbackAppliedEvent>(OnKnockbackApplied);
+        EventBus.Instance.Unsubscribe<ReplayStartedEvent>(OnReplayStarted);
+        EventBus.Instance.Unsubscribe<ReplayEndedEvent>(OnReplayEnded);
+        EventBus.Instance.Unsubscribe<MatchInitializedEvent>(OnMatchInitialized);
 
         _stacks.Clear();
         _stateProfiles.Clear();
+        _effectiveProfileSnapshots.Clear();
+        _latestTrajectoryGenerations.Clear();
+        _completedTrajectoryGenerations.Clear();
         _initialized = false;
     }
 
@@ -84,6 +98,7 @@ internal sealed class StateMachine : IModule, IStateMachine
         }
 
         _stacks[playerId] = new List<CharacterState> { CharacterState.Idle };
+        RefreshEffectiveProfileSnapshot(playerId, _stacks[playerId]);
     }
 
     public void PushState(int playerId, CharacterState state)
@@ -138,7 +153,7 @@ internal sealed class StateMachine : IModule, IStateMachine
 
         var oldStack = stack.ToArray();
         stack.RemoveAt(stack.Count - 1);
-        PublishEvents(playerId, oldStack, stack.ToArray());
+        CommitStateChange(playerId, oldStack, stack);
     }
 
     public void ReplaceState(int playerId, CharacterState newState)
@@ -158,13 +173,19 @@ internal sealed class StateMachine : IModule, IStateMachine
             stack.RemoveAt(stack.Count - 1);
 
         stack.Add(newState);
-        PublishEvents(playerId, oldStack, stack.ToArray());
+        CommitStateChange(playerId, oldStack, stack);
     }
 
     public PhysicsResponseProfile GetEffectivePhysicsProfile(int playerId)
     {
         ValidatePlayerId(playerId);
-        var stack = GetStackInternal(playerId);
+        if (_effectiveProfileSnapshots.TryGetValue(playerId, out var snapshot))
+            return snapshot;
+        return ComputeEffectivePhysicsProfile(GetStackInternal(playerId));
+    }
+
+    private PhysicsResponseProfile ComputeEffectivePhysicsProfile(IReadOnlyList<CharacterState> stack)
+    {
 
         float knockbackMultiplier = 1.0f;
         float gravityScale = 1.0f;
@@ -222,6 +243,9 @@ internal sealed class StateMachine : IModule, IStateMachine
             FrameworkLog.Error?.Invoke($"[StateMachine] PhysicsResponseProfile '{physicsResponseProfileId}' not in DataStore for state {state}.");
     }
 
+    internal IReadOnlyCollection<string> GetRegisteredPhysicsProfileIds() =>
+        _stateProfiles.Values.Distinct(StringComparer.Ordinal).ToArray();
+
     // ── Event handlers (AD-11 peer model) ──
 
     private void OnMoveStarted(MoveStartedEvent e)
@@ -268,13 +292,42 @@ internal sealed class StateMachine : IModule, IStateMachine
         ResetToIdle(e.PlayerId);
     }
 
+    private void OnKnockbackApplied(KnockbackAppliedEvent e)
+    {
+        if (e.GenerationId <= 0 || !e.WorldX.HasValue || !e.WorldY.HasValue)
+            return;
+        if (_latestTrajectoryGenerations.TryGetValue(e.PlayerId, out long latest) &&
+            e.GenerationId < latest)
+            return;
+        _latestTrajectoryGenerations[e.PlayerId] = e.GenerationId;
+        if (!e.Completed)
+            return;
+        if (_completedTrajectoryGenerations.TryGetValue(e.PlayerId, out long completed) &&
+            e.GenerationId <= completed)
+            return;
+        _completedTrajectoryGenerations[e.PlayerId] = e.GenerationId;
+        if (GetCurrentState(e.PlayerId) != CharacterState.Hitstun)
+            return;
+        ResetToIdle(e.PlayerId);
+    }
+
+    private void OnReplayStarted(ReplayStartedEvent e) => ResetTrajectoryGenerations();
+    private void OnReplayEnded(ReplayEndedEvent e) => ResetTrajectoryGenerations();
+    private void OnMatchInitialized(MatchInitializedEvent e) => ResetTrajectoryGenerations();
+
+    private void ResetTrajectoryGenerations()
+    {
+        _latestTrajectoryGenerations.Clear();
+        _completedTrajectoryGenerations.Clear();
+    }
+
     // ── Internals ──
 
     private void PushStateInternal(int playerId, List<CharacterState> stack, CharacterState state)
     {
         var oldStack = stack.ToArray();
         stack.Add(state);
-        PublishEvents(playerId, oldStack, stack.ToArray());
+        CommitStateChange(playerId, oldStack, stack);
     }
 
     private void PopAttackStates(int playerId)
@@ -300,7 +353,7 @@ internal sealed class StateMachine : IModule, IStateMachine
         }
 
         if (changed)
-            PublishEvents(playerId, oldStack, stack.ToArray());
+            CommitStateChange(playerId, oldStack, stack);
     }
 
     private void ResetToIdle(int playerId)
@@ -310,7 +363,7 @@ internal sealed class StateMachine : IModule, IStateMachine
 
         var oldStack = stack.ToArray();
         stack.RemoveRange(1, stack.Count - 1);
-        PublishEvents(playerId, oldStack, stack.ToArray());
+        CommitStateChange(playerId, oldStack, stack);
     }
 
     private List<CharacterState> GetStackInternal(int playerId)
@@ -326,6 +379,25 @@ internal sealed class StateMachine : IModule, IStateMachine
             _stacks[playerId] = stack;
         }
         return stack;
+    }
+
+    private void CommitStateChange(
+        int playerId,
+        CharacterState[] oldStack,
+        List<CharacterState> newStack)
+    {
+        var committed = newStack.ToArray();
+        if (!oldStack.SequenceEqual(committed))
+            RefreshEffectiveProfileSnapshot(playerId, committed);
+        PublishEvents(playerId, oldStack, committed);
+    }
+
+    private void RefreshEffectiveProfileSnapshot(
+        int playerId,
+        IReadOnlyList<CharacterState> stack)
+    {
+        _effectiveProfileSnapshots[playerId] =
+            Snapshot.Of(ComputeEffectivePhysicsProfile(stack));
     }
 
     private void PublishEvents(int playerId, CharacterState[] oldStack, CharacterState[] newStack)

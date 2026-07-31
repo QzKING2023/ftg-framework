@@ -7,6 +7,32 @@ namespace FTG_Framework.Tests;
 
 public class PhysicsDataLoaderTests
 {
+    [Theory]
+    [InlineData("horizontal")]
+    [InlineData("vertical")]
+    [InlineData("gravity")]
+    [InlineData("friction")]
+    public void LoadKnockbackProfiles_NegativeMagnitude_Throws(string field)
+    {
+        string json = $$"""{"knockback_profiles":[{"profile_id":"bad","{{field}}":-1}]}""";
+        var ex = Assert.Throws<FormatException>(
+            () => PhysicsDataLoader.LoadKnockbackProfilesFromJson(json));
+        Assert.StartsWith("[Data]", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("knockback_multiplier")]
+    [InlineData("gravity_scale")]
+    [InlineData("friction")]
+    [InlineData("air_friction")]
+    public void LoadPhysicsResponseProfiles_NegativeValue_Throws(string field)
+    {
+        string json = $$"""{"physics_response_profiles":[{"profile_id":"bad","{{field}}":-1}]}""";
+        var ex = Assert.Throws<FormatException>(
+            () => PhysicsDataLoader.LoadPhysicsResponseProfilesFromJson(json));
+        Assert.StartsWith("[Data]", ex.Message);
+    }
+
     [Fact]
     public void LoadKnockbackProfiles_ValidJson_ReturnsCorrectProfiles()
     {
@@ -144,6 +170,16 @@ public class PhysicsDataLoaderTests
     }
 
     [Fact]
+    public void LoadKnockbackProfiles_NullEntry_ThrowsFormatException()
+    {
+        var ex = Assert.Throws<FormatException>(() =>
+            PhysicsDataLoader.LoadKnockbackProfilesFromJson(
+                """{ "knockback_profiles": [null] }"""));
+
+        Assert.Contains("[Data]", ex.Message);
+    }
+
+    [Fact]
     public void LoadKnockbackProfiles_NaN_Horizontal_ThrowsFormatException()
     {
         var json = @"{
@@ -193,6 +229,16 @@ public class PhysicsDataLoaderTests
 
         var ex = Assert.Throws<FormatException>(() =>
             PhysicsDataLoader.LoadPhysicsResponseProfilesFromJson(json));
+        Assert.Contains("[Data]", ex.Message);
+    }
+
+    [Fact]
+    public void LoadPhysicsResponseProfiles_NullEntry_ThrowsFormatException()
+    {
+        var ex = Assert.Throws<FormatException>(() =>
+            PhysicsDataLoader.LoadPhysicsResponseProfilesFromJson(
+                """{ "physics_response_profiles": [null] }"""));
+
         Assert.Contains("[Data]", ex.Message);
     }
 }

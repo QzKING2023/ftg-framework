@@ -22,6 +22,13 @@ public partial class CharacterController : Node2D, IPhysicsParticipant
     private readonly List<CollisionBoxDefinition> _neutralHurtboxes = new();
     private bool _facingRight = true;
     private System.Action<StateChangedEvent>? _stateChangedHandler;
+    private System.Action<KnockbackAppliedEvent>? _knockbackHandler;
+    private System.Action<ReplayStartedEvent>? _replayStartedHandler;
+    private System.Action<ReplayEndedEvent>? _replayEndedHandler;
+    private System.Action<MatchInitializedEvent>? _matchInitializedHandler;
+    private PhysicsMotionSnapshot _motion;
+    private long _latestKnockbackGeneration;
+    private int _latestKnockbackFrame = -1;
     private GameLoop? _gameLoop;
     private CharacterState? _displayedState;
 
@@ -55,6 +62,15 @@ public partial class CharacterController : Node2D, IPhysicsParticipant
 
         _stateChangedHandler = OnStateChanged;
         EventBus.Instance.Subscribe(_stateChangedHandler);
+        _knockbackHandler = OnKnockbackApplied;
+        EventBus.Instance.Subscribe(_knockbackHandler);
+        _replayStartedHandler = _ => ResetKnockbackEventOrder();
+        _replayEndedHandler = _ => ResetKnockbackEventOrder();
+        _matchInitializedHandler = _ => ResetKnockbackEventOrder();
+        EventBus.Instance.Subscribe(_replayStartedHandler);
+        EventBus.Instance.Subscribe(_replayEndedHandler);
+        EventBus.Instance.Subscribe(_matchInitializedHandler);
+        _motion = new PhysicsMotionSnapshot(0, 0, false, GlobalPosition.Y);
 
         CollectHurtboxes();
         _gameLoop.PhysicsEngine?.Register(this);
@@ -72,6 +88,18 @@ public partial class CharacterController : Node2D, IPhysicsParticipant
         if (_stateChangedHandler is not null)
             EventBus.Instance.Unsubscribe(_stateChangedHandler);
         _stateChangedHandler = null;
+        if (_knockbackHandler is not null)
+            EventBus.Instance.Unsubscribe(_knockbackHandler);
+        _knockbackHandler = null;
+        if (_replayStartedHandler is not null)
+            EventBus.Instance.Unsubscribe(_replayStartedHandler);
+        if (_replayEndedHandler is not null)
+            EventBus.Instance.Unsubscribe(_replayEndedHandler);
+        if (_matchInitializedHandler is not null)
+            EventBus.Instance.Unsubscribe(_matchInitializedHandler);
+        _replayStartedHandler = null;
+        _replayEndedHandler = null;
+        _matchInitializedHandler = null;
         _gameLoop?.PhysicsEngine?.Unregister(this);
     }
 
@@ -91,6 +119,41 @@ public partial class CharacterController : Node2D, IPhysicsParticipant
             direction,
             _facingRight,
             _neutralHurtboxes);
+    }
+
+    public PhysicsMotionSnapshot CaptureMotionSnapshot()
+    {
+        if (!_motion.Airborne)
+            _motion = _motion with { GroundY = GlobalPosition.Y };
+        return _motion;
+    }
+
+    private void OnKnockbackApplied(KnockbackAppliedEvent e)
+    {
+        if (e.PlayerId != PlayerId || !e.WorldX.HasValue || !e.WorldY.HasValue)
+            return;
+        if (!ShouldApplyKnockbackEvent(
+                e.GenerationId, e.FrameNumber,
+                _latestKnockbackGeneration, _latestKnockbackFrame))
+            return;
+        _latestKnockbackGeneration = e.GenerationId;
+        _latestKnockbackFrame = e.FrameNumber;
+        GlobalPosition = new Vector2(e.WorldX.Value, e.WorldY.Value);
+        _motion = new PhysicsMotionSnapshot(
+            e.HorizontalForce, e.VerticalForce, !e.Completed && e.WorldY.Value < _motion.GroundY,
+            _motion.GroundY);
+    }
+
+    internal static bool ShouldApplyKnockbackEvent(
+        long generationId, int frameNumber, long latestGeneration, int latestFrame) =>
+        generationId > 0 &&
+        (generationId > latestGeneration ||
+         generationId == latestGeneration && frameNumber >= latestFrame);
+
+    private void ResetKnockbackEventOrder()
+    {
+        _latestKnockbackGeneration = 0;
+        _latestKnockbackFrame = -1;
     }
 
     private void OnStateChanged(StateChangedEvent e)

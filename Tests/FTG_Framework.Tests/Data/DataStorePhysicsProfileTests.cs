@@ -179,6 +179,19 @@ public class DataStorePhysicsProfileTests
     }
 
     [Fact]
+    public void SetKnockbackProfiles_InvalidCandidate_RetainsPreviousSetAndIdentity()
+    {
+        var previous = MakeKnockbackProfile("previous");
+        var store = new DataStore([MakeMove("5LP")], knockbackProfiles: [previous]);
+
+        Assert.Throws<FormatException>(() => store.SetKnockbackProfiles(
+            [MakeKnockbackProfile("duplicate"), MakeKnockbackProfile("duplicate")]));
+
+        Assert.Same(previous, store.GetKnockbackProfile("previous"));
+        Assert.Null(store.GetKnockbackProfile("duplicate"));
+    }
+
+    [Fact]
     public void SetKnockbackProfiles_EmptyProfileId_ThrowsFormatException()
     {
         var moves = new[] { MakeMove("5LP") };
@@ -198,6 +211,18 @@ public class DataStorePhysicsProfileTests
 
         Assert.Throws<ArgumentNullException>(() =>
             store.SetKnockbackProfiles(null!));
+    }
+
+    [Fact]
+    public void SetKnockbackProfiles_NullEntry_RetainsPreviousSetAndIdentity()
+    {
+        var previous = MakeKnockbackProfile("previous");
+        var store = new DataStore([MakeMove("5LP")], knockbackProfiles: [previous]);
+
+        Assert.Throws<FormatException>(() =>
+            store.SetKnockbackProfiles([null!]));
+
+        Assert.Same(previous, store.GetKnockbackProfile("previous"));
     }
 
     [Fact]
@@ -256,6 +281,19 @@ public class DataStorePhysicsProfileTests
     }
 
     [Fact]
+    public void SetPhysicsResponseProfiles_InvalidCandidate_RetainsPreviousSetAndIdentity()
+    {
+        var previous = MakeResponseProfile("previous");
+        var store = new DataStore([MakeMove("5LP")], physicsResponseProfiles: [previous]);
+
+        Assert.Throws<FormatException>(() => store.SetPhysicsResponseProfiles(
+            [MakeResponseProfile("duplicate"), MakeResponseProfile("duplicate")]));
+
+        Assert.Same(previous, store.GetPhysicsResponseProfile("previous"));
+        Assert.Null(store.GetPhysicsResponseProfile("duplicate"));
+    }
+
+    [Fact]
     public void SetPhysicsResponseProfiles_EmptyProfileId_ThrowsFormatException()
     {
         var moves = new[] { MakeMove("5LP") };
@@ -275,6 +313,18 @@ public class DataStorePhysicsProfileTests
 
         Assert.Throws<ArgumentNullException>(() =>
             store.SetPhysicsResponseProfiles(null!));
+    }
+
+    [Fact]
+    public void SetPhysicsResponseProfiles_NullEntry_RetainsPreviousSetAndIdentity()
+    {
+        var previous = MakeResponseProfile("previous");
+        var store = new DataStore([MakeMove("5LP")], physicsResponseProfiles: [previous]);
+
+        Assert.Throws<FormatException>(() =>
+            store.SetPhysicsResponseProfiles([null!]));
+
+        Assert.Same(previous, store.GetPhysicsResponseProfile("previous"));
     }
 
     [Fact]

@@ -426,6 +426,144 @@ public class StateMachineTests : IDisposable
         });
     }
 
+    [Fact]
+    public void EffectiveProfile_ReloadAlone_DoesNotRefreshCurrentOccupancy()
+    {
+        var (store, sm, dispose) = CreateMachine();
+        try
+        {
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "hitstun",
+                KnockbackMultiplier = 0.5f
+            });
+            sm.RegisterStateProfile(CharacterState.Hitstun, "hitstun");
+            sm.InitializePlayer(1);
+            sm.ReplaceState(1, CharacterState.Hitstun);
+            Assert.Equal(0.5f, sm.GetEffectivePhysicsProfile(1).KnockbackMultiplier);
+
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "hitstun",
+                KnockbackMultiplier = 0.9f
+            });
+
+            Assert.Equal(0.5f, sm.GetEffectivePhysicsProfile(1).KnockbackMultiplier);
+        }
+        finally { dispose(); }
+    }
+
+    [Fact]
+    public void EffectiveProfile_SameLogicalHitstunReplacement_DoesNotRefresh()
+    {
+        var (store, sm, dispose) = CreateMachine();
+        try
+        {
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "hitstun",
+                KnockbackMultiplier = 0.5f
+            });
+            sm.RegisterStateProfile(CharacterState.Hitstun, "hitstun");
+            sm.InitializePlayer(1);
+            sm.ReplaceState(1, CharacterState.Hitstun);
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "hitstun",
+                KnockbackMultiplier = 0.9f
+            });
+
+            sm.ReplaceState(1, CharacterState.Hitstun);
+
+            Assert.Equal(0.5f, sm.GetEffectivePhysicsProfile(1).KnockbackMultiplier);
+        }
+        finally { dispose(); }
+    }
+
+    [Fact]
+    public void EffectiveProfile_ExitAndReenter_AdoptsReloadedProfile()
+    {
+        var (store, sm, dispose) = CreateMachine();
+        try
+        {
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "hitstun",
+                KnockbackMultiplier = 0.5f
+            });
+            sm.RegisterStateProfile(CharacterState.Hitstun, "hitstun");
+            sm.InitializePlayer(1);
+            sm.ReplaceState(1, CharacterState.Hitstun);
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "hitstun",
+                KnockbackMultiplier = 0.9f
+            });
+
+            sm.PopState(1);
+            sm.ReplaceState(1, CharacterState.Hitstun);
+
+            Assert.Equal(0.9f, sm.GetEffectivePhysicsProfile(1).KnockbackMultiplier);
+        }
+        finally { dispose(); }
+    }
+
+    [Fact]
+    public void InitializePlayer_AfterMappingRegistration_CachesMappedIdleProfile()
+    {
+        var (store, sm, dispose) = CreateMachine();
+        try
+        {
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "idle",
+                KnockbackMultiplier = 0.4f
+            });
+            sm.RegisterStateProfile(CharacterState.Idle, "idle");
+
+            sm.InitializePlayer(1);
+            store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+            {
+                ProfileId = "idle",
+                KnockbackMultiplier = 0.8f
+            });
+
+            Assert.Equal(0.4f, sm.GetEffectivePhysicsProfile(1).KnockbackMultiplier);
+        }
+        finally { dispose(); }
+    }
+
+    [Fact]
+    public void StateChangedObserver_SeesCommittedEffectiveProfileSnapshot()
+    {
+        var (store, sm, dispose) = CreateMachine();
+        store.SetPhysicsResponseProfile(new PhysicsResponseProfile
+        {
+            ProfileId = "hitstun",
+            KnockbackMultiplier = 0.65f
+        });
+        sm.RegisterStateProfile(CharacterState.Hitstun, "hitstun");
+        sm.InitializePlayer(1);
+        float observed = -1;
+        Action<StateChangedEvent> handler = e =>
+        {
+            if (e.PlayerId == 1)
+                observed = sm.GetEffectivePhysicsProfile(1).KnockbackMultiplier;
+        };
+        EventBus.Instance.Subscribe(handler);
+        try
+        {
+            sm.ReplaceState(1, CharacterState.Hitstun);
+            EventBus.Instance.ProcessFrame();
+            Assert.Equal(0.65f, observed);
+        }
+        finally
+        {
+            EventBus.Instance.Unsubscribe(handler);
+            dispose();
+        }
+    }
+
     // ── AC 9: Custom State + Custom Profile ──
 
     [Fact]
@@ -799,6 +937,68 @@ public class StateMachineTests : IDisposable
 
             Assert.Single(events);
             Assert.Equal(new[] { CharacterState.Idle, CharacterState.Hitstun }, events[0].Stack);
+        });
+    }
+
+    [Fact]
+    public void KnockbackCompletion_ResetsOnlyLatestHitstunGeneration()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.ReplaceState(2, CharacterState.Hitstun);
+            EventBus.Instance.Publish(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 2, 1, 1, false));
+            EventBus.Instance.ProcessFrame();
+            EventBus.Instance.Publish(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 1, 1, 2, true));
+            EventBus.Instance.ProcessFrame();
+            Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
+
+            EventBus.Instance.Publish(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 2, 1, 3, true));
+            EventBus.Instance.ProcessFrame();
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(2));
+
+            sm.ReplaceState(2, CharacterState.Hitstun);
+            EventBus.Instance.Publish(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 2, 1, 4, true));
+            EventBus.Instance.ProcessFrame();
+            Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
+        });
+    }
+
+    [Fact]
+    public void ReplayBoundaries_ResetTrajectoryGenerationNamespace()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.ReplaceState(2, CharacterState.Hitstun);
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 100, 1, 100, false));
+            EventBus.Instance.PublishImmediate(new ReplayStartedEvent(10, 2));
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 1, 1, 1, true));
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(2));
+
+            sm.ReplaceState(2, CharacterState.Hitstun);
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 100, 1, 100, false));
+            EventBus.Instance.PublishImmediate(new ReplayEndedEvent(10));
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 1, 1, 101, true));
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(2));
+        });
+    }
+
+    [Fact]
+    public void LegacyKnockbackCompletion_DoesNotChangeHitstun()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            sm.ReplaceState(2, CharacterState.Hitstun);
+            EventBus.Instance.Publish(new KnockbackAppliedEvent(2, 0, 0, 1, 0.1f));
+            EventBus.Instance.ProcessFrame();
+            Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
         });
     }
 }

@@ -15,6 +15,7 @@ namespace FTG_Framework.Core.Replay;
 [JsonSerializable(typeof(HitConnectedEvent))]
 [JsonSerializable(typeof(InputBufferExpiredEvent))]
 [JsonSerializable(typeof(InputReceivedEvent))]
+[JsonSerializable(typeof(KnockbackAppliedEvent))]
 [JsonSerializable(typeof(MatchInitializedEvent))]
 [JsonSerializable(typeof(MoveBlockedEvent))]
 [JsonSerializable(typeof(MoveCanceledEvent))]

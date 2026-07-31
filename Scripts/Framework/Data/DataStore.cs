@@ -11,8 +11,8 @@ internal sealed class DataStore : IDataStore
     private readonly Dictionary<string, MoveDefinition> _moves;
     private readonly Dictionary<string, GatlingTable> _gatlingTables;
     private readonly Dictionary<string, CharacterDefinition> _characters;
-    private readonly Dictionary<string, KnockbackProfile> _knockbackProfiles;
-    private readonly Dictionary<string, PhysicsResponseProfile> _physicsResponseProfiles;
+    private Dictionary<string, KnockbackProfile> _knockbackProfiles;
+    private Dictionary<string, PhysicsResponseProfile> _physicsResponseProfiles;
     private readonly HashSet<string> _knownCategories;
 
     public DataStore(
@@ -189,14 +189,17 @@ internal sealed class DataStore : IDataStore
     public void SetKnockbackProfiles(KnockbackProfile[] profiles)
     {
         ArgumentNullException.ThrowIfNull(profiles);
-        _knockbackProfiles.Clear();
+        var candidate = new Dictionary<string, KnockbackProfile>();
         foreach (var profile in profiles)
         {
+            if (profile is null)
+                throw new FormatException("[Data] KnockbackProfile array contains a null entry.");
             if (string.IsNullOrEmpty(profile.ProfileId))
                 throw new FormatException("[Data] KnockbackProfile has null or empty profile_id.");
-            if (!_knockbackProfiles.TryAdd(profile.ProfileId, profile))
+            if (!candidate.TryAdd(profile.ProfileId, profile))
                 throw new FormatException($"[Data] Duplicate knockback_profile_id: '{profile.ProfileId}'.");
         }
+        _knockbackProfiles = candidate;
     }
 
     public PhysicsResponseProfile? GetPhysicsResponseProfile(string profileId)
@@ -215,13 +218,16 @@ internal sealed class DataStore : IDataStore
     public void SetPhysicsResponseProfiles(PhysicsResponseProfile[] profiles)
     {
         ArgumentNullException.ThrowIfNull(profiles);
-        _physicsResponseProfiles.Clear();
+        var candidate = new Dictionary<string, PhysicsResponseProfile>();
         foreach (var profile in profiles)
         {
+            if (profile is null)
+                throw new FormatException("[Data] PhysicsResponseProfile array contains a null entry.");
             if (string.IsNullOrEmpty(profile.ProfileId))
                 throw new FormatException("[Data] PhysicsResponseProfile has null or empty profile_id.");
-            if (!_physicsResponseProfiles.TryAdd(profile.ProfileId, profile))
+            if (!candidate.TryAdd(profile.ProfileId, profile))
                 throw new FormatException($"[Data] Duplicate physics_response_profile_id: '{profile.ProfileId}'.");
         }
+        _physicsResponseProfiles = candidate;
     }
 }

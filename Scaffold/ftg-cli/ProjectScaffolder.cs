@@ -140,6 +140,7 @@ public static class ProjectScaffolder
             Path.Combine("Scripts", "Framework", "Data", "example_characters.json"),
             Path.Combine("Scripts", "Framework", "Data", "example_gatling.json"),
             Path.Combine("Scripts", "Framework", "Data", "example_knockback_profiles.json"),
+            Path.Combine("Scripts", "Framework", "Data", "example_physics_response_profiles.json"),
             Path.Combine("Scripts", "Framework", "Data", "template_fighter.json"),
         };
         foreach (var relativePath in requiredFiles)

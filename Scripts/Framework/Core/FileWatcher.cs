@@ -29,17 +29,25 @@ internal sealed class FileWatcher : IDisposable
         {
             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName,
             IncludeSubdirectories = false,
-            EnableRaisingEvents = true
+            EnableRaisingEvents = false
         };
 
         _watcher.Changed += OnFileChanged;
         _watcher.Created += OnFileChanged;
-        _watcher.Renamed += OnFileChanged;
+        _watcher.Deleted += OnFileChanged;
+        _watcher.Renamed += OnFileRenamed;
         _watcher.Error += OnWatcherError;
+        _watcher.EnableRaisingEvents = true;
     }
 
     private static void OnFileChanged(object sender, FileSystemEventArgs e)
     {
+        EventBus.Instance.EnqueueDataReload(new DataReloadedEvent(e.FullPath));
+    }
+
+    private static void OnFileRenamed(object sender, RenamedEventArgs e)
+    {
+        EventBus.Instance.EnqueueDataReload(new DataReloadedEvent(e.OldFullPath));
         EventBus.Instance.EnqueueDataReload(new DataReloadedEvent(e.FullPath));
     }
 
@@ -56,7 +64,8 @@ internal sealed class FileWatcher : IDisposable
         _watcher.EnableRaisingEvents = false;
         _watcher.Changed -= OnFileChanged;
         _watcher.Created -= OnFileChanged;
-        _watcher.Renamed -= OnFileChanged;
+        _watcher.Deleted -= OnFileChanged;
+        _watcher.Renamed -= OnFileRenamed;
         _watcher.Error -= OnWatcherError;
         _watcher.Dispose();
     }

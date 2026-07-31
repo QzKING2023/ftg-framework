@@ -80,6 +80,36 @@ public class FileWatcherTests : IDisposable
         Assert.NotEmpty(events);
     }
 
+    [Fact]
+    public void FileDeleted_EnqueuesDeletedTargetPath()
+    {
+        string filePath = Path.Combine(_tempDir, "delete.json");
+        File.WriteAllText(filePath, "{}");
+        using var watcher = new FileWatcher(_tempDir, "*.json");
+
+        File.Delete(filePath);
+        Thread.Sleep(200);
+
+        var events = CollectDataReloadedEvents();
+        Assert.Contains(events, e => Path.GetFullPath(e.FilePath) == Path.GetFullPath(filePath));
+    }
+
+    [Fact]
+    public void FileRenamed_EnqueuesOldAndNewPaths()
+    {
+        string oldPath = Path.Combine(_tempDir, "old.json");
+        string newPath = Path.Combine(_tempDir, "new.json");
+        File.WriteAllText(oldPath, "{}");
+        using var watcher = new FileWatcher(_tempDir, "*.json");
+
+        File.Move(oldPath, newPath);
+        Thread.Sleep(200);
+
+        var events = CollectDataReloadedEvents();
+        Assert.Contains(events, e => Path.GetFullPath(e.FilePath) == Path.GetFullPath(oldPath));
+        Assert.Contains(events, e => Path.GetFullPath(e.FilePath) == Path.GetFullPath(newPath));
+    }
+
     // ── Disposal stops watching ──
 
     [Fact]

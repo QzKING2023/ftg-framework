@@ -58,20 +58,18 @@ internal static class PhysicsDataLoader
 
         foreach (var profile in profiles)
         {
+            if (profile is null)
+                throw new FormatException("[Data] KnockbackProfile array contains a null entry.");
             if (string.IsNullOrEmpty(profile.ProfileId))
                 throw new FormatException("[Data] KnockbackProfile has null or empty profile_id.");
 
             if (!seenIds.Add(profile.ProfileId))
                 throw new FormatException($"[Data] Duplicate knockback_profile_id: '{profile.ProfileId}'.");
 
-            if (!float.IsFinite(profile.Horizontal))
-                throw new FormatException($"[Data] KnockbackProfile '{profile.ProfileId}': horizontal must be finite, got {profile.Horizontal}.");
-            if (!float.IsFinite(profile.Vertical))
-                throw new FormatException($"[Data] KnockbackProfile '{profile.ProfileId}': vertical must be finite, got {profile.Vertical}.");
-            if (!float.IsFinite(profile.Gravity))
-                throw new FormatException($"[Data] KnockbackProfile '{profile.ProfileId}': gravity must be finite, got {profile.Gravity}.");
-            if (!float.IsFinite(profile.Friction))
-                throw new FormatException($"[Data] KnockbackProfile '{profile.ProfileId}': friction must be finite, got {profile.Friction}.");
+            ValidateNonNegative(profile.Horizontal, profile.ProfileId, "horizontal", "KnockbackProfile");
+            ValidateNonNegative(profile.Vertical, profile.ProfileId, "vertical", "KnockbackProfile");
+            ValidateNonNegative(profile.Gravity, profile.ProfileId, "gravity", "KnockbackProfile");
+            ValidateNonNegative(profile.Friction, profile.ProfileId, "friction", "KnockbackProfile");
         }
     }
 
@@ -81,21 +79,27 @@ internal static class PhysicsDataLoader
 
         foreach (var profile in profiles)
         {
+            if (profile is null)
+                throw new FormatException("[Data] PhysicsResponseProfile array contains a null entry.");
             if (string.IsNullOrEmpty(profile.ProfileId))
                 throw new FormatException("[Data] PhysicsResponseProfile has null or empty profile_id.");
 
             if (!seenIds.Add(profile.ProfileId))
                 throw new FormatException($"[Data] Duplicate physics_response_profile_id: '{profile.ProfileId}'.");
 
-            if (!float.IsFinite(profile.KnockbackMultiplier))
-                throw new FormatException($"[Data] PhysicsResponseProfile '{profile.ProfileId}': knockback_multiplier must be finite, got {profile.KnockbackMultiplier}.");
-            if (!float.IsFinite(profile.GravityScale))
-                throw new FormatException($"[Data] PhysicsResponseProfile '{profile.ProfileId}': gravity_scale must be finite, got {profile.GravityScale}.");
-            if (!float.IsFinite(profile.Friction))
-                throw new FormatException($"[Data] PhysicsResponseProfile '{profile.ProfileId}': friction must be finite, got {profile.Friction}.");
-            if (!float.IsFinite(profile.AirFriction))
-                throw new FormatException($"[Data] PhysicsResponseProfile '{profile.ProfileId}': air_friction must be finite, got {profile.AirFriction}.");
+            ValidateNonNegative(profile.KnockbackMultiplier, profile.ProfileId, "knockback_multiplier", "PhysicsResponseProfile");
+            ValidateNonNegative(profile.GravityScale, profile.ProfileId, "gravity_scale", "PhysicsResponseProfile");
+            ValidateNonNegative(profile.Friction, profile.ProfileId, "friction", "PhysicsResponseProfile");
+            ValidateNonNegative(profile.AirFriction, profile.ProfileId, "air_friction", "PhysicsResponseProfile");
         }
+    }
+
+    private static void ValidateNonNegative(
+        float value, string profileId, string field, string kind)
+    {
+        if (!float.IsFinite(value) || value < 0)
+            throw new FormatException(
+                $"[Data] {kind} '{profileId}': {field} must be finite and non-negative, got {value}.");
     }
 
     private sealed class KnockbackProfileListWrapper

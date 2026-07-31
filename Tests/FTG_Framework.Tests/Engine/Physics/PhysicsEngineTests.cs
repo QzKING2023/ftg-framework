@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.IO;
 using FTG_Framework.Core;
 using FTG_Framework.Core.Events;
 using FTG_Framework.Data;
@@ -292,8 +293,93 @@ public sealed class PhysicsEngineTests : IDisposable
         finally { tracker.Shutdown(); }
     }
 
+    [Fact]
+    public void Update_HitWithProfile_StartsAndAdvancesOneAbsoluteTrajectoryEvent()
+    {
+        var profile = new KnockbackProfile
+        {
+            ProfileId = "launch", Horizontal = 8, Vertical = 3, Gravity = 1.5f, Friction = 0.3f
+        };
+        var (engine, frames, _) = MakeEngine(profile, stateMachine: new StubStateMachine());
+        frames.P1 = new EvaluatedMoveFrame("5A", 1, 1, MovePhase.Active);
+        engine.Register(new StubParticipant(1, -5, DirectionValue.Neutral, true));
+        engine.Register(new StubParticipant(2, 5, DirectionValue.Neutral, false));
+        KnockbackAppliedEvent? observed = null;
+        Action<KnockbackAppliedEvent> handler = e => observed = e;
+        EventBus.Instance.Subscribe(handler);
+        try
+        {
+            engine.Update();
+            EventBus.Instance.ProcessFrame();
+            Assert.NotNull(observed);
+            Assert.Equal(13, observed.Value.WorldX);
+            Assert.Equal(-3, observed.Value.WorldY);
+            Assert.Equal(1, observed.Value.GenerationId);
+            Assert.False(observed.Value.Completed);
+        }
+        finally { EventBus.Instance.Unsubscribe(handler); }
+    }
+
+    [Fact]
+    public void HotReload_MidTrajectoryKeepsOldProfile_NextHitUsesNewProfile()
+    {
+        var oldProfile = new KnockbackProfile
+        {
+            ProfileId = "launch", Horizontal = 8, Vertical = 3, Gravity = 1.5f, Friction = 0.3f
+        };
+        var (engine, frames, store) = MakeEngine(oldProfile, stateMachine: new StubStateMachine());
+        frames.P1 = new EvaluatedMoveFrame("5A", 1, 1, MovePhase.Active);
+        engine.Register(new StubParticipant(1, -5, DirectionValue.Neutral, true));
+        engine.Register(new StubParticipant(2, 5, DirectionValue.Neutral, false));
+        string directory = Path.Combine(Path.GetTempPath(), $"ftg-physics-reload-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        string knockbackPath = Path.Combine(directory, "knockback.json");
+        string responsePath = Path.Combine(directory, "response.json");
+        File.WriteAllText(knockbackPath,
+            """{"knockback_profiles":[{"profile_id":"launch","horizontal":12,"vertical":3,"gravity":9,"friction":0.8}]}""");
+        var reload = new PhysicsProfileHotReloadService(
+            knockbackPath, responsePath, () => ["default"]);
+        reload.Initialize(store);
+        var applied = new List<KnockbackAppliedEvent>();
+        Action<KnockbackAppliedEvent> handler = applied.Add;
+        EventBus.Instance.Subscribe(handler);
+        try
+        {
+            int firstContact = EventBus.Instance.CurrentFrame;
+            engine.Update();
+            EventBus.Instance.ProcessFrame();
+            Assert.True(engine.TryGetHitContext(1, 2, "hit-a", firstContact, out var first));
+            Assert.Same(oldProfile, first.KnockbackProfile);
+
+            EventBus.Instance.Publish(new DataReloadedEvent(knockbackPath));
+            EventBus.Instance.ProcessFrame();
+            engine.Update();
+            EventBus.Instance.ProcessFrame();
+            Assert.Equal(1.5f, applied[^1].Gravity);
+
+            frames.P1 = EvaluatedMoveFrame.Idle;
+            engine.Update();
+            EventBus.Instance.ProcessFrame();
+            frames.P1 = new EvaluatedMoveFrame("5A", 2, 1, MovePhase.Active);
+            int secondContact = EventBus.Instance.CurrentFrame;
+            engine.Update();
+            EventBus.Instance.ProcessFrame();
+
+            Assert.True(engine.TryGetHitContext(1, 2, "hit-a", secondContact, out var second));
+            Assert.Equal(12, second.KnockbackProfile!.Horizontal);
+            Assert.Equal(9, second.KnockbackProfile.Gravity);
+        }
+        finally
+        {
+            EventBus.Instance.Unsubscribe(handler);
+            reload.Shutdown();
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static (PhysicsEngine Engine, StubFrames Frames, DataStore Store) MakeEngine(
-        KnockbackProfile? profile = null, bool twoHitboxes = false)
+        KnockbackProfile? profile = null, bool twoHitboxes = false,
+        IStateMachine? stateMachine = null)
     {
         var boxes = new List<CollisionBoxDefinition>
         {
@@ -314,7 +400,7 @@ public sealed class PhysicsEngineTests : IDisposable
         var store = new DataStore(
             new[] { move }, knockbackProfiles: profile is null ? null : new[] { profile });
         var frames = new StubFrames();
-        var engine = new PhysicsEngine(store, frames);
+        var engine = new PhysicsEngine(store, frames, stateMachine);
         engine.Initialize(store);
         return (engine, frames, store);
     }
@@ -354,5 +440,24 @@ public sealed class PhysicsEngineTests : IDisposable
         public int PlayerId => 1;
         public PhysicsParticipantSnapshot CapturePhysicsSnapshot() =>
             new(2, "wrong", 0, 0, DirectionValue.Neutral, true, []);
+    }
+
+    private sealed class StubStateMachine : IStateMachine
+    {
+        public PhysicsResponseProfile GetEffectivePhysicsProfile(int playerId) => new()
+        {
+            ProfileId = "effective", KnockbackMultiplier = 1, GravityScale = 1,
+            Friction = 0.5f, AirFriction = 0.2f
+        };
+        public CharacterState GetCurrentState(int playerId) => CharacterState.Hitstun;
+        public IReadOnlyList<CharacterState> GetStack(int playerId) => [CharacterState.Hitstun];
+        public int GetStackDepth(int playerId) => 1;
+        public void InitializePlayer(int playerId) { }
+        public void PushState(int playerId, CharacterState state) { }
+        public void PopState(int playerId) { }
+        public void ReplaceState(int playerId, CharacterState newState) { }
+        public void RegisterStateProfile(CharacterState state, string physicsResponseProfileId) { }
+        public void Initialize(IDataStore dataStore) { }
+        public void Shutdown() { }
     }
 }

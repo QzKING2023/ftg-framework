@@ -23,6 +23,14 @@ public partial class ScaffoldSmokeTest : Node
     private double _baselineMaximumDelta;
     private double _collisionWindowMaximumDelta;
     private Action<HitConnectedEvent>? _collisionHandler;
+    private Action<KnockbackAppliedEvent>? _knockbackHandler;
+    private int _knockbackEventCount;
+    private bool _knockbackCompleted;
+    private float _initialP2X;
+    private float _finalP2X;
+    private bool _hotReloadRequested;
+    private string? _profilePath;
+    private string? _originalProfileJson;
     private readonly HashSet<string> _visibleP1Inputs = new(StringComparer.Ordinal);
 
     public override void _EnterTree()
@@ -45,6 +53,7 @@ public partial class ScaffoldSmokeTest : Node
                 var initialP2 = characters.Single(character => character.PlayerId == 2);
                 initialP1.GlobalPosition = new Vector2(600, 360);
                 initialP2.GlobalPosition = new Vector2(650, 360);
+                _initialP2X = initialP2.GlobalPosition.X;
                 _collisionHandler = hit =>
                 {
                     if (hit.AttackerId == 1 && hit.DefenderId == 2 && hit.MoveId == "5LP")
@@ -55,9 +64,34 @@ public partial class ScaffoldSmokeTest : Node
                     }
                 };
                 EventBus.Instance.Subscribe(_collisionHandler);
+                _knockbackHandler = applied =>
+                {
+                    if (applied.PlayerId != 2 || !applied.WorldX.HasValue)
+                        return;
+                    _knockbackEventCount++;
+                    _finalP2X = applied.WorldX.Value;
+                    _knockbackCompleted |= applied.Completed;
+                };
+                EventBus.Instance.Subscribe(_knockbackHandler);
                 inputLog.ShowP1 = true;
                 inputLog.ShowP2 = false;
                 inputLog.VisibleRowCount = 20;
+                _profilePath = ProjectSettings.GlobalizePath(
+                    "res://Scripts/Framework/Data/example_knockback_profiles.json");
+                _originalProfileJson = System.IO.File.ReadAllText(_profilePath);
+                string updatedProfileJson = _originalProfileJson.Replace(
+                    "\"horizontal\": 3.0",
+                    "\"horizontal\": 4.5",
+                    StringComparison.Ordinal);
+                if (updatedProfileJson == _originalProfileJson)
+                {
+                    FailAndExit("light_hit source profile was not at the expected baseline value");
+                    return;
+                }
+                System.IO.File.WriteAllText(
+                    _profilePath,
+                    updatedProfileJson);
+                _hotReloadRequested = true;
                 _scenarioStarted = true;
                 return;
             }
@@ -108,6 +142,12 @@ public partial class ScaffoldSmokeTest : Node
             failures.Add(
                 $"collision contact frame {_collisionHit.ContactFrame} did not match " +
                 $"dispatch frame {_collisionDispatchFrame}");
+        if (_knockbackEventCount == 0)
+            failures.Add("expected visible P2 knockback position events");
+        if (_finalP2X <= _initialP2X)
+            failures.Add($"P2 did not move away from P1 ({_initialP2X} -> {_finalP2X})");
+        if (!_knockbackCompleted)
+            failures.Add("knockback trajectory never published Completed=true");
         if (Godot.Engine.PhysicsTicksPerSecond != 60)
             failures.Add(
                 $"physics tick rate was {Godot.Engine.PhysicsTicksPerSecond}, expected 60 Hz");
@@ -119,6 +159,12 @@ public partial class ScaffoldSmokeTest : Node
 
         var gameLoop = GetNodeOrNull<GameLoop>("/root/GameLoop");
         var history = gameLoop?.InputHistory;
+        if (!_hotReloadRequested)
+            failures.Add("physics profile hot-reload was not requested");
+        var reloadedProfile = gameLoop?.DataStore?.GetKnockbackProfile("light_hit");
+        if (reloadedProfile?.Horizontal != 4.5f)
+            failures.Add(
+                $"light_hit hot-reload was not visible (horizontal={reloadedProfile?.Horizontal})");
         var directions = history?.GetDirectionalHistory(1).Select(entry => entry.Value).ToHashSet() ?? [];
         foreach (var expected in new[]
                  {
@@ -153,7 +199,9 @@ public partial class ScaffoldSmokeTest : Node
         {
             if (_collisionHandler is not null)
                 EventBus.Instance.Unsubscribe(_collisionHandler);
-            GD.Print($"[ScaffoldSmoke] PASS: auto-start, input/state flow, one same-frame 5LP collision at frame {_collisionHit.ContactFrame}.");
+            if (_knockbackHandler is not null)
+                EventBus.Instance.Unsubscribe(_knockbackHandler);
+            GD.Print($"[ScaffoldSmoke] PASS: one same-frame 5LP collision at frame {_collisionHit.ContactFrame}; P2 knockback {_initialP2X:F1}->{_finalP2X:F1} completed in {_knockbackEventCount} events.");
             GetTree().Quit(0);
             return;
         }
@@ -162,6 +210,8 @@ public partial class ScaffoldSmokeTest : Node
             GD.PushError($"[ScaffoldSmoke] {failure}");
         if (_collisionHandler is not null)
             EventBus.Instance.Unsubscribe(_collisionHandler);
+        if (_knockbackHandler is not null)
+            EventBus.Instance.Unsubscribe(_knockbackHandler);
         GetTree().Quit(1);
     }
 
@@ -177,6 +227,12 @@ public partial class ScaffoldSmokeTest : Node
     {
         GD.PushError($"[ScaffoldSmoke] {failure}");
         GetTree().Quit(1);
+    }
+
+    public override void _ExitTree()
+    {
+        if (_profilePath is not null && _originalProfileJson is not null)
+            System.IO.File.WriteAllText(_profilePath, _originalProfileJson);
     }
 
     private void CaptureVisibleP1Inputs(InputLog inputLog)

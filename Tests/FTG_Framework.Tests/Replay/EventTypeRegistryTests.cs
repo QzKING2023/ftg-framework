@@ -7,9 +7,9 @@ namespace FTG_Framework.Tests.Replay;
 public class EventTypeRegistryTests
 {
     [Fact]
-    public void AllTypes_HasAll18EventTypes()
+    public void AllTypes_HasAll19EventTypes()
     {
-        Assert.Equal(18, EventTypeRegistry.AllTypes.Count);
+        Assert.Equal(19, EventTypeRegistry.AllTypes.Count);
     }
 
     [Fact]

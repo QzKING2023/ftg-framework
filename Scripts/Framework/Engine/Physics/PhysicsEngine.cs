@@ -11,10 +11,14 @@ internal sealed class PhysicsEngine : IPhysicsEngine
 {
     private readonly IDataStore _dataStore;
     private readonly IFrameDataEngine _frameData;
+    private readonly IStateMachine? _stateMachine;
     private readonly SortedDictionary<int, IPhysicsParticipant> _participants = new();
     private readonly HashSet<HitKey> _previousActive = new();
     private readonly HashSet<HitKey> _currentActive = new();
     private readonly Dictionary<ContextKey, HitContext> _contexts = new();
+    private readonly Dictionary<int, TrajectoryState> _trajectories = new();
+    private readonly Dictionary<int, TrajectoryState> _launchCandidates = new();
+    private long _nextGeneration;
     private bool _initialized;
 
     private readonly record struct HitKey(
@@ -22,12 +26,14 @@ internal sealed class PhysicsEngine : IPhysicsEngine
     private readonly record struct ContextKey(
         int AttackerId, int DefenderId, string HitboxId, int ContactFrame);
 
-    internal PhysicsEngine(IDataStore dataStore, IFrameDataEngine frameData)
+    internal PhysicsEngine(
+        IDataStore dataStore, IFrameDataEngine frameData, IStateMachine? stateMachine = null)
     {
         ArgumentNullException.ThrowIfNull(dataStore);
         ArgumentNullException.ThrowIfNull(frameData);
         _dataStore = dataStore;
         _frameData = frameData;
+        _stateMachine = stateMachine;
     }
 
     public void Initialize(IDataStore dataStore) => _initialized = true;
@@ -39,6 +45,8 @@ internal sealed class PhysicsEngine : IPhysicsEngine
         _previousActive.Clear();
         _currentActive.Clear();
         _contexts.Clear();
+        _trajectories.Clear();
+        _launchCandidates.Clear();
     }
 
     public void Register(IPhysicsParticipant participant)
@@ -47,6 +55,7 @@ internal sealed class PhysicsEngine : IPhysicsEngine
         if (participant.PlayerId < 1 || participant.PlayerId > 2)
             throw new ArgumentOutOfRangeException(nameof(participant), "[Physics] PlayerId must be 1 or 2.");
         ValidateSnapshotIdentity(participant, participant.CapturePhysicsSnapshot());
+        _trajectories.Remove(participant.PlayerId);
         _participants[participant.PlayerId] = participant;
     }
 
@@ -58,6 +67,8 @@ internal sealed class PhysicsEngine : IPhysicsEngine
             !ReferenceEquals(registered, participant))
             return;
         _participants.Remove(playerId);
+        _trajectories.Remove(playerId);
+        _launchCandidates.Remove(playerId);
         _previousActive.RemoveWhere(k => k.AttackerId == playerId || k.DefenderId == playerId);
     }
 
@@ -72,6 +83,7 @@ internal sealed class PhysicsEngine : IPhysicsEngine
             return;
         _contexts.Clear();
         _currentActive.Clear();
+        _launchCandidates.Clear();
         if (_participants.Count == 2)
         {
             var firstParticipant = _participants[1];
@@ -83,6 +95,9 @@ internal sealed class PhysicsEngine : IPhysicsEngine
             Detect(first, second);
             Detect(second, first);
         }
+        foreach (var candidate in _launchCandidates)
+            _trajectories[candidate.Key] = candidate.Value;
+        AdvanceTrajectories();
         _previousActive.Clear();
         foreach (var key in _currentActive)
             _previousActive.Add(key);
@@ -156,7 +171,61 @@ internal sealed class PhysicsEngine : IPhysicsEngine
             var context = new HitContext(hitEvent, hitbox.BoxId, profile);
             _contexts[new ContextKey(
                 attacker.PlayerId, defender.PlayerId, hitbox.BoxId, contactFrame)] = context;
+            if (profile is not null && _stateMachine is not null &&
+                _participants.TryGetValue(defender.PlayerId, out var participant))
+            {
+                var response = _stateMachine.GetEffectivePhysicsProfile(defender.PlayerId);
+                var motion = participant.CaptureMotionSnapshot();
+                _launchCandidates[defender.PlayerId] = ForceCalculator.Launch(
+                    ++_nextGeneration,
+                    defender.WorldX,
+                    defender.WorldY,
+                    attacker.WorldX,
+                    attacker.FacingRight,
+                    motion,
+                    profile,
+                    response,
+                    contactFrame);
+            }
         }
+    }
+
+    private void AdvanceTrajectories()
+    {
+        if (_stateMachine is null || _trajectories.Count == 0)
+            return;
+        Span<int> ids = stackalloc int[2];
+        int idCount = 0;
+        foreach (var pair in _trajectories)
+            ids[idCount++] = pair.Key;
+        Span<int> completed = stackalloc int[2];
+        int completedCount = 0;
+        for (int index = 0; index < idCount; index++)
+        {
+            int playerId = ids[index];
+            var current = _trajectories[playerId];
+            var response = _stateMachine.GetEffectivePhysicsProfile(playerId);
+            var advanced = ForceCalculator.Advance(current, response);
+            _trajectories[playerId] = advanced;
+            float effectiveFriction = advanced.Profile.Friction *
+                (current.Airborne ? response.AirFriction : response.Friction);
+            EventBus.Instance.Publish(new KnockbackAppliedEvent(
+                playerId,
+                advanced.VelocityX,
+                advanced.VelocityY,
+                advanced.Profile.Gravity * response.GravityScale,
+                effectiveFriction,
+                advanced.PositionX,
+                advanced.PositionY,
+                advanced.GenerationId,
+                advanced.ContactFrame,
+                EventBus.Instance.CurrentFrame,
+                advanced.Completed));
+            if (advanced.Completed)
+                completed[completedCount++] = playerId;
+        }
+        for (int i = 0; i < completedCount; i++)
+            _trajectories.Remove(completed[i]);
     }
 
     private static CollisionFrameDefinition? FindFrame(

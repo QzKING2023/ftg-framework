@@ -1,6 +1,6 @@
 # PREP-2.2 Evidence Index
 
-Captured on 2026-08-01 for the PREP-2.2 implementation worktree based on commit `e139032416e1ef674702fc3ccf00bae630f765af`.
+Captured on 2026-08-01 for the reviewed PREP-2.2 implementation commit `3b4d1b35e31532c27610abe9b29212fa8260c85f`.
 
 ## Results
 
@@ -20,4 +20,4 @@ $env:FTG_TEST_SEED='2202'
 dotnet test tests/FTG_Framework.Tests/FTG_Framework.Tests.csproj --no-restore --blame-hang --blame-hang-timeout 60s
 ```
 
-The evidence records the base repository commit and dirty-worktree state because implementation is handed to review before a commit is created. The final evidence-commit equality gate remains open until these artifacts and the reviewed implementation are committed together.
+The evidence was generated from the exact implementation committed as `3b4d1b35e31532c27610abe9b29212fa8260c85f`; this closure-only metadata update does not alter runtime or test implementation.

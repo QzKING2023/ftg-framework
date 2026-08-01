@@ -8,7 +8,7 @@ owner: Dana (QA Engineer)
 
 # PREP-2.2: Deterministic Test Infrastructure
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -119,7 +119,7 @@ so that failures represent product defects rather than timing or shared-state le
 - [x] [Review][Patch] Make FileWatcher callback admission and disposal atomic; concurrent callbacks/disposers can signal quiescence early, access a disposed wait handle, or leave timeout cleanup permanently half-disposed. [Scripts/Framework/Core/FileWatcher.cs:66]
 - [x] [Review][Patch] Fail or explicitly classify dirty EventBus residual state before reset instead of silently erasing leaked subscribers, queues, flags, recorder, and pending reloads. [Tests/FTG_Framework.Tests/EventBusTestScope.cs:19]
 - [x] [Review][Patch] Stress the complete maintained singleton-mutating inventory rather than filtering only class names containing `FileWatcher` or `EventBus`. [Tests/FTG_Framework.Tests/run-prep22-stress.ps1:8]
-- [ ] [Review][Patch] Make PREP-2.2 evidence reviewable by adding the required `.gitignore` exceptions and regenerate/re-hash evidence against the reviewed implementation commit. [.gitignore:33]
+- [x] [Review][Patch] Make PREP-2.2 evidence reviewable by adding the required `.gitignore` exceptions and regenerate/re-hash evidence against the reviewed implementation commit. [.gitignore:33]
 - [x] [Review][Patch] Allow EventBus scope teardown recovery when `EndTestScope` throws; the wrapper currently marks itself disposed while EventBus ownership remains latched. [Tests/FTG_Framework.Tests/EventBusTestScope.cs:24]
 - [x] [Review][Patch] Reopen the retrospective action until all review findings and tracked closure evidence are accepted. [_bmad-output/implementation-artifacts/sprint-status.yaml:150]
 - [x] [Review][Patch] Preserve and restore the caller's `FTG_TEST_SEED` environment value in the stress harness. [Tests/FTG_Framework.Tests/run-prep22-stress.ps1:18]

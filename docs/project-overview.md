@@ -1,55 +1,35 @@
 # FTG Framework — Project Overview
 
-## Executive Summary
+FTG Framework is a local fighting-game framework for Godot 4.x and C#. It provides deterministic input, data, frame-data, combo, physics, state-machine, replay, pooling, scene, authoring, training, and debugging foundations so games can build on shared contracts instead of reimplementing them.
 
-FTG Framework is a Godot 4.x C# library for building local fighting games. It provides a modern input system (directional leniency, input buffering, charge retention), a frame data engine, and combo system infrastructure so developers can focus on their game's identity rather than rewriting foundational systems.
+This generated page is a navigation aid. Use the [V2 Architecture Spine](../_bmad-output/planning-artifacts/architecture/architecture-ftg-framework-2026-07-26/ARCHITECTURE-SPINE.md) for normative design and [sprint-status.yaml](../_bmad-output/implementation-artifacts/sprint-status.yaml) for current status and completion evidence.
 
-## Quick Reference
+## Technical Profile
 
-| Item | Detail |
-|------|--------|
-| **Engine** | Godot 4.5.1 (Godot.NET.Sdk) |
-| **Language** | C# (.NET 8.0, SDK 10.0.0 roll-forward) |
-| **Test Framework** | xUnit |
-| **Architecture** | Event-driven, layered (Input → Data → Engine → UI) |
-| **Repository** | Monolith |
-| **Entry Point** | `Scripts/FrameRateManager.cs` / `GameLoop` autoload |
+| Item | Current contract |
+|------|------------------|
+| Engine | Godot .NET 4.5.1 |
+| Runtime targets | `net8.0`; Android `net9.0` |
+| Build SDK | .NET SDK 10.x |
+| Language | C# with nullable reference types |
+| Testing | xUnit plus Godot/scaffold evidence where required |
+| Architecture | Event-driven layered framework with pure-C# services and thin Godot adapters |
 
-## Project Structure
+## Module Map
 
-```
-ftg-framework/
-├── Scripts/
-│   ├── Framework/
-│   │   ├── Core/         # EventBus, interfaces, value types, events
-│   │   ├── Input/        # Input history, buffer, leniency, charge, priority
-│   │   ├── Data/         # Move definitions, JSON loading, data store
-│   │   ├── Engine/
-│   │   │   ├── FrameData/  # (planned: Epic 2)
-│   │   │   └── Combo/      # (planned: Epic 3)
-│   │   └── UI/
-│   │       └── Training/   # (planned: Epic 2)
-│   └── FrameRateManager.cs
-├── Tests/
-│   └── FTG_Framework.Tests/  # xUnit test project
-├── docs/                      # Generated documentation
-├── project.godot
-├── FTG_Framework.sln
-└── FTG_Framework.csproj
-```
+- `Core` — EventBus, lifecycle epochs, Replay, snapshots, pooling, FileWatcher, scene/lifecycle services, shared contracts.
+- `Input` — canonical inputs, history, buffering, leniency, charge, SOCD cleaning, training recording/playback.
+- `Data` — immutable versioned definitions, presence-aware validation, transactional persistence and reload.
+- `Engine/FrameData` and `Engine/Combo` — move timelines, cancel windows, chains, and combo state.
+- `Engine/Physics` and `Engine/StateMachine` — collision, knockback, guarded state stacks, and response profiles.
+- `UI/Training` — ViewModel-backed training controls, tuning, playback, combo, and save/load surfaces.
+- `Scripts/Editor` — thin EditorPlugin adapters for authoring, debugging, and distribution tooling.
 
-## Development Status
+## Delivery Navigation
 
-| Epic | Status | Stories |
-|------|--------|---------|
-| Epic 1: Core Framework & Input System | Done | 7/7 complete |
-| Epic 2: Frame Data Engine & Training Mode | Backlog | 0/6 |
-| Epic 3: Combo System API | Backlog | 0/4 |
+Epic numbers are stable capability identifiers, not execution chronology. For current completion, next-work, and gating state, use the canonical [sprint status](../_bmad-output/implementation-artifacts/sprint-status.yaml); this generated page intentionally does not duplicate those volatile values.
 
-## Key Design Decisions
-
-1. **EventBus as sealed singleton** — centralized event dispatch, not a Godot Node
-2. **GameLoop as thinnest possible Godot bridge** — only calls `EventBus.ProcessFrame()`
-3. **Data immutability** — `MoveDefinition` uses init-only properties
-4. **Fail-fast error handling** — malformed data throws on startup
-5. **Fixed frame processing order** — FrameAdvanced → Input → FrameData → Combo → UI
+- [V2 PRD](../_bmad-output/planning-artifacts/prds/prd-ftg-framework-2026-07-26/prd.md)
+- [V2 Epics](../_bmad-output/planning-artifacts/epics/index.md)
+- [Project UX](../_bmad-output/planning-artifacts/ux-v2-lean-contract.md)
+- [Documentation index](./index.md)

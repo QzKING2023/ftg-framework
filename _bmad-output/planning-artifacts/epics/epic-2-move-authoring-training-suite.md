@@ -88,10 +88,11 @@ The five stories above preserve FR-23 through FR-27. Their binding cross-story r
 
 - Story 2.4 standalone recording/playback is independently completable before Story 2.5. The later recording-in-snapshot proof is a Story 2.5 slice and runs only after the Story 2.4 codec is accepted.
 - Every story exceeding one developer-agent context follows the checklist's vertical slice plan; each slice produces an observable user or integration outcome and accepted evidence.
+- Stable execution/evidence IDs are S2.1-A–C, S2.2-A–C, S2.3-A–C, S2.4-A–D, and S2.5-A–E. A parent story remains the FR/user-outcome key and becomes done only after every required slice and final parent E2E acceptance pass. Add slice status keys only when the parent story file is created.
 - A story remains `backlog` until its blocking decisions have concrete values/fixtures, its risk/evidence row is complete, and PO/Architect/QA approve the same reviewed artifact hash.
 - No story may bypass Core interfaces, duplicate Data validation/persistence, serialize Godot/live implementation containers, weaken AD-12/13/15/18/19/20, or create a third playback mode.
 - Findings that do not violate an approved invariant or gate enter the normal backlog. Expanding this gate requires a newly approved course correction.
-- Concrete schema/domain limits, combo arithmetic, recording codec limits, snapshot limits, deterministic windows, UX behavior, and reference environments are binding in the checklist's Parameter Registry. A story may not replace them with undocumented implementation defaults.
+- Concrete schema/domain limits, combo arithmetic, recording codec limits, snapshot limits, deterministic windows, UX behavior, and reference environments are binding in the checklist's Parameter Registry. Every referenced “documented” parameter must resolve to a concrete value or fixture before `ready-for-dev`; a story may not replace it with an undocumented implementation default.
 
 ## Story 2.2: Concurrent Runtime Tuning and Atomic Writeback
 

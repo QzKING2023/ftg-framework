@@ -1,62 +1,43 @@
 # FTG Framework — Documentation Index
 
-## Project Overview
+These generated documents are navigation aids. The [V2 Architecture Spine](../_bmad-output/planning-artifacts/architecture/architecture-ftg-framework-2026-07-26/ARCHITECTURE-SPINE.md) is the normative technical contract, and [sprint-status.yaml](../_bmad-output/implementation-artifacts/sprint-status.yaml) is the sole authority for volatile implementation status and completion evidence.
 
-- **Type:** Monolith game framework
-- **Primary Language:** C# (.NET 8.0)
-- **Engine:** Godot 4.5.1
-- **Architecture:** Event-driven layered (Input → Data → Engine → UI)
-
-## Quick Reference
-
-| Topic | Detail |
-|-------|--------|
-| **Tech Stack** | Godot.NET.Sdk 4.5.1, C# 12, xUnit |
-| **Entry Point** | `Scripts/Framework/Core/GameLoop.cs` (Godot autoload) |
-| **Architecture Pattern** | Event-driven, EventBus singleton, layered modules |
-| **Development Status** | Epic 1 complete (7/7), Epic 2 backlog (0/6), Epic 3 backlog (0/4) |
-
-## Generated Documentation
+## Start Here
 
 - [Project Overview](./project-overview.md)
-- [Architecture](./architecture.md)
+- [Architecture Navigation](./architecture.md)
+- [Development Guide](./development-guide.md)
 - [Source Tree Analysis](./source-tree-analysis.md)
 - [Component Inventory](./component-inventory.md)
 - [Data Models](./data-models.md)
-- [Development Guide](./development-guide.md)
 - [Asset Inventory](./assets.md)
 
-## Existing Documentation
+## Current Planning Contracts
 
-- [Domain Agent Instructions](./agents/domain.md) — AI agent codebase exploration guidelines
-- [Issue Tracker](./agents/issue-tracker.md) — Issue tracking conventions
-- [Triage Labels](./agents/triage-labels.md) — Label classification
+- [V2 PRD](../_bmad-output/planning-artifacts/prds/prd-ftg-framework-2026-07-26/prd.md)
+- [V2 Architecture Spine](../_bmad-output/planning-artifacts/architecture/architecture-ftg-framework-2026-07-26/ARCHITECTURE-SPINE.md)
+- [Project V2 Lean UX Contract](../_bmad-output/planning-artifacts/ux-v2-lean-contract.md)
+- [Epic 2 Lean UX Contract](../_bmad-output/planning-artifacts/epic-2-ux-contract.md)
+- [V2 Epics Index](../_bmad-output/planning-artifacts/epics/index.md)
+- [Epic 2 Risk and Evidence Checklist](../_bmad-output/planning-artifacts/epic-2-risk-and-evidence-checklist.md)
+- [Approved Planning Reconciliation](../_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-01.md)
 
-## Planning Artifacts (BMad)
+## Normative V1 Baseline
 
-Located in `_bmad-output/planning-artifacts/`:
+The `.archive` suffix records chronology; it does not remove normative force.
 
-- Product Brief: `briefs/brief-ftg-framework-2026-07-15/brief.md`
-- PRD: `prds/prd-ftg-framework-2026-07-15/prd.md`
-- Architecture Spine: `architecture/architecture-ftg-framework-2026-07-15/ARCHITECTURE-SPINE.md`
-- Epics & Stories: `epics.md`
-- Implementation Readiness: `implementation-readiness-report-2026-07-15.md`
+- [Final V1 PRD](../_bmad-output/planning-artifacts/prds/prd-ftg-framework-2026-07-15.archive/prd.md)
+- [Final V1 Architecture Spine](../_bmad-output/planning-artifacts/architecture/architecture-ftg-framework-2026-07-15.archive/ARCHITECTURE-SPINE.md)
 
-## Implementation Artifacts
+## Agent Conventions
 
-Located in `_bmad-output/implementation-artifacts/`:
-
-- Sprint Status: `sprint-status.yaml`
-- Epic 1 Retro: `epic-1-retro-2026-07-16.md`
-- Story files: `1-1` through `1-7` (all complete)
-- Deferred Work: `deferred-work.md`
+- [Domain layout](./agents/domain.md)
+- [Issue tracker](./agents/issue-tracker.md)
+- [Triage labels](./agents/triage-labels.md)
 
 ## Getting Started
 
-1. Open `project.godot` in Godot 4.5.1 (mono build)
-2. Let Godot generate the C# solution
-3. Open `FTG_Framework.sln` in your IDE
-4. Press F5 in Godot to run — `GameLoop` initializes the input pipeline automatically
-5. Test with `dotnet test Tests/FTG_Framework.Tests/`
-
-For detailed setup instructions, see [Development Guide](./development-guide.md).
+1. Open `project.godot` in the checked-in Godot .NET version.
+2. Let Godot generate the C# solution if needed.
+3. Open `FTG_Framework.sln` and run `dotnet test Tests/FTG_Framework.Tests/`.
+4. Run the project in Godot; the GameLoop autoload initializes the framework pipeline.

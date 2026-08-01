@@ -7,14 +7,17 @@ paradigm: layered
 scope: 'V2 modules — Physics, State Machine, Replay, Object Pool, Character & Move Authoring, Training Suite, Developer Experience'
 status: final
 created: '2026-07-26'
-updated: '2026-07-31'
+updated: '2026-08-01'
 binds: ['FR-16'..'FR-36']
 sources:
   - '_bmad-output/planning-artifacts/prds/prd-ftg-framework-2026-07-26/prd.md'
-  - '_bmad-output/planning-artifacts/architecture/architecture-ftg-framework-2026-07-15/ARCHITECTURE-SPINE.md'
+  - '_bmad-output/planning-artifacts/prds/prd-ftg-framework-2026-07-15.archive/prd.md'
+  - '_bmad-output/planning-artifacts/architecture/architecture-ftg-framework-2026-07-15.archive/ARCHITECTURE-SPINE.md'
   - '_bmad-output/brainstorming/brainstorm-v2-feature-planning-2026-07-26/brainstorm-intent.md'
   - '_bmad-output/brainstorming/brainstorm-v2-feature-planning-2026-07-26/v2-feature-inventory.md'
-companions: []
+companions:
+  - '_bmad-output/planning-artifacts/ux-v2-lean-contract.md'
+  - '_bmad-output/planning-artifacts/epic-2-ux-contract.md'
 ---
 
 # Architecture Spine — FTG Framework V2
@@ -61,7 +64,7 @@ Shared: `FTG_Framework.Core` — EventBus, IModule, IPoolable, Pool, FileWatcher
 
 ## Inherited Invariants
 
-V1 AD-1 through AD-8 remain binding. Amendments are noted inline; unlisted ADs carry forward unchanged.
+V1 AD-1 through AD-8 remain binding. Their `.archive` location records chronology and does not remove normative force. Amendments are noted inline; unlisted ADs carry forward unchanged.
 
 | Inherited | From V1 spine | Status | Binds here |
 |-----------|---------------|--------|------------|
@@ -133,7 +136,7 @@ V1 AD-1 through AD-8 remain binding. Amendments are noted inline; unlisted ADs c
 
   `ReplayCodec` is the sole persistence authority. Its UTF-8 JSON container has a versioned header, initial snapshot, and an ordered envelope array containing stable event discriminator, frame, phase, within-phase sequence, source-epoch provenance, payload, and an integrity hash. Compatibility is exact-version or an explicit tested migration; an unknown event type, invalid order, failed hash, or unsupported version rejects the complete file.
 
-  Training input playback (FR-26) is a separate input-only mode: it injects recorded canonical inputs and lets live systems re-simulate using the current dataset. FR-34's balance-testbed comparison uses training input playback when parameters change; full deterministic replay is used only for exact reproduction. The two modes are mutually exclusive within one lifecycle epoch.
+  V1 FR-11 training frame controls, FR-26 canonical-input training playback, and FR-28 authoritative EventBus Replay are three separate modes. FR-26 injects recorded canonical inputs and lets live systems re-simulate using the current dataset. FR-34 uses it when parameters change; authoritative Replay is exact reproduction and permits real-time playback and pause/resume only—not seeking, rewind, or replay-envelope single-frame stepping. Playback ownership is mutually exclusive within one lifecycle epoch.
 
 ### AD-14 — Object Pool Contract
 
@@ -189,9 +192,17 @@ V1 AD-1 through AD-8 remain binding. Amendments are noted inline; unlisted ADs c
 
   Replay bootstrap uses the same prepare/commit machinery through a non-observable preparation channel: it suppresses `StateRestored`, which is neither recorded nor expected as the first replay envelope. Replay end also uses the coordinator's reserved-epoch rebind/high-water commit protocol, preserving final in-flight trajectories and state occupancies while rebinding them to the fresh live epoch. An implementation that can throw after the first live-state swap is non-compliant. Unsupported schema versions are rejected unless an explicit tested migration exists. Unknown optional fields may be ignored only within a compatible schema version; missing required fields are rejected.
 
+### AD-21 — Accessible and Lifecycle-Safe Interaction Boundary
+
+- **Binds:** runtime Controls, EditorPlugin docks, training tools, character selection, EventBus debugging, and the unified toolbox
+- **Prevents:** inaccessible UI-only operation, hidden destructive effects, stale subscriptions/focus, clipped controls, and duplicated lifecycle state
+- **Rule:** Interaction orchestration lives in pure C# ViewModels/services behind thin Godot adapters. Every flow supports keyboard operation and applicable controller bindings; restores focus after dialogs/rebuilds; communicates status without color alone; remains readable at 100%–200% UI scale and scrolls rather than clips. Destructive actions name the target and require confirmation. A transaction is cancellable only before commit. Disable, scene exit, replay/restore, and reconstruction dispose subscriptions and transient ownership exactly once, then rebuild from authoritative state. The project UX contract maps each material surface to these requirements and evidence.
+
+AD-21 is a forward planning contract. It has no retroactive Adoption Gate evidence and does not reopen completed stories.
+
 ## Adoption Gate
 
-AD-9 through AD-17 describe the V2 foundation, but the table below identifies contracts that are only partial or amended. The 2026-07-31 correction is a target contract and must be implemented before V2 Epic 2 starts:
+AD-9 through AD-20 describe the V2 foundation, but the table below identifies contracts that were partial or amended and therefore required explicit evidence. The 2026-07-31 correction is the accepted target contract required before V2 Epic 2 starts:
 
 | Decision | Current reality | Gate evidence |
 |----------|-----------------|---------------|
@@ -329,21 +340,21 @@ Scripts/Editor/            # EditorPlugin thin adapter (outside framework namesp
 | FR-19 | Physics parameter hot-reload | `Data/` + `Core/` | AD-15, AD-9, AD-19 |
 | FR-20 | Stack-based state machine | `Engine/StateMachine/` | AD-11, AD-18 |
 | FR-21 | Per-state PhysicsResponseProfile association | `Engine/StateMachine/` | AD-16, AD-3 |
-| FR-22 | Godot character scene template | `Scripts/Editor/` | EditorPlugin thinness convention |
-| FR-23 | EditorPlugin move authoring | `Data/` + `Scripts/Editor/` | AD-6, AD-15 |
-| FR-24 | Runtime tuning with JSON writeback | `Data/` + `UI/Training/` | AD-15, AD-9, AD-19 |
-| FR-25 | Combo counter + damage display | `UI/Training/` | AD-3 (subscribe only) |
-| FR-26 | Input recording & playback | `Input/` + `UI/Training/` | AD-3, AD-12, AD-18 |
-| FR-27 | Training state save/load | `UI/Training/` + `Core/` | AD-18, AD-20 |
+| FR-22 | Godot character scene template | `Scripts/Editor/` | EditorPlugin thinness convention, AD-21 |
+| FR-23 | EditorPlugin move authoring | `Data/` + `Scripts/Editor/` | AD-6, AD-15, AD-21 |
+| FR-24 | Runtime tuning with JSON writeback | `Data/` + `UI/Training/` | AD-15, AD-9, AD-19, AD-21 |
+| FR-25 | Combo counter + damage display | `UI/Training/` | AD-3 (subscribe only), AD-21 |
+| FR-26 | Input recording & playback | `Input/` + `UI/Training/` | AD-3, AD-12, AD-18, AD-21 |
+| FR-27 | Training state save/load | `UI/Training/` + `Core/` | AD-18, AD-20, AD-21 |
 | FR-28 | Deterministic replay system | `Core/` | AD-13, AD-9, AD-12, AD-18 |
 | FR-29 | Object pool | `Core/` | AD-14, AD-17 |
 | FR-30 | SOCD cleaning | `Input/` | AD-1 (Input layer) |
-| FR-31 | Character select system | `Data/` + `UI/` | AD-3, AD-6 |
-| FR-32 | Project template / one-click install | `Scripts/Editor/` | EditorPlugin thinness convention |
-| FR-33 | EventBus debug panel | `Scripts/Editor/` | AD-3 |
+| FR-31 | Character select system | `Data/` + `UI/` | AD-3, AD-6, AD-21 |
+| FR-32 | Project template / one-click install | `Scripts/Editor/` | EditorPlugin thinness convention, AD-21 |
+| FR-33 | EventBus debug panel | `Scripts/Editor/` | AD-3, AD-21 |
 | FR-34 | Runtime tuning × Replay × Input recording | Cross-cutting | AD-9, AD-13, AD-15, AD-18, AD-19 |
 | FR-35 | State stack × Save/Load × Replay | Cross-cutting | AD-11, AD-13, AD-16, AD-18, AD-20 |
-| FR-36 | EditorPlugin × Debug panel × Runtime tuning | Cross-cutting | AD-15, AD-19, EditorPlugin thinness convention |
+| FR-36 | EditorPlugin × Debug panel × Runtime tuning | Cross-cutting | AD-15, AD-19, AD-21, EditorPlugin thinness convention |
 
 ## Deferred
 

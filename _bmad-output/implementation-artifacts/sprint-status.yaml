@@ -170,6 +170,10 @@ action_items:
     action: "Review and revise all V2 Epic 2 stories, including a versioned state-snapshot boundary for Story 2.5"
     owner: "Alice (Product Owner) and Winston (System Architect)"
     status: done
+  - epic: "v2-2"
+    action: "Apply the approved 2026-08-01 sprint change proposal across PRD, Architecture, UX, Epics, and project knowledge; then rerun Implementation Readiness before Epic 2 kickoff"
+    owner: "Product Owner / Architect / Developer"
+    status: done
 
 development_status:
   # ============ V1 Epics (complete) ============
@@ -199,7 +203,7 @@ development_status:
   3-4-combo-state-tracking: done
   epic-3-retrospective: done
 
-  # ============ V2 Epics (backlog) ============
+  # ============ V2 Epics (mixed status; canonical values below) ============
   # Epic 1: Character Foundation & Physics Engine (FR-16~22, FR-32)
   v2-epic-1: done
   v2-1-0-snapshot-helper-frame-order: done
@@ -220,6 +224,11 @@ development_status:
   # and revised Stories 2.1-2.5 have Product Owner, Architect, and QA approvals.
   # PREP-2.4 review completion does not itself start Epic 2; kickoff is a separate
   # project-lead transition after every condition above is reverified.
+  # Planning reconciliation from the approved 2026-08-01 Sprint Change Proposal
+  # and a passing Implementation Readiness rerun are also required before kickoff.
+  # PO, Architect, and QA must approve fresh hashes for the reconciled planning set;
+  # PREP-2.4 hashes remain historical evidence for their original reviewed inventory.
+  # This does not reopen completed V2 Epic 1, V2 Epic 3, or PREP work.
   v2-prep-2-1-runtime-and-scaffold-boundary-hardening: done
   v2-prep-2-2-deterministic-test-infrastructure: done
   v2-prep-2-3-data-event-and-snapshot-contracts: done

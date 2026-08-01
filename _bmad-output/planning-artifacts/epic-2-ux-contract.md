@@ -1,11 +1,13 @@
 # Epic 2 Lean UX Contract
 
+This is the Epic 2 specialization of the [project V2 UX contract](./ux-v2-lean-contract.md) and inherits every AD-21 interaction requirement.
+
 Status: Approved  
 Date: 2026-08-01
 
 ## Scope Decision
 
-UJ-6 is corrected for V2: the workflow supports record, deterministic training playback, save, and restore. Replay frame-step and seeking are out of V2 scope. No acceptance criterion may imply otherwise.
+UJ-6 distinguishes V1 FR-11 training frame controls, FR-26 canonical-input training playback, and FR-28 authoritative EventBus Replay. Replay supports real-time playback and pause/resume; seeking, rewind, and replay-envelope single-frame stepping are out of scope. No acceptance criterion may imply otherwise.
 
 ## Shared Interaction Rules
 

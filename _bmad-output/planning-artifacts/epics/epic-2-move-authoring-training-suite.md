@@ -35,13 +35,13 @@ So that I can create and edit moves without hand-writing JSON or risking files o
 **And** the original file, committed DataStore, form state, and active runtime snapshots remain unchanged.
 
 **S2.1-AC05**
-**Given** a move identifier or derived path is rooted, contains a directory separator, contains parent traversal, or canonically resolves outside the configured move-data root
-**When** the save path is derived
+**Given** a move-dataset document identifier or derived path is rooted, contains a directory separator, contains parent traversal, or canonically resolves outside the configured move-data root
+**When** the save path is derived from that document identifier
 **Then** the request is rejected before opening a file
 **And** no external path is read, created, modified, or deleted.
 
 **S2.1-AC06**
-**Given** another move identity aliases the same canonical destination or the validated parent/link changes before replacement
+**Given** another move-dataset document identity aliases the same canonical destination or the validated parent/link changes before replacement
 **When** the persistence service opens or replaces the actual path
 **Then** canonical collisions and changed containment are rejected at the access boundary
 **And** neither the existing move file nor an out-of-root target is modified.
@@ -56,7 +56,7 @@ So that I can create and edit moves without hand-writing JSON or risking files o
 **Given** serialization, staging, validation, flush, replacement, or cleanup fails
 **When** Save returns an error
 **Then** the original destination remains byte-identical and loadable
-**And** cleanup touches only invocation-owned staging artifacts under the validated root.
+**And** all error-reporting cleanup occurs before commit and touches only invocation-owned staging artifacts under the validated root; post-commit cleanup is best-effort diagnostic work and cannot convert a successful commit into a reported failure.
 
 **S2.1-AC09**
 **Given** the file changed after the editor loaded its content version
@@ -65,10 +65,10 @@ So that I can create and edit moves without hand-writing JSON or risking files o
 **And** unseen external changes are not overwritten.
 
 **S2.1-AC10**
-**Given** the approved EditorInterface, EditorSelection, and UndoRedo adapter spike
-**When** the dock integrates editor selection and undoable edits
-**Then** Godot singleton access remains confined to the thin adapter
-**And** pure-C# authoring services run under `dotnet test` without a Godot process.
+**Given** an enabled move-authoring dock using the approved EditorInterface, EditorSelection, and UndoRedo adapter boundary
+**When** it integrates selection or undoable edits, or the plugin is disabled, its assembly reloads, or it is re-enabled
+**Then** Godot singleton access remains confined to the thin adapter and pure-C# authoring services remain executable under `dotnet test` without a Godot process
+**And** the dock, selection subscriptions, and transient adapter state are disposed exactly once, stale callbacks cannot act, and re-entry reconstructs the form from committed authoritative Data.
 
 **S2.1-AC11**
 **Given** a successful save participates in UndoRedo
@@ -79,8 +79,15 @@ So that I can create and edit moves without hand-writing JSON or risking files o
 **S2.1-AC12**
 **Given** Story 2.1 is proposed for `ready-for-dev` or completion
 **When** its risk/evidence row is reviewed
-**Then** unit, Data/service integration, path-boundary, atomic-write fault injection, stale-version conflict, JSON round-trip, Godot editor, UndoRedo, scaffold, and runtime-load evidence is explicitly linked
+**Then** unit, Data/service integration, path-boundary, atomic-write fault injection, stale-version conflict, plugin disable/reload lifecycle, JSON round-trip, Godot editor, UndoRedo, scaffold, and runtime-load evidence is explicitly linked
 **And** PO, Architect, and QA approvals required by PREP-2.4 are recorded.
+
+### Story 2.1 Binding Persistence and Ownership Decisions
+
+- The persistence unit is one current-schema move-dataset JSON document containing the complete `moves` collection; editing one move rewrites and atomically replaces that complete document while preserving every other compatible move. `move_id` is data identity and is never a filesystem path or filename source.
+- A separately validated move-dataset document identifier selects a document under the configured move-data root. Its canonical file identity scopes optimistic concurrency, staging, replacement, and UndoRedo. The transaction root is the complete candidate logical dataset: the replacement document plus all currently committed move/physics documents needed to validate unique IDs and references before one DataStore swap.
+- Editor ownership is `Scripts/Framework/Editor/` in namespace `FTG_Framework.Editor`, matching the accepted spike and scaffold source manifest. No parallel `Scripts/Editor/` implementation is permitted.
+- All cleanup that can make Save return failure completes before atomic replacement. After replacement and the no-fail DataStore swap, deletion of an already-owned leftover staging artifact is best-effort, emits a diagnostic if needed, and cannot report the committed save as failed.
 
 ## PREP-2.4 Execution Contract
 

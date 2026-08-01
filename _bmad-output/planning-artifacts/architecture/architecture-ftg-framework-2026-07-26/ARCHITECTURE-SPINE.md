@@ -299,7 +299,7 @@ Scripts/Framework/
   UI/
     Training/              # FrameDataPanel, AdvantageDisplay, InputLog, PlaybackControls, ComboCounter
 
-Scripts/Editor/            # EditorPlugin thin adapter (outside framework namespace)
+Scripts/Framework/Editor/  # EditorPlugin thin adapter; FTG_Framework.Editor; Godot API boundary
 ```
 
 ## Event Catalog (V2)
@@ -340,8 +340,8 @@ Scripts/Editor/            # EditorPlugin thin adapter (outside framework namesp
 | FR-19 | Physics parameter hot-reload | `Data/` + `Core/` | AD-15, AD-9, AD-19 |
 | FR-20 | Stack-based state machine | `Engine/StateMachine/` | AD-11, AD-18 |
 | FR-21 | Per-state PhysicsResponseProfile association | `Engine/StateMachine/` | AD-16, AD-3 |
-| FR-22 | Godot character scene template | `Scripts/Editor/` | EditorPlugin thinness convention, AD-21 |
-| FR-23 | EditorPlugin move authoring | `Data/` + `Scripts/Editor/` | AD-6, AD-15, AD-21 |
+| FR-22 | Godot character scene template | `Scripts/Framework/Editor/` | EditorPlugin thinness convention, AD-21 |
+| FR-23 | EditorPlugin move authoring | `Data/` + `Scripts/Framework/Editor/` | AD-6, AD-15, AD-21 |
 | FR-24 | Runtime tuning with JSON writeback | `Data/` + `UI/Training/` | AD-15, AD-9, AD-19, AD-21 |
 | FR-25 | Combo counter + damage display | `UI/Training/` | AD-3 (subscribe only), AD-21 |
 | FR-26 | Input recording & playback | `Input/` + `UI/Training/` | AD-3, AD-12, AD-18, AD-21 |
@@ -350,8 +350,8 @@ Scripts/Editor/            # EditorPlugin thin adapter (outside framework namesp
 | FR-29 | Object pool | `Core/` | AD-14, AD-17 |
 | FR-30 | SOCD cleaning | `Input/` | AD-1 (Input layer) |
 | FR-31 | Character select system | `Data/` + `UI/` | AD-3, AD-6, AD-21 |
-| FR-32 | Project template / one-click install | `Scripts/Editor/` | EditorPlugin thinness convention, AD-21 |
-| FR-33 | EventBus debug panel | `Scripts/Editor/` | AD-3, AD-21 |
+| FR-32 | Project template / one-click install | `Scripts/Framework/Editor/` | EditorPlugin thinness convention, AD-21 |
+| FR-33 | EventBus debug panel | `Scripts/Framework/Editor/` | AD-3, AD-21 |
 | FR-34 | Runtime tuning × Replay × Input recording | Cross-cutting | AD-9, AD-13, AD-15, AD-18, AD-19 |
 | FR-35 | State stack × Save/Load × Replay | Cross-cutting | AD-11, AD-13, AD-16, AD-18, AD-20 |
 | FR-36 | EditorPlugin × Debug panel × Runtime tuning | Cross-cutting | AD-15, AD-19, AD-21, EditorPlugin thinness convention |

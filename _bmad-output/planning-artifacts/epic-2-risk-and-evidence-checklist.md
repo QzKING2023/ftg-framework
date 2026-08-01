@@ -36,6 +36,7 @@ This is the canonical PREP-2.4 readiness artifact. A story cannot enter `ready-f
 
 ### P-DATA — Current Move Authoring Schema
 
+- Persistence granularity is one current-schema move-dataset JSON document containing the complete `moves` collection. A move edit atomically replaces that document; `move_id` is never used to derive a path. A separately validated document identifier selects a file under the configured root, and that canonical document identity scopes optimistic concurrency and UndoRedo. The complete logical-dataset candidate remains the cross-document validation and DataStore swap root.
 - Required canonical fields: `move_id`, `startup`, `active`, `recovery`, `hit_advantage`, `block_advantage`, `damage`, `chain_repeatable`, `knockback_profile_id`, `cancel_windows`, and `collision_frames`. `move_name` is optional display metadata.
 - `move_id` and referenced IDs are non-empty ordinal identifiers. Frame counts and damage are non-negative `int`; their total must fit `int`. Advantage values are signed `int`.
 - Arrays are explicit (empty is valid). Cancel ranges satisfy `0 <= start_frame <= end_frame <= total_frames`; collision frames are unique within `1..total_frames`; box IDs are unique per frame/list, coordinates are finite, and dimensions are finite/non-negative.
@@ -66,7 +67,7 @@ Risk dimensions: lifecycle epoch; ownership; generation; event order; immutabili
 
 | Story | Risk dimension | Disposition and rationale | Specific AC | Evidence ID |
 |---|---|---|---|---|
-| Story 2.1 | lifecycle epoch | Applicable: plugin disable/reload must discard adapter state and re-read authoritative data. | S2.1-AC10 | E2.1-L |
+| Story 2.1 | lifecycle epoch | Applicable: S2.1-AC10 requires plugin disable/reload to dispose adapter state exactly once and reconstruct from authoritative Data. | S2.1-AC10 | E2.1-L |
 | Story 2.1 | ownership | Applicable: Data owns validation/persistence; Godot is an adapter. | S2.1-AC01 | E2.1-D |
 | Story 2.1 | generation | N/A: authoring creates no lifecycle-scoped gameplay generation. | N/A | N/A |
 | Story 2.1 | event order | N/A: authoring commits through Data and publishes no EventBus gameplay sequence. | N/A | N/A |
@@ -128,7 +129,7 @@ Every artifact lives under `_bmad-output/implementation-artifacts/evidence/v2-2-
 
 | Story | Unit | Data/service integration | EventBus integration | Fault injection | Concurrency | Lifecycle | Godot editor/runtime | Scaffold | Round trip | End-to-end |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Story 2.1 | E2.1-U required | E2.1-D required | N/A: no EventBus contract | E2.1-F required | E2.1-C required | E2.1-L plugin disable/reload required | E2.1-G editor + UndoRedo required | E2.1-S required | E2.1-R JSON/runtime load required | E2.1-E author-save-runtime-load required |
+| Story 2.1 | E2.1-U required | E2.1-D required | N/A: no EventBus contract | E2.1-F required: every pre-commit failure preserves prior bytes/DataStore and returns error; post-commit cleanup failure preserves the new commit, returns success, and emits a diagnostic | E2.1-C required | E2.1-L plugin disable/reload required | E2.1-G editor + UndoRedo required | E2.1-S required | E2.1-R JSON/runtime load required | E2.1-E author-save-runtime-load required |
 | Story 2.2 | E2.2-U required | E2.2-D required | E2.2-B reload observation required | E2.2-F every persistence seam required | E2.2-C editor/tuner race required | E2.2-L initiation snapshot/restart required | E2.2-G runtime panel required | N/A: no generated-scaffold inventory change in Story 2.2 | E2.2-R restart required | E2.2-E tune-write-reload required |
 | Story 2.3 | E2.3-U required | N/A: no Data mutation | E2.3-B required | N/A: no fallible persistence; invalid-event preservation in unit tests | E2.3-C same-frame order required | E2.3-L required | E2.3-G runtime display required | N/A: no generated-scaffold inventory change in Story 2.3 | N/A: transient observer | E2.3-E hit/block/end/restore required |
 | Story 2.4 | E2.4-U codec/ViewModel required | N/A: Input-owned codec | E2.4-B injection/order required | N/A: validation is candidate-atomic; invalid matrix in unit tests | E2.4-C playback ownership required | E2.4-L required | E2.4-G dummy playback required | N/A: no generated-scaffold inventory change in Story 2.4 | E2.4-R codec + deterministic hash required | E2.4-E standalone record/playback required |

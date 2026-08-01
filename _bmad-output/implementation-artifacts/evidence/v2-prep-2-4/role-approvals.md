@@ -8,37 +8,37 @@ Status: Approved
 
 | Artifact | SHA-256 |
 |---|---|
-| Epic 2 stories | `b98e9b83192b58adf03e728c3cbc1b4b8f7fbc60065c19ca4f5150f2ffe6d97a` |
-| Risk/evidence checklist | `ec6c3eac178af7b0ba17a0abb2c74b4e6d78c4fdebde0b46959eac6b7bb96698` |
-| UX contract | `458f246be88e5a3d75c727713da80435830321596fdc7a73a4158a5ed043b904` |
-| Architecture Spine | `95baf5570133b2e8f93c624b638bf2dc68eae91142890bcd21ba37759a3d4662` |
+| Epic 2 stories | `3cd48e8d3c8bc873a31e056aa1048aab969f81837b453df18ca96096b9bf281c` |
+| Risk/evidence checklist | `8ae1cc906e65681ebea43b995551ab80ef4d76720344ddf88b5d5ecb1c1bd74f` |
+| UX contract | `437dd18915fb3dca8fbb40d8b13838321f1dc4fcc1e9aedef7fde7bb0326a47c` |
+| Architecture Spine | `21d820290fd924e119cb1ff0f160f37fbc66a1f165da260c8ca8afe46fca6763` |
 | PREP readiness gate | `26c0a27ccbc021f27f8e52f4759e231afd149cf88bec0cedbede52d977f25d8d` |
 
-This inventory binds all three current approvals to the durable PREP-2.3 implementation commit and the exact reviewed planning content after second-pass review corrections. The superseded review remains preserved in `review-history.md`.
+This inventory binds all three current approvals to the durable PREP-2.3 implementation commit and the exact reconciled planning content after the independent Epic 2 kickoff review. The superseded reviews remain preserved in `review-history.md`.
 
 ## Product Owner
 
-Reviewer: Alice, Product Owner role  
-Decision: Approved  
-Artifact reference: Epic 2 stories, UX contract, risk/evidence checklist  
-Review findings: FR-23 through FR-27 remain unchanged; Story 2.4 is independently valuable; frame-step/seeking remains out of V2; user-facing validation, conflict, accessibility, and recovery behavior is explicit.  
-Blocking findings: None. FR-23 through FR-27 and the accepted UX scope remain preserved against the durable PREP-2.3 baseline.
+Reviewer: Independent Product Owner review role
+Decision: Approved
+Artifact reference: Epic 2 stories, UX contract, risk/evidence checklist
+Review findings: FR-23 through FR-27 retain one primary story each; dependencies and observable vertical slices are executable; Story 2.4 remains independently valuable; the Story 2.1 dataset transaction, lifecycle, cleanup, conflict, accessibility, and recovery behavior is explicit and testable.
+Blocking findings: None after splitting pre-commit failure from post-commit cleanup evidence and making the Editor lifecycle behavior explicit.
 
 ## System Architect
 
-Reviewer: Winston, System Architect role  
-Decision: Approved  
-Artifact reference: Epic 2 stories, Architecture Spine, risk/evidence checklist  
-Review findings: Stories consume AD-12/13/15/18/19/20 without bypasses; 2.4 does not depend on unfinished 2.5; 2.5 is bounded into observable slices and reuses the PREP-2.3 coordinator; Data and playback ownership remain singular.  
-Blocking findings: None. Commit `a0c7043` supplies the reviewed coordinator, transaction, event, lifecycle, and snapshot contracts.
+Reviewer: Independent System Architect review role
+Decision: Approved
+Artifact reference: Epic 2 stories, Architecture Spine, risk/evidence checklist
+Review findings: Stories consume AD-12/13/15/18/19/20/21 without bypasses; the move-dataset document and logical-dataset transaction roots are fixed; Editor ownership is singular at `Scripts/Framework/Editor/`; cleanup and lifecycle contracts are implementable; 2.4 does not depend on unfinished 2.5.
+Blocking findings: None after resolving persistence granularity, Editor location, commit/cleanup semantics, and AC10 lifecycle observability. Commit `a0c7043` supplies the reviewed foundation.
 
 ## QA Engineer
 
-Reviewer: Dana, QA Engineer role  
-Decision: Approved  
-Artifact reference: evidence matrix, Parameter Registry, UX evidence clauses  
-Review findings: Every story explicitly marks unit, service/Data, EventBus, fault, concurrency, lifecycle, Godot, scaffold, round-trip, and end-to-end layers required or N/A with rationale; locations and durable evidence metadata are fixed.  
-Blocking findings: None. Full regression passed 858/858 with seed 2202, and deterministic document validation is required to pass with the refreshed inventory.
+Reviewer: Independent QA/Test Architect review role
+Decision: Approved
+Artifact reference: evidence matrix, Parameter Registry, UX evidence clauses
+Review findings: Every story explicitly marks unit, service/Data, EventBus, fault, concurrency, lifecycle, Godot, scaffold, round-trip, and end-to-end layers required or N/A with rationale. Story 2.1 closes AC10 → lifecycle risk → E2.1-L and distinguishes both sides of the atomic commit boundary.
+Blocking findings: None. Full regression evidence remains 858/858 with seed 2202; the refreshed deterministic document validation must pass before project-lead kickoff.
 
 ## Project-Lead Boundary
 

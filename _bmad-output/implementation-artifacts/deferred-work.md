@@ -10,3 +10,6 @@
 ## Deferred from: code review of v2-prep-2-1-runtime-and-scaffold-boundary-hardening (2026-08-01)
 
 - Define safe EventBus `int` frame-number overflow semantics (or migrate to a non-wrapping sequence type) so knockback ordering remains valid beyond `int.MaxValue`; the signed frame counter predates PREP-2.1.
+## Deferred from: code review of v2-prep-2-4-epic-2-planning-and-evidence-review (2026-08-01)
+
+- PREP-2.3’s `backlog -> done` sprint transition appears in the PREP-2.4 baseline diff but predates PREP-2.4 and belongs to the active PREP-2.3 workstream. Verify it against PREP-2.3 closure evidence rather than reverting it from PREP-2.4. [_bmad-output/implementation-artifacts/sprint-status.yaml:223]

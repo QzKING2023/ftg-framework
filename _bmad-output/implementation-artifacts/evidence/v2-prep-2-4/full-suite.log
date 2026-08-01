@@ -1,0 +1,21 @@
+PREP-2.4 full regression summary
+Date: 2026-08-01
+Working directory: repository root
+Command: dotnet test Tests/FTG_Framework.Tests/FTG_Framework.Tests.csproj --no-restore
+OS: Microsoft Windows NT 10.0.26200.0 (x64)
+.NET SDK: 10.0.201; target net8.0
+Godot: project pin Godot.NET.Sdk 4.5.1; Godot CLI unavailable in this shell
+Target: net8.0
+Seed: 2202
+Reviewed identity: PREP-2.3 commit a0c704345fc3e6efc8d8460c430f483f2f77f4d8 plus PREP-2.4 sha256.txt inventory
+Reviewer: Codex dev-story workflow
+Acceptance state: Accepted
+Result: PASS
+Passed: 858
+Failed: 0
+Skipped: 0
+Total: 858
+Reported test duration: 1 m 18 s
+Process wall time: 80.6 s
+Exit code: 0
+Purpose: prove durable PREP-2.3 commit a0c7043 remains regression-clean with planning-only PREP-2.4 changes.

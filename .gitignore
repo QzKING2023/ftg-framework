@@ -39,6 +39,24 @@ _bmad-output/implementation-artifacts/evidence/*
 !_bmad-output/implementation-artifacts/v2-prep-2-3-data-event-and-snapshot-contracts.md
 !_bmad-output/implementation-artifacts/evidence/v2-prep-2-3/
 !_bmad-output/implementation-artifacts/evidence/v2-prep-2-3/**
+!_bmad-output/implementation-artifacts/v2-prep-2-4-epic-2-planning-and-evidence-review.md
+!_bmad-output/implementation-artifacts/v2-1-3-character-scene-template.md
+!_bmad-output/implementation-artifacts/v2-epic-1-manual-verification-guide.md
+!_bmad-output/implementation-artifacts/evidence/v2-prep-2-4/
+!_bmad-output/implementation-artifacts/evidence/v2-prep-2-4/**
+!_bmad-output/planning-artifacts/
+_bmad-output/planning-artifacts/*
+!_bmad-output/planning-artifacts/epics/
+_bmad-output/planning-artifacts/epics/*
+!_bmad-output/planning-artifacts/epics/epic-2-move-authoring-training-suite.md
+!_bmad-output/planning-artifacts/epic-2-risk-and-evidence-checklist.md
+!_bmad-output/planning-artifacts/epic-2-ux-contract.md
+!_bmad-output/planning-artifacts/implementation-readiness-report-2026-08-01-prep24-closure.md
+!_bmad-output/planning-artifacts/architecture/
+_bmad-output/planning-artifacts/architecture/*
+!_bmad-output/planning-artifacts/architecture/architecture-ftg-framework-2026-07-26/
+_bmad-output/planning-artifacts/architecture/architecture-ftg-framework-2026-07-26/*
+!_bmad-output/planning-artifacts/architecture/architecture-ftg-framework-2026-07-26/ARCHITECTURE-SPINE.md
 
 # FTG Framework addon (build-generated source; plugin.cfg and README.md are committed)
 addons/ftg-framework/src/

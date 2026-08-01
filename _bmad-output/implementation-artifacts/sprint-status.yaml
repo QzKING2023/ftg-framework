@@ -157,19 +157,19 @@ action_items:
   - epic: "v2-1"
     action: "Align Story 1.3, V2 Epic 1, retrospective, and sprint tracking states"
     owner: "Amelia (Developer)"
-    status: open
+    status: done
   - epic: "v2-1"
     action: "Create and apply a cross-story lifecycle and architecture risk checklist"
     owner: "Winston (System Architect)"
-    status: open
+    status: done
   - epic: "v2-1"
     action: "Define required unit, integration, Godot, scaffold, and end-to-end evidence per Epic 2 story"
     owner: "Dana (QA Engineer)"
-    status: open
+    status: done
   - epic: "v2-1"
     action: "Review and revise all V2 Epic 2 stories, including a versioned state-snapshot boundary for Story 2.5"
     owner: "Alice (Product Owner) and Winston (System Architect)"
-    status: open
+    status: done
 
 development_status:
   # ============ V1 Epics (complete) ============
@@ -215,12 +215,15 @@ development_status:
   # V2 Epic 2 Readiness Gate — non-epic preparation work.
   # Completing these entries does not reopen Epic 1 or start Epic 2.
   # EPIC 2 START GATE: v2-epic-2 may leave backlog only when all four
-  # v2-prep-2-* entries and all v2-1 retrospective actions are done, and
-  # revised Stories 2.1-2.5 have Product Owner and Architect approval.
+  # v2-prep-2-* entries and all nine v2-1 actions are done; every Architecture
+  # Adoption Gate row is accepted; the Epic 2 risk/evidence checklist is complete;
+  # and revised Stories 2.1-2.5 have Product Owner, Architect, and QA approvals.
+  # PREP-2.4 review completion does not itself start Epic 2; kickoff is a separate
+  # project-lead transition after every condition above is reverified.
   v2-prep-2-1-runtime-and-scaffold-boundary-hardening: done
   v2-prep-2-2-deterministic-test-infrastructure: done
   v2-prep-2-3-data-event-and-snapshot-contracts: done
-  v2-prep-2-4-epic-2-planning-and-evidence-review: backlog
+  v2-prep-2-4-epic-2-planning-and-evidence-review: done
 
   # Epic 2: Move Authoring & Training Suite (FR-23~27)
   v2-epic-2: backlog

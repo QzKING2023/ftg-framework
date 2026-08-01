@@ -13,10 +13,13 @@ public sealed class ReplayFile
     public int DataVersion { get; init; }
     public int FrameCount { get; init; }
     public IReadOnlyList<ReplayEntry> Entries { get; init; }
+    /// <summary>Canonical AD-20 initial snapshot bytes; null only for accepted legacy v1-v3 files.</summary>
+    public byte[]? InitialSnapshot { get; init; }
 
     public int EventCount => Entries.Count;
 
-    public ReplayFile(string frameworkVersion, int dataVersion, int frameCount, IReadOnlyList<ReplayEntry> entries)
+    public ReplayFile(string frameworkVersion, int dataVersion, int frameCount, IReadOnlyList<ReplayEntry> entries,
+        byte[]? initialSnapshot = null)
     {
         FrameworkVersion = string.IsNullOrWhiteSpace(frameworkVersion)
             ? throw new ArgumentException("FrameworkVersion must not be empty.", nameof(frameworkVersion))
@@ -28,5 +31,6 @@ public sealed class ReplayFile
             ? frameCount
             : throw new ArgumentOutOfRangeException(nameof(frameCount), frameCount, "FrameCount must be non-negative.");
         Entries = entries ?? throw new ArgumentNullException(nameof(entries));
+        InitialSnapshot = initialSnapshot is null ? null : (byte[])initialSnapshot.Clone();
     }
 }

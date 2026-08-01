@@ -12,3 +12,8 @@ public interface IPhysicsParticipant
         return new PhysicsMotionSnapshot(0, 0, false, snapshot.WorldY);
     }
 }
+
+internal interface IRestorablePhysicsParticipant : IPhysicsParticipant
+{
+    void RestoreRuntimeSnapshot(PhysicsParticipantSnapshot participant, PhysicsMotionSnapshot motion);
+}

@@ -434,7 +434,7 @@ public sealed class PhysicsEngineTests : IDisposable
         string knockbackPath = Path.Combine(directory, "knockback.json");
         string responsePath = Path.Combine(directory, "response.json");
         File.WriteAllText(knockbackPath,
-            """{"knockback_profiles":[{"profile_id":"launch","horizontal":12,"vertical":3,"gravity":9,"friction":0.8}]}""");
+            """{"schema_version":1,"knockback_profiles":[{"profile_id":"launch","horizontal":12,"vertical":3,"gravity":9,"friction":0.8}]}""");
         var reload = new PhysicsProfileHotReloadService(
             knockbackPath, responsePath, () => ["default"]);
         reload.Initialize(store);

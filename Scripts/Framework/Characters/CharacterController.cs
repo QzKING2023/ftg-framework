@@ -8,7 +8,7 @@ using Godot;
 
 namespace FTG_Framework.Characters;
 
-public partial class CharacterController : Node2D, IPhysicsParticipant
+public partial class CharacterController : Node2D, IPhysicsParticipant, IRestorablePhysicsParticipant
 {
     [Export] public Node2D? SpriteContainer { get; set; }
     [Export] public Node2D? HurtboxContainer { get; set; }
@@ -129,6 +129,15 @@ public partial class CharacterController : Node2D, IPhysicsParticipant
         return _motion;
     }
 
+    void IRestorablePhysicsParticipant.RestoreRuntimeSnapshot(
+        PhysicsParticipantSnapshot participant, PhysicsMotionSnapshot motion)
+    {
+        GlobalPosition = new Vector2(participant.WorldX, participant.WorldY);
+        _facingRight = participant.FacingRight;
+        _motion = motion;
+        ResetKnockbackEventOrder();
+    }
+
     private void OnKnockbackApplied(KnockbackAppliedEvent e)
     {
         if (e.PlayerId != PlayerId || !e.WorldX.HasValue || !e.WorldY.HasValue)
@@ -187,8 +196,8 @@ public partial class CharacterController : Node2D, IPhysicsParticipant
     {
         var top = _gameLoop?.StateMachine is { } stateMachine
             ? stateMachine.GetCurrentState(PlayerId)
-            : fallbackEvent is { NewStack.Length: > 0 } e
-                ? e.NewStack[^1]
+            : fallbackEvent is { } e
+                ? e.NewSnapshot.TopOrIdle
                 : CharacterState.Idle;
         UpdateFacing();
 

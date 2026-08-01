@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text.Json;
+using System.Linq;
 
 namespace FTG_Framework.Core.Replay;
 
@@ -39,7 +40,12 @@ internal sealed class ReplayPlayer : IReplayPlayer
 
         ReplayVersionValidator.ValidateVersion(file.DataVersion);
         foreach (var entry in file.Entries)
+        {
             ReplayVersionValidator.ValidateEntryPayload(file.DataVersion, entry);
+            Type? registeredType = EventTypeRegistry.Resolve(entry.EventType);
+            if (registeredType is null || (entry.Phase != 0 && EventTypeRegistry.GetPhase(registeredType) != entry.Phase))
+                throw new ArgumentException($"[Replay] Event '{entry.EventType}' has invalid phase {entry.Phase}.", nameof(file));
+        }
 
         _eventsByFrame.Clear();
         _dispatchCache.Clear();
@@ -87,7 +93,9 @@ internal sealed class ReplayPlayer : IReplayPlayer
             return 0;
 
         int dispatched = 0;
-        foreach (var entry in entries)
+        foreach (var entry in entries.OrderBy(entry => entry.Phase == 0
+                     ? EventTypeRegistry.GetPhase(EventTypeRegistry.Resolve(entry.EventType)!)
+                     : entry.Phase).ThenBy(entry => entry.Sequence))
         {
             if (!_dispatchCache.TryGetValue(entry.EventType, out var cached))
                 continue;
@@ -98,7 +106,10 @@ internal sealed class ReplayPlayer : IReplayPlayer
 
             ReplayVersionValidator.ValidateDeserializedEvent(eventObj, entry.EventType);
 
-            cached.method.Invoke(bus, [eventObj]);
+            bool suppressDerived = EventTypeRegistry.GetPolicy(cached.eventType) == EventTypeRegistry.ReplayPolicy.Authoritative;
+            if (suppressDerived) bus.BeginReplayAuthoritativeApply();
+            try { cached.method.Invoke(bus, [eventObj]); }
+            finally { if (suppressDerived) bus.EndReplayAuthoritativeApply(); }
             dispatched++;
         }
 

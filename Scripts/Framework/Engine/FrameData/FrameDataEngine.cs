@@ -38,6 +38,29 @@ internal sealed class FrameDataEngine : IModule, IFrameDataEngine
         }
     }
 
+    internal FrameDataRuntimeSnapshot CaptureRuntimeSnapshot(int completedFrame) => new(new FrameStateSnapshot(
+        completedFrame,
+        _p1Timeline?.ActiveMove?.MoveId, _p1Timeline?.CurrentFrame ?? 0, _p1Timeline?.Phase ?? MovePhase.Idle,
+        _p2Timeline?.ActiveMove?.MoveId, _p2Timeline?.CurrentFrame ?? 0, _p2Timeline?.Phase ?? MovePhase.Idle));
+
+    internal FrameDataRuntimeSnapshot PrepareRuntimeSnapshot(FrameDataRuntimeSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ValidateMove(snapshot.State.P1MoveId);
+        ValidateMove(snapshot.State.P2MoveId);
+        return snapshot;
+
+        void ValidateMove(string? moveId)
+        {
+            if (moveId is not null && _dataStore.GetMove(moveId) is null)
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.FrameData,
+                    $"Move '{moveId}' is not present in the active dataset.");
+        }
+    }
+
+    internal void InstallRuntimeSnapshot(FrameDataRuntimeSnapshot snapshot) =>
+        RestoreFromReplaySnapshot(snapshot.State);
+
     public int EarliestSnapshotFrame => _snapshots.Count > 0 ? _snapshots[0].Frame : -1;
 
     public FrameDataEngine(IDataStore dataStore)

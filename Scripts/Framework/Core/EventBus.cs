@@ -34,7 +34,7 @@ namespace FTG_Framework.Core;
 /// <item>Phase 0 — Hot-Reload: drain <c>DataReloadedEvent</c> from FileWatcher</item>
 /// <item>Phase 1 — Frame tick: <c>FrameAdvancedEvent</c> (auto-injected)</item>
 /// <item>Phase 2 — Input System: <c>InputReceivedEvent</c>, <c>InputBufferExpiredEvent</c>, <c>ChargeStateChangedEvent</c></item>
-/// <item>Phase 3 — Frame Data Engine: <c>MoveFrameChangedEvent</c>, <c>CancelWindowEnteredEvent</c>, <c>CancelWindowExitedEvent</c>, <c>MoveStartedEvent</c></item>
+/// <item>Phase 3 — Frame Data Engine: <c>MoveStartedEvent</c>, <c>MoveFrameChangedEvent</c>, <c>CancelWindowEnteredEvent</c>, <c>CancelWindowExitedEvent</c></item>
 /// <item>Phase 4 — Physics: <c>HitConnectedEvent</c>, <c>MoveBlockedEvent</c>, <c>KnockbackAppliedEvent</c></item>
 /// <item>Phase 5 — State Machine: <c>StateChangedEvent</c>, <c>StateStackChangedEvent</c></item>
 /// <item>Phase 6 — Combo System: <c>ComboStartedEvent</c>, <c>MoveCanceledEvent</c>, <c>ComboEndedEvent</c></item>
@@ -48,9 +48,10 @@ public sealed class EventBus
     public static EventBus Instance => _instance.Value;
 
     private readonly Dictionary<Type, List<Delegate>> _subscribers = new();
-    private readonly record struct Envelope(object Payload, ulong Epoch, int Frame);
+    private readonly record struct Envelope(object Payload, ulong Epoch, int Frame, long Sequence = 0);
     private readonly List<Envelope> _currentQueue = new();
     private readonly List<Envelope> _nextQueue = new();
+    private readonly List<Envelope> _quarantinedQueue = new();
     private readonly ConcurrentQueue<Envelope> _pendingReloads = new();
     private readonly object _epochSync = new();
     private long _testGeneration;
@@ -59,6 +60,11 @@ public sealed class EventBus
     private int _frameNumber;
     private ulong _lifecycleEpoch = 1;
     private ulong? _dispatchEpoch;
+    private ulong? _reservedEpoch;
+    private bool _snapshotQuiesced;
+    private bool _publicationProhibited;
+    private bool _replayDerivedPublicationSuppressed;
+    private long _nextEnvelopeSequence;
 
     public int CurrentFrame => _frameNumber;
     internal ulong LifecycleEpoch => _lifecycleEpoch;
@@ -99,7 +105,7 @@ public sealed class EventBus
     internal void EnqueueDataReload(Events.DataReloadedEvent evt)
     {
         lock (_epochSync)
-            _pendingReloads.Enqueue(new Envelope(evt, _lifecycleEpoch, _frameNumber));
+            _pendingReloads.Enqueue(new Envelope(evt, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence()));
     }
 
     private EventBus() { }
@@ -135,12 +141,20 @@ public sealed class EventBus
 
         lock (_epochSync)
         {
+            if (_publicationProhibited)
+                throw new InvalidOperationException("[EventBus] Publication is prohibited from a StateRestored observer.");
+            Type runtimeType = evt.GetType();
+            if (_replayDerivedPublicationSuppressed && EventTypeRegistry.IsRegistered(runtimeType)
+                && EventTypeRegistry.GetPolicy(runtimeType) == EventTypeRegistry.ReplayPolicy.ObserveOnly)
+                return;
             if (IsLifecycle(evt) && _lifecycleEpoch == ulong.MaxValue)
                 throw new InvalidOperationException("[EventBus] Lifecycle epoch exhausted.");
-            if (_dispatching)
-                _nextQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber));
+            if (_snapshotQuiesced)
+                _quarantinedQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence()));
+            else if (_dispatching)
+                _nextQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence()));
             else
-                _currentQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber));
+                _currentQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence()));
         }
     }
 
@@ -149,7 +163,9 @@ public sealed class EventBus
     // events would either never arrive or arrive stale (LIFO) on resume.
     public void PublishImmediate<T>(T evt) where T : struct
     {
-        var envelope = new Envelope(evt, _lifecycleEpoch, _frameNumber);
+        if (_publicationProhibited)
+            throw new InvalidOperationException("[EventBus] Publication is prohibited from a StateRestored observer.");
+        var envelope = new Envelope(evt, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence());
         if (IsLifecycle(evt))
             envelope = ActivateLifecycle(envelope);
         DispatchEnvelope(envelope, evt);
@@ -194,7 +210,7 @@ public sealed class EventBus
     //   0. Hot-Reload      (DataReloaded — drained from FileWatcher)
     //   1. Frame tick      (FrameAdvanced — auto-injected)
     //   2. Input System    (InputReceived, InputBufferExpired, ChargeStateChanged)
-    //   3. Frame Data Engine (MoveFrameChanged, CancelWindow*, MoveStarted)
+    //   3. Frame Data Engine (MoveStarted, MoveFrameChanged, CancelWindow*)
     //   4. Physics         (HitConnected, MoveBlocked, KnockbackApplied)
     //   5. State Machine   (StateChanged, StateStackChanged)
     //   6. Combo System    (ComboStarted, MoveCanceled, ComboEnded)
@@ -214,7 +230,7 @@ public sealed class EventBus
 
             // Phase 1: Frame tick
             if (!SuppressFrameAdvanced)
-                _currentQueue.Add(new Envelope(new Events.FrameAdvancedEvent(_frameNumber), _lifecycleEpoch, _frameNumber));
+                _currentQueue.Add(new Envelope(new Events.FrameAdvancedEvent(_frameNumber), _lifecycleEpoch, _frameNumber, NextEnvelopeSequence()));
             _frameNumber++;
             DispatchType<Events.FrameAdvancedEvent>();
 
@@ -224,10 +240,10 @@ public sealed class EventBus
             DispatchType<Events.ChargeStateChangedEvent>();
 
             // Phase 3: Frame Data Engine events
+            DispatchType<Events.MoveStartedEvent>();
             DispatchType<Events.MoveFrameChangedEvent>();
             DispatchType<Events.CancelWindowEnteredEvent>();
             DispatchType<Events.CancelWindowExitedEvent>();
-            DispatchType<Events.MoveStartedEvent>();
 
             // Phase 4: Physics events
             DispatchType<Events.HitConnectedEvent>();
@@ -251,6 +267,7 @@ public sealed class EventBus
             DispatchType<Events.ReplayStartedEvent>();
             DispatchType<Events.ReplayEndedEvent>();
             DispatchType<Events.ReplayPausedEvent>();
+            DispatchType<Events.StateRestoredEvent>();
 
             System.Diagnostics.Debug.Assert(_currentQueue.Count == 0,
                 $"[EventBus] {_currentQueue.Count} unhandled event(s) remain after dispatch — unknown event type in queue.");
@@ -293,10 +310,10 @@ public sealed class EventBus
         AddIfMissing<Events.InputReceivedEvent>();
         AddIfMissing<Events.InputBufferExpiredEvent>();
         AddIfMissing<Events.ChargeStateChangedEvent>();
+        AddIfMissing<Events.MoveStartedEvent>();
         AddIfMissing<Events.MoveFrameChangedEvent>();
         AddIfMissing<Events.CancelWindowEnteredEvent>();
         AddIfMissing<Events.CancelWindowExitedEvent>();
-        AddIfMissing<Events.MoveStartedEvent>();
         AddIfMissing<Events.HitConnectedEvent>();
         AddIfMissing<Events.MoveBlockedEvent>();
         AddIfMissing<Events.KnockbackAppliedEvent>();
@@ -313,7 +330,73 @@ public sealed class EventBus
         AddIfMissing<Events.ReplayStartedEvent>();
         AddIfMissing<Events.ReplayEndedEvent>();
         AddIfMissing<Events.ReplayPausedEvent>();
+        AddIfMissing<Events.StateRestoredEvent>();
         return types;
+    }
+
+    internal void BeginSnapshotQuiescence()
+    {
+        lock (_epochSync)
+        {
+            if (_dispatching || _snapshotQuiesced)
+                throw new InvalidOperationException("[EventBus] Snapshot quiescence requires an idle EventBus.");
+            _snapshotQuiesced = true;
+        }
+    }
+
+    internal void EndSnapshotQuiescence(bool discardQuarantined)
+    {
+        lock (_epochSync)
+        {
+            if (!_snapshotQuiesced)
+                throw new InvalidOperationException("[EventBus] Snapshot quiescence is not active.");
+            if (!discardQuarantined)
+                _currentQueue.AddRange(_quarantinedQueue.Where(e => e.Epoch == _lifecycleEpoch));
+            _quarantinedQueue.Clear();
+            _snapshotQuiesced = false;
+        }
+    }
+
+    internal ulong ReserveLifecycleEpoch()
+    {
+        lock (_epochSync)
+        {
+            if (!_snapshotQuiesced || _reservedEpoch is not null)
+                throw new InvalidOperationException("[EventBus] Epoch reservation requires one active snapshot Prepare.");
+            _reservedEpoch = checked(_lifecycleEpoch + 1UL);
+            return _reservedEpoch.Value;
+        }
+    }
+
+    internal void CancelReservedEpoch() => _reservedEpoch = null;
+
+    internal int PrepareRestoreCommit(ulong reservedEpoch, int completedFrame)
+    {
+        if (_reservedEpoch != reservedEpoch)
+            throw new InvalidOperationException("[EventBus] Reserved epoch does not match.");
+        if (completedFrame == int.MaxValue)
+            throw new InvalidOperationException("[EventBus] Restored frame cannot advance beyond Int32.MaxValue.");
+        return completedFrame + 1;
+    }
+
+    internal void CommitReservedEpoch(ulong reservedEpoch, int nextFrame)
+    {
+        _lifecycleEpoch = reservedEpoch;
+        _reservedEpoch = null;
+        _frameNumber = nextFrame;
+        _currentQueue.Clear();
+        _nextQueue.Clear();
+        while (_pendingReloads.TryDequeue(out _)) { }
+    }
+
+    internal void PublishStateRestored(Events.StateRestoredEvent evt)
+    {
+        if (!_snapshotQuiesced)
+            throw new InvalidOperationException("[EventBus] StateRestored requires snapshot quiescence.");
+        var envelope = new Envelope(evt, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence());
+        _publicationProhibited = true;
+        try { DispatchEnvelope(envelope, evt); }
+        finally { _publicationProhibited = false; }
     }
 
     // Dispatches all queued events of type T in LIFO order (reverse iteration).
@@ -364,6 +447,24 @@ public sealed class EventBus
 
     internal void SetLifecycleEpochForTesting(ulong epoch) => _lifecycleEpoch = epoch;
 
+    internal void BeginReplayAuthoritativeApply() => _replayDerivedPublicationSuppressed = true;
+    internal void EndReplayAuthoritativeApply() => _replayDerivedPublicationSuppressed = false;
+
+    internal SnapshotAtomicityDiagnostic GetSnapshotAtomicityDiagnostic()
+    {
+        lock (_epochSync)
+            return new SnapshotAtomicityDiagnostic(_lifecycleEpoch, _reservedEpoch,
+                Describe(_currentQueue), Describe(_nextQueue), Describe(_pendingReloads.ToArray()),
+                Describe(_quarantinedQueue));
+
+        static IReadOnlyList<SnapshotEnvelopeDiagnostic> Describe(IEnumerable<Envelope> envelopes) =>
+            envelopes.Select(e => new SnapshotEnvelopeDiagnostic(
+                e.Payload.GetType().FullName ?? e.Payload.GetType().Name,
+                e.Payload.ToString() ?? string.Empty, e.Frame, e.Epoch, e.Sequence)).ToArray();
+    }
+
+    private long NextEnvelopeSequence() => checked(++_nextEnvelopeSequence);
+
     internal EventBusTestDiagnostic BeginTestScope()
     {
         lock (_epochSync)
@@ -412,11 +513,17 @@ public sealed class EventBus
         _subscribers.Clear();
         _currentQueue.Clear();
         _nextQueue.Clear();
+        _quarantinedQueue.Clear();
         while (_pendingReloads.TryDequeue(out _)) { }
         _dispatching = false;
         _frameNumber = 0;
         _dispatchFrame = 0;
         _dispatchEpoch = null;
+        _reservedEpoch = null;
+        _snapshotQuiesced = false;
+        _publicationProhibited = false;
+        _replayDerivedPublicationSuppressed = false;
+        _nextEnvelopeSequence = 0;
         Paused = false;
         StepRequested = false;
         SuppressFrameAdvanced = false;
@@ -454,6 +561,17 @@ public sealed class EventBus
 }
 
 internal sealed record EventBusSubscriberDiagnostic(string EventType, int Count);
+
+internal sealed record SnapshotEnvelopeDiagnostic(
+    string PayloadType, string PayloadValue, int Frame, ulong Epoch, long Sequence);
+
+internal sealed record SnapshotAtomicityDiagnostic(
+    ulong ActiveEpoch,
+    ulong? ReservedEpoch,
+    IReadOnlyList<SnapshotEnvelopeDiagnostic> Current,
+    IReadOnlyList<SnapshotEnvelopeDiagnostic> Next,
+    IReadOnlyList<SnapshotEnvelopeDiagnostic> Pending,
+    IReadOnlyList<SnapshotEnvelopeDiagnostic> Quarantined);
 
 internal sealed record EventBusTestDiagnostic(
     IReadOnlyList<EventBusSubscriberDiagnostic> SubscriberTypes,

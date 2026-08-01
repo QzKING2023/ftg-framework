@@ -11,14 +11,14 @@ namespace FTG_Framework.Engine.StateMachine;
 internal sealed class StateMachine : IModule, IStateMachine
 {
     private readonly IDataStore _dataStore;
-    private readonly Dictionary<int, List<CharacterState>> _stacks = new();
+    private Dictionary<int, List<CharacterState>> _stacks = new();
     private readonly Dictionary<CharacterState, string> _stateProfiles = new();
     private readonly Dictionary<CharacterState, HashSet<CharacterState>> _allowedTransitions = new();
-    private readonly Dictionary<int, PhysicsResponseProfile> _effectiveProfileSnapshots = new();
-    private readonly Dictionary<int, AwaitingLaunch> _awaitingLaunches = new();
-    private readonly Dictionary<int, KnockbackTuple> _knockbackTuples = new();
-    private readonly Dictionary<int, (ulong Epoch, ulong Generation)> _hitstunOccupancy = new();
-    private readonly Dictionary<int, (ulong Epoch, ulong Generation)> _highestKnockbackGeneration = new();
+    private Dictionary<int, PhysicsResponseProfile> _effectiveProfileSnapshots = new();
+    private Dictionary<int, AwaitingLaunch> _awaitingLaunches = new();
+    private Dictionary<int, KnockbackTuple> _knockbackTuples = new();
+    private Dictionary<int, (ulong Epoch, ulong Generation)> _hitstunOccupancy = new();
+    private Dictionary<int, GenerationEpochSnapshot> _highestKnockbackGeneration = new();
     private bool _initialized;
 
     public StateMachine(IDataStore dataStore)
@@ -251,6 +251,44 @@ internal sealed class StateMachine : IModule, IStateMachine
     internal IReadOnlyCollection<string> GetRegisteredPhysicsProfileIds() =>
         _stateProfiles.Values.Distinct(StringComparer.Ordinal).ToArray();
 
+    internal StateMachineRuntimeSnapshot CaptureRuntimeSnapshot()
+    {
+        var stacks = _stacks.ToDictionary(pair => pair.Key, pair => new List<CharacterState>(pair.Value));
+        var profiles = _effectiveProfileSnapshots.ToDictionary(pair => pair.Key, pair => Snapshot.Of(pair.Value));
+        var highWater = _highestKnockbackGeneration.ToDictionary(pair => pair.Key,
+            pair => new GenerationEpochSnapshot(pair.Value.Epoch, pair.Value.Generation));
+        return new StateMachineRuntimeSnapshot(stacks, profiles, highWater);
+    }
+
+    internal StateMachineRuntimeSnapshot PrepareRuntimeSnapshot(
+        StateMachineRuntimeSnapshot snapshot, SnapshotPrepareContext context)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.Stacks is null || snapshot.EffectiveProfiles is null || snapshot.GenerationHighWater is null)
+            throw new SnapshotPrepareException(SnapshotParticipantCatalog.StateMachine, "Required state is null.");
+        foreach (var pair in snapshot.Stacks)
+        {
+            ValidatePlayerId(pair.Key);
+            if (pair.Value is null || pair.Value.Count == 0)
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.StateMachine, $"P{pair.Key} stack is empty.");
+        }
+        return new StateMachineRuntimeSnapshot(
+            snapshot.Stacks.ToDictionary(pair => pair.Key, pair => new List<CharacterState>(pair.Value)),
+            snapshot.EffectiveProfiles.ToDictionary(pair => pair.Key, pair => Snapshot.Of(pair.Value)),
+            snapshot.GenerationHighWater.ToDictionary(pair => pair.Key,
+                pair => new GenerationEpochSnapshot(context.ReservedEpoch, pair.Value.Generation)));
+    }
+
+    internal void InstallRuntimeSnapshot(StateMachineRuntimeSnapshot snapshot)
+    {
+        _stacks = snapshot.Stacks;
+        _effectiveProfileSnapshots = snapshot.EffectiveProfiles;
+        _highestKnockbackGeneration = snapshot.GenerationHighWater;
+        _awaitingLaunches = new();
+        _knockbackTuples = new();
+        _hitstunOccupancy = new();
+    }
+
     // ── Event handlers (AD-11 peer model) ──
 
     private void OnMoveStarted(MoveStartedEvent e)
@@ -327,7 +365,7 @@ internal sealed class StateMachine : IModule, IStateMachine
             _awaitingLaunches.Remove(e.PlayerId);
             _knockbackTuples[e.PlayerId] = new KnockbackTuple(epoch, e.GenerationId, e, false);
             _hitstunOccupancy[e.PlayerId] = (epoch, e.GenerationId);
-            _highestKnockbackGeneration[e.PlayerId] = (epoch, e.GenerationId);
+            _highestKnockbackGeneration[e.PlayerId] = new GenerationEpochSnapshot(epoch, e.GenerationId);
             return;
         }
 
@@ -453,8 +491,13 @@ internal sealed class StateMachine : IModule, IStateMachine
 
     private void PublishEvents(int playerId, CharacterState[] oldStack, CharacterState[] newStack)
     {
-        EventBus.Instance.Publish(new StateChangedEvent(playerId, oldStack, newStack));
-        EventBus.Instance.Publish(new StateStackChangedEvent(playerId, newStack));
+        var oldSnapshot = new StateStackSnapshot(oldStack);
+        var newSnapshot = new StateStackSnapshot(newStack);
+        CharacterState oldTop = oldSnapshot.TopOrIdle;
+        CharacterState newTop = newSnapshot.TopOrIdle;
+        if (oldTop != newTop)
+            EventBus.Instance.Publish(new StateChangedEvent(playerId, oldTop, newTop, newSnapshot));
+        EventBus.Instance.Publish(new StateStackChangedEvent(playerId, oldSnapshot, newSnapshot));
     }
 
     private static void ValidatePlayerId(int playerId)

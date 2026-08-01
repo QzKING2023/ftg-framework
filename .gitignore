@@ -36,6 +36,9 @@ _bmad-output/implementation-artifacts/evidence/*
 !_bmad-output/implementation-artifacts/v2-prep-2-2-deterministic-test-infrastructure.md
 !_bmad-output/implementation-artifacts/evidence/v2-prep-2-2/
 !_bmad-output/implementation-artifacts/evidence/v2-prep-2-2/**
+!_bmad-output/implementation-artifacts/v2-prep-2-3-data-event-and-snapshot-contracts.md
+!_bmad-output/implementation-artifacts/evidence/v2-prep-2-3/
+!_bmad-output/implementation-artifacts/evidence/v2-prep-2-3/**
 
 # FTG Framework addon (build-generated source; plugin.cfg and README.md are committed)
 addons/ftg-framework/src/

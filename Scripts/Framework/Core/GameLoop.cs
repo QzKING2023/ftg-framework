@@ -164,7 +164,12 @@ public partial class GameLoop : Node
 
             _socdResolver = new global::FTG_Framework.Input.DefaultSOCDResolver();
 
-            _replayOrchestrator = new ReplayOrchestrator(_frameDataEngine);
+            var replayOrchestrator = new ReplayOrchestrator(_frameDataEngine);
+            var snapshotCoordinator = CreateRuntimeSnapshotCoordinator(
+                stateMachine, frameDataEngine, physicsEngine, inputHistory, chargeTracker,
+                replayOrchestrator);
+            replayOrchestrator.AttachSnapshotCoordinator(snapshotCoordinator);
+            _replayOrchestrator = replayOrchestrator;
             _matchInitializedHandler = e =>
             {
                 _p1CharacterId = e.P1CharacterId;
@@ -385,6 +390,40 @@ public partial class GameLoop : Node
                 Category = category
             });
         }
+    }
+
+    internal static StateSnapshotCoordinator CreateRuntimeSnapshotCoordinator(
+        global::FTG_Framework.Engine.StateMachine.StateMachine stateMachine,
+        FrameDataEngine frameDataEngine,
+        PhysicsEngine physicsEngine,
+        global::FTG_Framework.Input.InputHistory inputHistory,
+        global::FTG_Framework.Input.ChargeTracker chargeTracker,
+        ReplayOrchestrator replayOrchestrator)
+    {
+        ArgumentNullException.ThrowIfNull(stateMachine);
+        ArgumentNullException.ThrowIfNull(frameDataEngine);
+        ArgumentNullException.ThrowIfNull(physicsEngine);
+        ArgumentNullException.ThrowIfNull(inputHistory);
+        ArgumentNullException.ThrowIfNull(chargeTracker);
+        ArgumentNullException.ThrowIfNull(replayOrchestrator);
+        IStateSnapshotParticipant[] participants =
+        [
+            new RuntimeStateSnapshotParticipant<StateMachineRuntimeSnapshot>(
+                SnapshotParticipantCatalog.StateMachine, 1, (_, _) => stateMachine.CaptureRuntimeSnapshot(),
+                stateMachine.PrepareRuntimeSnapshot, stateMachine.InstallRuntimeSnapshot),
+            new RuntimeStateSnapshotParticipant<FrameDataRuntimeSnapshot>(
+                SnapshotParticipantCatalog.FrameData, 1, (frame, _) => frameDataEngine.CaptureRuntimeSnapshot(frame),
+                (snapshot, _) => frameDataEngine.PrepareRuntimeSnapshot(snapshot), frameDataEngine.InstallRuntimeSnapshot),
+            new RuntimeStateSnapshotParticipant<PhysicsRuntimeSnapshot>(
+                SnapshotParticipantCatalog.PhysicsMotion, 1, (_, _) => physicsEngine.CaptureRuntimeSnapshot(),
+                (snapshot, _) => physicsEngine.PrepareRuntimeSnapshot(snapshot), physicsEngine.InstallRuntimeSnapshot),
+            new RuntimeStateSnapshotParticipant<InputRuntimeSnapshot>(
+                SnapshotParticipantCatalog.Input, 1, (_, _) => inputHistory.CaptureRuntimeSnapshot(chargeTracker),
+                (snapshot, _) => inputHistory.PrepareRuntimeSnapshot(snapshot),
+                snapshot => inputHistory.InstallRuntimeSnapshot(snapshot, chargeTracker)),
+            replayOrchestrator
+        ];
+        return StateSnapshotCoordinator.CreateRuntime(EventBus.Instance, participants);
     }
 
     private static DirectionValue FallbackDirection(bool left, bool right, bool down, bool up)

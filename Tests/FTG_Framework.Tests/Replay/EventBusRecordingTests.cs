@@ -101,6 +101,28 @@ public class EventBusRecordingTests : IDisposable
     }
 
     [Fact]
+    public void Recorder_StoresLivePhaseSequenceAndSourceEpochProvenance()
+    {
+        var recorder = new ReplayRecorder { IsRecording = true };
+        _bus.Recorder = recorder;
+        ulong epoch = _bus.LifecycleEpoch;
+        _bus.Publish(new InputReceivedEvent(1, 0, 0, 3));
+        _bus.Publish(new InputReceivedEvent(2, 0, 0, 1));
+        _bus.Publish(new HitConnectedEvent(1, 2, "5LP", 3, 30));
+        _bus.ProcessFrame();
+
+        ReplayFile file = recorder.Save();
+        foreach (ReplayEntry entry in file.Entries)
+        {
+            Type type = EventTypeRegistry.Resolve(entry.EventType)!;
+            Assert.Equal(EventTypeRegistry.GetPhase(type), entry.Phase);
+            Assert.Equal(epoch, entry.SourceEpoch);
+        }
+        ReplayEntry[] inputs = file.Entries.Where(e => e.EventType == nameof(InputReceivedEvent)).ToArray();
+        Assert.Equal([0, 1], inputs.Select(e => e.Sequence));
+    }
+
+    [Fact]
     public void ReplayInjection_BypassesRecording_WhenRecorderNull()
     {
         // Simulate replay: recorder is null during injection

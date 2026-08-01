@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FTG_Framework.Core;
 using FTG_Framework.Core.Events;
 using FTG_Framework.Data;
@@ -18,7 +19,7 @@ internal sealed class PhysicsEngine : IPhysicsEngine
     private readonly Dictionary<ContextKey, HitContext> _contexts = new();
     private readonly Dictionary<int, TrajectoryState> _trajectories = new();
     private readonly Dictionary<int, LaunchCandidate> _launchCandidates = new();
-    private readonly Dictionary<int, ulong> _generationCounters = new();
+    private Dictionary<int, ulong> _generationCounters = new();
     private readonly List<object> _pendingCollisionEvents = new();
     private bool _initialized;
 
@@ -269,6 +270,54 @@ internal sealed class PhysicsEngine : IPhysicsEngine
 
     internal void SetGenerationForTesting(int playerId, ulong generation) =>
         _generationCounters[playerId] = generation;
+
+    internal PhysicsRuntimeSnapshot CaptureRuntimeSnapshot()
+    {
+        var participants = new Dictionary<int, PhysicsParticipantSnapshot>();
+        var motions = new Dictionary<int, PhysicsMotionSnapshot>();
+        foreach (var pair in _participants)
+        {
+            participants[pair.Key] = pair.Value.CapturePhysicsSnapshot();
+            motions[pair.Key] = pair.Value.CaptureMotionSnapshot();
+        }
+        return new PhysicsRuntimeSnapshot(new Dictionary<int, ulong>(_generationCounters), participants, motions);
+    }
+
+    internal PhysicsRuntimeSnapshot PrepareRuntimeSnapshot(PhysicsRuntimeSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.GenerationHighWater is null || snapshot.Participants is null || snapshot.Motions is null)
+            throw new SnapshotPrepareException(SnapshotParticipantCatalog.PhysicsMotion, "Required physics state is null.");
+        foreach (var pair in snapshot.Participants)
+        {
+            if (!_participants.TryGetValue(pair.Key, out IPhysicsParticipant? live) ||
+                live is not IRestorablePhysicsParticipant || pair.Value.PlayerId != pair.Key ||
+                !snapshot.Motions.ContainsKey(pair.Key))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.PhysicsMotion,
+                    $"Restorable participant P{pair.Key} is not bound.");
+        }
+        if (_participants.Keys.Any(id => !snapshot.Participants.ContainsKey(id)))
+            throw new SnapshotPrepareException(SnapshotParticipantCatalog.PhysicsMotion,
+                "Snapshot omits a bound physics participant.");
+        return new PhysicsRuntimeSnapshot(
+            new Dictionary<int, ulong>(snapshot.GenerationHighWater),
+            new Dictionary<int, PhysicsParticipantSnapshot>(snapshot.Participants),
+            new Dictionary<int, PhysicsMotionSnapshot>(snapshot.Motions));
+    }
+
+    internal void InstallRuntimeSnapshot(PhysicsRuntimeSnapshot snapshot)
+    {
+        foreach (var pair in snapshot.Participants)
+            ((IRestorablePhysicsParticipant)_participants[pair.Key]).RestoreRuntimeSnapshot(
+                pair.Value, snapshot.Motions[pair.Key]);
+        _generationCounters = snapshot.GenerationHighWater;
+        _trajectories.Clear();
+        _launchCandidates.Clear();
+        _contexts.Clear();
+        _previousActive.Clear();
+        _currentActive.Clear();
+        _pendingCollisionEvents.Clear();
+    }
 
     private static void PublishTrajectory(int playerId, in TrajectoryState trajectory,
         KnockbackPhase phase, float? effectiveFriction = null, float gravityScale = 1f)

@@ -13,6 +13,8 @@ internal sealed class ReplayRecorder : IReplayRecorder
 {
     private readonly List<ReplayEntry> _entries = new();
     private readonly object _lock = new();
+    private int _sequenceFrame = -1;
+    private readonly Dictionary<int, int> _phaseSequences = new();
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -34,10 +36,17 @@ internal sealed class ReplayRecorder : IReplayRecorder
 
         var typeName = EventTypeRegistry.GetName(typeof(T));
         var payload = JsonSerializer.Serialize(evt, typeof(T), JsonOptions);
-        var entry = new ReplayEntry(frame, typeName, payload);
-
         lock (_lock)
         {
+            if (_sequenceFrame != frame)
+            {
+                _sequenceFrame = frame;
+                _phaseSequences.Clear();
+            }
+            int phase = EventTypeRegistry.GetPhase(typeof(T));
+            int sequence = _phaseSequences.TryGetValue(phase, out int current) ? current : 0;
+            _phaseSequences[phase] = checked(sequence + 1);
+            var entry = new ReplayEntry(frame, typeName, payload, phase, sequence, EventBus.Instance.LifecycleEpoch);
             _entries.Add(entry);
             if (frame > MaxFrameNumber)
                 MaxFrameNumber = frame;
@@ -53,7 +62,7 @@ internal sealed class ReplayRecorder : IReplayRecorder
         {
             copied = new List<ReplayEntry>(_entries.Count);
             foreach (var e in _entries)
-                copied.Add(new ReplayEntry(e.Frame, e.EventType, e.Payload));
+                copied.Add(new ReplayEntry(e.Frame, e.EventType, e.Payload, e.Phase, e.Sequence, e.SourceEpoch));
         }
 
         return new ReplayFile("2.3.0", ReplayVersionValidator.CurrentDataVersion, MaxFrameNumber + 1, copied);

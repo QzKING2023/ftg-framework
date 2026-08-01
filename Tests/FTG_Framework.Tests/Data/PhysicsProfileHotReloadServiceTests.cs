@@ -127,7 +127,7 @@ public sealed class PhysicsProfileHotReloadServiceTests : IDisposable
         var initialDefault = Response("default", 1);
         var initialHitstun = Response("hitstun", 0.5f);
         var store = Store(response: [initialDefault, initialHitstun]);
-        string knockback = Write("knockback.json", """{"knockback_profiles":[]}""");
+        string knockback = Write("knockback.json", """{"schema_version":1,"knockback_profiles":[]}""");
         string response = Write("response.json", ResponseJson("default", 2));
         Initialize(store, knockback, response, requiredResponseIds: () => ["default", "hitstun"]);
 
@@ -214,8 +214,8 @@ public sealed class PhysicsProfileHotReloadServiceTests : IDisposable
     };
 
     private static string KnockbackJson(string id, float horizontal) =>
-        $$"""{"knockback_profiles":[{"profile_id":"{{id}}","horizontal":{{horizontal}},"vertical":3,"gravity":1,"friction":0.2}]}""";
+        $$"""{"schema_version":1,"knockback_profiles":[{"profile_id":"{{id}}","horizontal":{{horizontal}},"vertical":3,"gravity":1,"friction":0.2}]}""";
 
     private static string ResponseJson(string id, float multiplier) =>
-        $$"""{"physics_response_profiles":[{"profile_id":"{{id}}","knockback_multiplier":{{multiplier}},"gravity_scale":1,"friction":0.5,"air_friction":0.2,"participates_in_hitstop":true}]}""";
+        $$"""{"schema_version":1,"physics_response_profiles":[{"profile_id":"{{id}}","knockback_multiplier":{{multiplier}},"gravity_scale":1,"friction":0.5,"air_friction":0.2,"participates_in_hitstop":true}]}""";
 }

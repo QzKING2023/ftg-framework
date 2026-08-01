@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "knockback_profiles": [
     {
       "profile_id": "light_hit",

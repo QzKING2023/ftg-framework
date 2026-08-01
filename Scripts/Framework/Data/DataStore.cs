@@ -14,6 +14,13 @@ internal sealed class DataStore : IDataStore
     private Dictionary<string, KnockbackProfile> _knockbackProfiles;
     private Dictionary<string, PhysicsResponseProfile> _physicsResponseProfiles;
     private readonly HashSet<string> _knownCategories;
+    private readonly object _physicsDatasetSync = new();
+    private ulong _physicsDatasetVersion;
+
+    internal ulong PhysicsDatasetVersion
+    {
+        get { lock (_physicsDatasetSync) return _physicsDatasetVersion; }
+    }
 
     public DataStore(
         MoveDefinition[] moves,
@@ -199,7 +206,21 @@ internal sealed class DataStore : IDataStore
             if (!candidate.TryAdd(profile.ProfileId, profile))
                 throw new FormatException($"[Data] Duplicate knockback_profile_id: '{profile.ProfileId}'.");
         }
-        _knockbackProfiles = candidate;
+        lock (_physicsDatasetSync)
+        {
+            ulong nextVersion = checked(_physicsDatasetVersion + 1);
+            _knockbackProfiles = candidate;
+            _physicsDatasetVersion = nextVersion;
+        }
+    }
+
+    internal bool TryCommitKnockbackProfiles(KnockbackProfile[] profiles, ulong expectedVersion)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        PhysicsResponseProfile[] responses;
+        lock (_physicsDatasetSync)
+            responses = _physicsResponseProfiles.Values.ToArray();
+        return TryCommitPhysicsDataset(profiles, responses, expectedVersion);
     }
 
     public PhysicsResponseProfile? GetPhysicsResponseProfile(string profileId)
@@ -228,6 +249,71 @@ internal sealed class DataStore : IDataStore
             if (!candidate.TryAdd(profile.ProfileId, profile))
                 throw new FormatException($"[Data] Duplicate physics_response_profile_id: '{profile.ProfileId}'.");
         }
-        _physicsResponseProfiles = candidate;
+        lock (_physicsDatasetSync)
+        {
+            ulong nextVersion = checked(_physicsDatasetVersion + 1);
+            _physicsResponseProfiles = candidate;
+            _physicsDatasetVersion = nextVersion;
+        }
+    }
+
+    internal bool TryCommitPhysicsResponseProfiles(PhysicsResponseProfile[] profiles, ulong expectedVersion)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        KnockbackProfile[] knockbacks;
+        lock (_physicsDatasetSync)
+            knockbacks = _knockbackProfiles.Values.ToArray();
+        return TryCommitPhysicsDataset(knockbacks, profiles, expectedVersion);
+    }
+
+    internal bool TryCommitPhysicsDataset(
+        KnockbackProfile[] knockbackProfiles,
+        PhysicsResponseProfile[] responseProfiles,
+        ulong expectedVersion)
+    {
+        ArgumentNullException.ThrowIfNull(knockbackProfiles);
+        ArgumentNullException.ThrowIfNull(responseProfiles);
+        var knockbackCandidate = BuildKnockbackCandidate(knockbackProfiles);
+        var responseCandidate = BuildResponseCandidate(responseProfiles);
+        lock (_physicsDatasetSync)
+        {
+            if (_physicsDatasetVersion != expectedVersion)
+                return false;
+            ulong nextVersion = checked(_physicsDatasetVersion + 1);
+            _knockbackProfiles = knockbackCandidate;
+            _physicsResponseProfiles = responseCandidate;
+            _physicsDatasetVersion = nextVersion;
+            return true;
+        }
+    }
+
+    private static Dictionary<string, KnockbackProfile> BuildKnockbackCandidate(KnockbackProfile[] profiles)
+    {
+        var candidate = new Dictionary<string, KnockbackProfile>();
+        foreach (var profile in profiles)
+        {
+            if (profile is null)
+                throw new FormatException("[Data] KnockbackProfile array contains a null entry.");
+            if (string.IsNullOrEmpty(profile.ProfileId))
+                throw new FormatException("[Data] KnockbackProfile has null or empty profile_id.");
+            if (!candidate.TryAdd(profile.ProfileId, profile))
+                throw new FormatException($"[Data] Duplicate knockback_profile_id: '{profile.ProfileId}'.");
+        }
+        return candidate;
+    }
+
+    private static Dictionary<string, PhysicsResponseProfile> BuildResponseCandidate(PhysicsResponseProfile[] profiles)
+    {
+        var candidate = new Dictionary<string, PhysicsResponseProfile>();
+        foreach (var profile in profiles)
+        {
+            if (profile is null)
+                throw new FormatException("[Data] PhysicsResponseProfile array contains a null entry.");
+            if (string.IsNullOrEmpty(profile.ProfileId))
+                throw new FormatException("[Data] PhysicsResponseProfile has null or empty profile_id.");
+            if (!candidate.TryAdd(profile.ProfileId, profile))
+                throw new FormatException($"[Data] Duplicate physics_response_profile_id: '{profile.ProfileId}'.");
+        }
+        return candidate;
     }
 }

@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "physics_response_profiles": [
     {
       "profile_id": "default",

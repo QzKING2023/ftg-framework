@@ -8,6 +8,38 @@ namespace FTG_Framework.Tests;
 
 public class DataStorePhysicsProfileTests
 {
+    [Fact]
+    public void PhysicsDatasetCommit_RejectsStaleWriterWithoutMutation()
+    {
+        var original = MakeKnockbackProfile("original");
+        var store = new DataStore([MakeMove("5LP")], knockbackProfiles: [original]);
+        ulong staleVersion = store.PhysicsDatasetVersion;
+
+        Assert.True(store.TryCommitKnockbackProfiles([MakeKnockbackProfile("winner")], staleVersion));
+        Assert.False(store.TryCommitKnockbackProfiles([MakeKnockbackProfile("loser")], staleVersion));
+
+        Assert.NotNull(store.GetKnockbackProfile("winner"));
+        Assert.Null(store.GetKnockbackProfile("loser"));
+    }
+
+    [Fact]
+    public void PhysicsDatasetCommit_SwapsBothFamiliesUnderOneVersion()
+    {
+        var store = new DataStore([MakeMove("5LP")],
+            knockbackProfiles: [MakeKnockbackProfile("old-knockback")],
+            physicsResponseProfiles: [MakeResponseProfile("old-response")]);
+        ulong version = store.PhysicsDatasetVersion;
+
+        Assert.True(store.TryCommitPhysicsDataset(
+            [MakeKnockbackProfile("new-knockback")],
+            [MakeResponseProfile("new-response")], version));
+
+        Assert.Equal(version + 1, store.PhysicsDatasetVersion);
+        Assert.Null(store.GetKnockbackProfile("old-knockback"));
+        Assert.Null(store.GetPhysicsResponseProfile("old-response"));
+        Assert.NotNull(store.GetKnockbackProfile("new-knockback"));
+        Assert.NotNull(store.GetPhysicsResponseProfile("new-response"));
+    }
     private static MoveDefinition MakeMove(string moveId) => new()
     {
         MoveId = moveId,

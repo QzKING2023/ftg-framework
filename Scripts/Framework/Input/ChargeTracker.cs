@@ -170,6 +170,42 @@ internal sealed class ChargeTracker : IModule, IChargeTracker
         return end == -1 ? currentFrame - start + 1 : end - start + 1;
     }
 
+    internal InputRuntimeSnapshot CaptureRuntimeSnapshot(
+        System.Collections.Generic.IReadOnlyList<InputEntry> p1Directions,
+        System.Collections.Generic.IReadOnlyList<InputEntry> p1Buttons,
+        System.Collections.Generic.IReadOnlyList<InputEntry> p2Directions,
+        System.Collections.Generic.IReadOnlyList<InputEntry> p2Buttons)
+    {
+        var starts = new int[4];
+        var ends = new int[4];
+        var charging = new bool[4];
+        for (int player = 0; player < 2; player++)
+        for (int direction = 0; direction < NumChargeDirs; direction++)
+        {
+            int index = player * NumChargeDirs + direction;
+            starts[index] = _chargeStartFrame[player, direction];
+            ends[index] = _chargeEndFrame[player, direction];
+            charging[index] = _wasCharging[player, direction];
+        }
+        return new InputRuntimeSnapshot(
+            System.Linq.Enumerable.ToArray(p1Directions), System.Linq.Enumerable.ToArray(p1Buttons),
+            System.Linq.Enumerable.ToArray(p2Directions), System.Linq.Enumerable.ToArray(p2Buttons),
+            starts, ends, charging, _lastUpdateFrame);
+    }
+
+    internal void InstallRuntimeSnapshot(InputRuntimeSnapshot snapshot)
+    {
+        for (int player = 0; player < 2; player++)
+        for (int direction = 0; direction < NumChargeDirs; direction++)
+        {
+            int index = player * NumChargeDirs + direction;
+            _chargeStartFrame[player, direction] = snapshot.ChargeStarts[index];
+            _chargeEndFrame[player, direction] = snapshot.ChargeEnds[index];
+            _wasCharging[player, direction] = snapshot.WasCharging[index];
+        }
+        _lastUpdateFrame = snapshot.LastUpdateFrame;
+    }
+
     private static int GetChargeDirIndex(DirectionValue dir)
     {
         return dir switch

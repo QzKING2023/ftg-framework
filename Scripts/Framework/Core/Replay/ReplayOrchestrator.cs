@@ -11,17 +11,20 @@ namespace FTG_Framework.Core.Replay;
 /// Pause/resume/step are handled through EventBus.Paused/StepRequested
 /// (via PlaybackControlsViewModel), not through the orchestrator directly.
 /// </summary>
-internal sealed class ReplayOrchestrator
+internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
 {
     private readonly IFrameDataEngine? _frameDataEngine;
     private readonly IReplayRecorder _recorder;
     private readonly IReplayPlayer _player;
     private readonly Dictionary<int, FrameStateSnapshot> _snapshots = new();
+    private readonly PlaybackModeCoordinator _playbackModes;
+    private StateSnapshotCoordinator? _snapshotCoordinator;
 
     private ReplayFile? _loadedFile;
     private int _replayFrame;
     private string? _currentReplayPath;
     private int _preReplayFrameNumber;
+    private byte[]? _recordingInitialSnapshot;
 
     public bool IsRecording => _recorder.IsRecording;
     public bool IsPlaying => _player.IsPlaying;
@@ -29,11 +32,55 @@ internal sealed class ReplayOrchestrator
     public int TotalReplayFrames => _loadedFile?.FrameCount ?? 0;
     public string? CurrentReplayPath => _currentReplayPath;
 
-    public ReplayOrchestrator(IFrameDataEngine? frameDataEngine = null)
+    public ReplayOrchestrator(IFrameDataEngine? frameDataEngine = null,
+        PlaybackModeCoordinator? playbackModes = null,
+        StateSnapshotCoordinator? snapshotCoordinator = null)
     {
         _frameDataEngine = frameDataEngine;
+        _playbackModes = playbackModes ?? new PlaybackModeCoordinator();
+        _snapshotCoordinator = snapshotCoordinator;
         _recorder = new ReplayRecorder();
         _player = new ReplayPlayer();
+    }
+
+    internal void AttachSnapshotCoordinator(StateSnapshotCoordinator coordinator)
+    {
+        ArgumentNullException.ThrowIfNull(coordinator);
+        if (_snapshotCoordinator is not null && !ReferenceEquals(_snapshotCoordinator, coordinator))
+            throw new InvalidOperationException("[Replay] Snapshot coordinator is already attached.");
+        _snapshotCoordinator = coordinator;
+    }
+
+    string IStateSnapshotParticipant.Discriminator => SnapshotParticipantCatalog.Recording;
+    int IStateSnapshotParticipant.CodecVersion => 1;
+    SnapshotComponent IStateSnapshotParticipant.Capture(int frame, ulong epoch) => new(
+        SnapshotParticipantCatalog.Recording, 1,
+        JsonSerializer.Serialize(new RecordingRuntimeSnapshot(_recorder.IsRecording)));
+
+    IPreparedSnapshotComponent IStateSnapshotParticipant.Prepare(
+        SnapshotComponent component, SnapshotPrepareContext context)
+    {
+        RecordingRuntimeSnapshot decoded;
+        try
+        {
+            decoded = JsonSerializer.Deserialize<RecordingRuntimeSnapshot>(component.Payload)
+                ?? throw new SnapshotPrepareException(SnapshotParticipantCatalog.Recording, "Codec returned null.");
+        }
+        catch (JsonException ex)
+        {
+            throw new SnapshotPrepareException(SnapshotParticipantCatalog.Recording, "Invalid payload.", ex);
+        }
+        var prepared = context.Mode == SnapshotRestoreMode.Normal
+            ? decoded
+            : new RecordingRuntimeSnapshot(false);
+        return PreparedSnapshotComponent.CreateOwnerSwap(
+            SnapshotParticipantCatalog.Recording, prepared, InstallRecordingSnapshot);
+    }
+
+    private void InstallRecordingSnapshot(RecordingRuntimeSnapshot snapshot)
+    {
+        _recorder.IsRecording = snapshot.IsRecording;
+        EventBus.Instance.Recorder = snapshot.IsRecording ? _recorder : null;
     }
 
     // ─── Recording ────────────────────────────────────────────────
@@ -49,6 +96,10 @@ internal sealed class ReplayOrchestrator
             return;
         }
 
+        _recordingInitialSnapshot = _snapshotCoordinator is null
+            ? null
+            : StateSnapshotCodec.Encode(_snapshotCoordinator.Capture(
+                Math.Max(0, EventBus.Instance.CurrentFrame - 1), "2.3.0"));
         _recorder.IsRecording = true;
         _snapshots.Clear();
         EventBus.Instance.Recorder = _recorder;
@@ -63,7 +114,10 @@ internal sealed class ReplayOrchestrator
         _recorder.IsRecording = false;
         EventBus.Instance.Recorder = null;
 
-        var file = _recorder.Save();
+        ReplayFile recorded = _recorder.Save();
+        var file = new ReplayFile(recorded.FrameworkVersion, recorded.DataVersion,
+            recorded.FrameCount, recorded.Entries, _recordingInitialSnapshot);
+        _recordingInitialSnapshot = null;
         FrameworkLog.Info?.Invoke($"[Replay] Recording stopped: {file.EventCount} events over {file.FrameCount} frames.");
         return file;
     }
@@ -85,40 +139,48 @@ internal sealed class ReplayOrchestrator
 
     public void LoadAndStartReplay(string path)
     {
-        var json = System.IO.File.ReadAllText(path);
-        var options = new JsonSerializerOptions
-        {
-            TypeInfoResolver = ReplayEventJsonContext.Default,
-            PropertyNameCaseInsensitive = true
-        };
-        var file = JsonSerializer.Deserialize<ReplayFile>(json, options)
-                   ?? throw new InvalidOperationException($"[Replay] Failed to deserialize replay file: {path}");
+        var file = ReplayCodec.Read(path, "2.3.0");
 
         ReplayVersionValidator.ValidateVersion(file.DataVersion);
         ReplayVersionValidator.ValidateFrameworkVersion(file.FrameworkVersion, "2.3.0");
 
-        _loadedFile = file;
-        _currentReplayPath = path;
-        _player.Load(file);
-        _player.IsPlaying = true;
-        _replayFrame = 0;
+        StateSnapshot? initialSnapshot = file.InitialSnapshot is null
+            ? null
+            : StateSnapshotCodec.Decode(file.InitialSnapshot);
+        if (initialSnapshot is not null && _snapshotCoordinator is null)
+            throw new InvalidOperationException("[Replay] This replay requires a runtime snapshot coordinator.");
 
-        // Prevent double-recording of injected events and auto FrameAdvancedEvent
-        EventBus.Instance.Recorder = null;
-        EventBus.Instance.SuppressFrameAdvanced = true;
-
-        // Save pre-replay frame number so we can restore it after replay ends
-        _preReplayFrameNumber = EventBus.Instance.CurrentFrame;
-
-        // Restore FrameDataEngine from snapshot at start frame-1 (if not frame 0)
-        if (_replayFrame > 0 && _frameDataEngine is not null)
+        _playbackModes.Enter(RuntimePlaybackMode.AuthoritativeReplay, EventBus.Instance.LifecycleEpoch);
+        IReplayRecorder? previousRecorder = EventBus.Instance.Recorder;
+        bool previousSuppression = EventBus.Instance.SuppressFrameAdvanced;
+        try
         {
-            if (_snapshots.TryGetValue(_replayFrame - 1, out var snapshot))
-                _frameDataEngine.RestoreFromReplaySnapshot(snapshot);
-        }
+            _player.Load(file);
+            _loadedFile = file;
+            _currentReplayPath = path;
+            _replayFrame = 0;
+            _preReplayFrameNumber = EventBus.Instance.CurrentFrame;
 
-        EventBus.Instance.PublishImmediate(new ReplayStartedEvent(file.FrameCount, file.DataVersion));
-        FrameworkLog.Info?.Invoke($"[Replay] Playback started: {file.EventCount} events, {file.FrameCount} frames.");
+            EventBus.Instance.Recorder = null;
+            EventBus.Instance.SuppressFrameAdvanced = true;
+            EventBus.Instance.PublishImmediate(new ReplayStartedEvent(file.FrameCount, file.DataVersion));
+            if (initialSnapshot is not null)
+                _snapshotCoordinator!.Restore(initialSnapshot, SnapshotRestoreMode.ReplayBootstrap);
+            _playbackModes.RebindEpoch(RuntimePlaybackMode.AuthoritativeReplay, EventBus.Instance.LifecycleEpoch);
+            _player.IsPlaying = true;
+            FrameworkLog.Info?.Invoke($"[Replay] Playback started: {file.EventCount} events, {file.FrameCount} frames.");
+        }
+        catch
+        {
+            _player.IsPlaying = false;
+            _loadedFile = null;
+            _currentReplayPath = null;
+            _replayFrame = 0;
+            EventBus.Instance.Recorder = previousRecorder;
+            EventBus.Instance.SuppressFrameAdvanced = previousSuppression;
+            _playbackModes.Exit(RuntimePlaybackMode.AuthoritativeReplay);
+            throw;
+        }
     }
 
     public void Stop()
@@ -132,12 +194,22 @@ internal sealed class ReplayOrchestrator
 
         EventBus.Instance.SuppressFrameAdvanced = false;
 
-        // Restore the frame counter to where it was before replay started.
-        // Use RewindFrameCounter with the pre-replay value + 1 so the next
-        // ProcessFrame continues from where live gameplay left off.
-        EventBus.Instance.RewindFrameCounter(_preReplayFrameNumber);
-
-        EventBus.Instance.PublishImmediate(new ReplayEndedEvent(framesPlayed));
+        StateSnapshot? finalSnapshot = _snapshotCoordinator is null
+            ? null
+            : _snapshotCoordinator.Capture(Math.Max(0, framesPlayed - 1), "2.3.0");
+        try
+        {
+            EventBus.Instance.PublishImmediate(new ReplayEndedEvent(framesPlayed));
+            if (finalSnapshot is not null)
+                _snapshotCoordinator!.Restore(finalSnapshot, SnapshotRestoreMode.ReplayHandoff);
+            else
+            {
+                // Legacy playback without AD-20 participants resumes the live
+                // frame stream from the point where replay took ownership.
+                EventBus.Instance.RewindFrameCounter(_preReplayFrameNumber);
+            }
+        }
+        finally { _playbackModes.Exit(RuntimePlaybackMode.AuthoritativeReplay); }
         FrameworkLog.Info?.Invoke($"[Replay] Playback ended after {framesPlayed} frames.");
     }
 
@@ -177,14 +249,7 @@ internal sealed class ReplayOrchestrator
     public void SaveReplay(string path)
     {
         var file = StopRecording();
-        var options = new JsonSerializerOptions
-        {
-            TypeInfoResolver = ReplayEventJsonContext.Default,
-            PropertyNameCaseInsensitive = true,
-            WriteIndented = true
-        };
-        var json = JsonSerializer.Serialize(file, options);
-        System.IO.File.WriteAllText(path, json);
+        ReplayCodec.Write(path, file);
         FrameworkLog.Info?.Invoke($"[Replay] Replay saved to: {path}");
     }
 

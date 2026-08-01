@@ -108,7 +108,7 @@ public class ReplayPlayerTests : IDisposable
     }
 
     [Fact]
-    public void ProcessFrameReplay_UnknownEventType_SkipsGracefully()
+    public void Load_UnknownEventType_RejectsBeforePlaybackMutation()
     {
         var entries = new List<ReplayEntry>
         {
@@ -116,10 +116,40 @@ public class ReplayPlayerTests : IDisposable
         };
 
         var player = new ReplayPlayer();
-        player.Load(CreateTestFile(entries, 0));
+        Assert.Throws<ArgumentException>(() => player.Load(CreateTestFile(entries, 0)));
+        Assert.Equal(0, player.TotalEvents);
+    }
 
-        int dispatched = player.ProcessFrameReplay(EventBus.Instance, 0);
-        Assert.Equal(0, dispatched); // Unknown type not in registry, skipped
+    [Fact]
+    public void AuthoritativeApply_SuppressesDerivedPublicationAlreadyInStream()
+    {
+        var oldSnapshot = new StateStackSnapshot([CharacterState.Idle]);
+        var newSnapshot = new StateStackSnapshot([CharacterState.Idle, CharacterState.AttackStartup]);
+        int observed = 0;
+        Action<MoveStartedEvent> owner = e => EventBus.Instance.Publish(
+            new StateChangedEvent(e.PlayerId, CharacterState.Idle, CharacterState.AttackStartup, newSnapshot));
+        Action<StateChangedEvent> observer = _ => observed++;
+        EventBus.Instance.Subscribe(owner);
+        EventBus.Instance.Subscribe(observer);
+        try
+        {
+            var entries = new List<ReplayEntry>
+            {
+                new(0, nameof(MoveStartedEvent), "{\"PlayerId\":1,\"MoveId\":\"5LP\"}", 3, 0, 2),
+                new(0, nameof(StateChangedEvent), System.Text.Json.JsonSerializer.Serialize(
+                    new StateChangedEvent(1, CharacterState.Idle, CharacterState.AttackStartup, newSnapshot)), 5, 0, 2)
+            };
+            var player = new ReplayPlayer();
+            player.Load(CreateTestFile(entries, 0));
+            Assert.Equal(2, player.ProcessFrameReplay(EventBus.Instance, 0));
+            EventBus.Instance.ProcessFrame();
+            Assert.Equal(1, observed);
+        }
+        finally
+        {
+            EventBus.Instance.Unsubscribe(owner);
+            EventBus.Instance.Unsubscribe(observer);
+        }
     }
 
     private static ReplayEntry CreateEntry(int frame, string eventType, string payload)

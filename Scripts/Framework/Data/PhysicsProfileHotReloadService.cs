@@ -73,19 +73,34 @@ internal sealed class PhysicsProfileHotReloadService : IModule
 
         try
         {
+            ulong expectedVersion = _dataStore is DataStore concrete
+                ? concrete.PhysicsDatasetVersion
+                : 0;
             string json = File.ReadAllText(path);
             if (knockback)
             {
                 var candidates = PhysicsDataLoader.LoadKnockbackProfilesFromJson(json);
                 PhysicsProfileReferenceValidator.ValidateKnockbackProfiles(_dataStore, candidates);
-                _dataStore.SetKnockbackProfiles(candidates);
+                if (_dataStore is DataStore store)
+                {
+                    if (!store.TryCommitKnockbackProfiles(candidates, expectedVersion))
+                        throw new FormatException("[Data] Stale knockback-profile reload candidate.");
+                }
+                else
+                    _dataStore.SetKnockbackProfiles(candidates);
             }
             else
             {
                 var candidates = PhysicsDataLoader.LoadPhysicsResponseProfilesFromJson(json);
                 PhysicsProfileReferenceValidator.ValidateResponseProfiles(
                     candidates, _requiredResponseProfileIds());
-                _dataStore.SetPhysicsResponseProfiles(candidates);
+                if (_dataStore is DataStore store)
+                {
+                    if (!store.TryCommitPhysicsResponseProfiles(candidates, expectedVersion))
+                        throw new FormatException("[Data] Stale physics-response reload candidate.");
+                }
+                else
+                    _dataStore.SetPhysicsResponseProfiles(candidates);
             }
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)

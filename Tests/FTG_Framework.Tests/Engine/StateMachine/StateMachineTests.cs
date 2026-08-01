@@ -46,6 +46,38 @@ public class StateMachineTests : IDisposable
         finally { dispose(); }
     }
 
+    [Fact]
+    public void StateEvents_ExposeCanonicalImmutableSnapshots()
+    {
+        RunWithMachine((_, machine) =>
+        {
+            StateChangedEvent? changed = null;
+            StateStackChangedEvent? stackChanged = null;
+            Action<StateChangedEvent> onChanged = value => changed = value;
+            Action<StateStackChangedEvent> onStackChanged = value => stackChanged = value;
+            EventBus.Instance.Subscribe(onChanged);
+            EventBus.Instance.Subscribe(onStackChanged);
+            try
+            {
+                machine.PushState(1, CharacterState.JumpStartup);
+                EventBus.Instance.ProcessFrame();
+            }
+            finally
+            {
+                EventBus.Instance.Unsubscribe(onChanged);
+                EventBus.Instance.Unsubscribe(onStackChanged);
+            }
+
+            Assert.Equal(CharacterState.Idle, changed!.Value.OldState);
+            Assert.Equal(CharacterState.JumpStartup, changed.Value.NewState);
+            Assert.Equal([CharacterState.Idle, CharacterState.JumpStartup], changed.Value.NewSnapshot);
+            Assert.Equal([CharacterState.Idle], stackChanged!.Value.OldSnapshot);
+            Assert.Equal([CharacterState.Idle, CharacterState.JumpStartup], stackChanged.Value.NewSnapshot);
+            Assert.Equal(CharacterState.Idle, StateStackSnapshot.Empty.TopOrIdle);
+            Assert.False(changed.Value.NewSnapshot is IList<CharacterState>);
+        });
+    }
+
     // ── AC 1: Initial State ──
 
     [Fact]
@@ -120,8 +152,9 @@ public class StateMachineTests : IDisposable
             Assert.Single(events);
             var e = events[0];
             Assert.Equal(1, e.PlayerId);
-            Assert.Equal(new[] { CharacterState.Idle }, e.OldStack);
-            Assert.Equal(new[] { CharacterState.Idle, CharacterState.JumpStartup }, e.NewStack);
+            Assert.Equal(CharacterState.Idle, e.OldState);
+            Assert.Equal(CharacterState.JumpStartup, e.NewState);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.JumpStartup }, e.NewSnapshot);
         });
     }
 
@@ -136,7 +169,8 @@ public class StateMachineTests : IDisposable
             });
 
             Assert.Single(events);
-            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Walk }, events[0].Stack);
+            Assert.Equal(new[] { CharacterState.Idle }, events[0].OldSnapshot);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Walk }, events[0].NewSnapshot);
         });
     }
 
@@ -172,8 +206,9 @@ public class StateMachineTests : IDisposable
 
             Assert.Single(events);
             var e = events[0];
-            Assert.Equal(new[] { CharacterState.Idle, CharacterState.JumpStartup }, e.OldStack);
-            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Hitstun }, e.NewStack);
+            Assert.Equal(CharacterState.JumpStartup, e.OldState);
+            Assert.Equal(CharacterState.Hitstun, e.NewState);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Hitstun }, e.NewSnapshot);
         });
     }
 
@@ -188,7 +223,7 @@ public class StateMachineTests : IDisposable
             });
 
             Assert.Single(events);
-            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Hitstun }, events[0].NewStack);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Hitstun }, events[0].NewSnapshot);
         });
     }
 
@@ -313,8 +348,9 @@ public class StateMachineTests : IDisposable
 
             Assert.Single(events);
             Assert.Equal(CharacterState.Airborne, sm.GetCurrentState(1));
-            Assert.Equal(5, events[0].OldStack.Length);
-            Assert.Equal(4, events[0].NewStack.Length);
+            Assert.Equal(CharacterState.AttackStartup, events[0].OldState);
+            Assert.Equal(CharacterState.Airborne, events[0].NewState);
+            Assert.Equal(4, events[0].NewSnapshot.Count);
         });
     }
 
@@ -332,7 +368,8 @@ public class StateMachineTests : IDisposable
 
             Assert.Single(changed);
             Assert.Single(stack);
-            Assert.Equal(new[] { CharacterState.Idle }, stack[0].Stack);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Walk }, stack[0].OldSnapshot);
+            Assert.Equal(new[] { CharacterState.Idle }, stack[0].NewSnapshot);
         });
     }
 
@@ -623,7 +660,7 @@ public class StateMachineTests : IDisposable
     // ── AC 11: Event Payloads ──
 
     [Fact]
-    public void EventPayload_ContainsFullStacks()
+    public void EventPayload_ContainsCanonicalNewSnapshot()
     {
         RunWithMachine((_, sm) =>
         {
@@ -638,10 +675,11 @@ public class StateMachineTests : IDisposable
             });
 
             Assert.Single(events);
-            Assert.Equal(3, events[0].OldStack.Length);
-            Assert.Equal(4, events[0].NewStack.Length);
-            Assert.Equal(CharacterState.Idle, events[0].OldStack[0]);
-            Assert.Equal(CharacterState.AttackStartup, events[0].NewStack[^1]);
+            Assert.Equal(CharacterState.JumpActive, events[0].OldState);
+            Assert.Equal(CharacterState.AttackStartup, events[0].NewState);
+            Assert.Equal(4, events[0].NewSnapshot.Count);
+            Assert.Equal(CharacterState.Idle, events[0].NewSnapshot[0]);
+            Assert.Equal(CharacterState.AttackStartup, events[0].NewSnapshot[^1]);
         });
     }
 
@@ -938,7 +976,8 @@ public class StateMachineTests : IDisposable
             });
 
             Assert.Single(events);
-            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Hitstun }, events[0].Stack);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.JumpStartup }, events[0].OldSnapshot);
+            Assert.Equal(new[] { CharacterState.Idle, CharacterState.Hitstun }, events[0].NewSnapshot);
         });
     }
 

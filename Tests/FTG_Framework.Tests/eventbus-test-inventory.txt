@@ -5,6 +5,7 @@ FTG_Framework.Tests.Core.EventBusTestIsolationTests
 FTG_Framework.Tests.GameLoopPauseTests
 FTG_Framework.Tests.EventBusPauseTests
 FTG_Framework.Tests.Core.SceneManagerTests
+FTG_Framework.Tests.Core.StateSnapshotCoordinatorTests
 FTG_Framework.Tests.PhysicsProfileHotReloadServiceTests
 FTG_Framework.Tests.Engine.StateMachine.StateMachineTests
 FTG_Framework.Tests.Input.DefaultInputPipelineTests
@@ -17,7 +18,9 @@ FTG_Framework.Tests.ComboExecutorCancelTests
 FTG_Framework.Tests.FrameDataEngineCancelTests
 FTG_Framework.Tests.Engine.Combo.ChainValidatorTests
 FTG_Framework.Tests.Replay.EventBusRecordingTests
+FTG_Framework.Tests.Replay.Collision.EventBusReplaySuppressionTypeTests
 FTG_Framework.Tests.Replay.ReplayIntegrationTests
+FTG_Framework.Tests.Replay.ReplayOrchestratorTests
 FTG_Framework.Tests.Replay.ReplayPlayerTests
 FTG_Framework.Tests.Replay.KnockbackReplayTests
 FTG_Framework.Tests.Replay.Spike.ReferenceReplayTests

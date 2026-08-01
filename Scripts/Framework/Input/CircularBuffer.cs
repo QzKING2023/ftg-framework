@@ -43,6 +43,14 @@ internal sealed class CircularBuffer<T>
         return result;
     }
 
+    public void Replace(IEnumerable<T> items)
+    {
+        Array.Clear(_buffer);
+        _head = 0;
+        _count = 0;
+        foreach (T item in items) Add(item);
+    }
+
     // Drops trailing entries while the predicate holds. Entries are appended in
     // chronological order, so a frame-based predicate removes a contiguous suffix.
     public void RemoveTailWhile(Func<T, bool> predicate)

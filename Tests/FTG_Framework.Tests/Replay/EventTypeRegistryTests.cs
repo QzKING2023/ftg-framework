@@ -1,4 +1,6 @@
 #nullable enable
+using System;
+using System.Linq;
 using FTG_Framework.Core.Replay;
 using Xunit;
 
@@ -7,9 +9,15 @@ namespace FTG_Framework.Tests.Replay;
 public class EventTypeRegistryTests
 {
     [Fact]
-    public void AllTypes_HasAll19EventTypes()
+    public void AllTypes_HasUniqueStablePolicyAndPhaseForEveryType()
     {
-        Assert.Equal(19, EventTypeRegistry.AllTypes.Count);
+        Assert.NotEmpty(EventTypeRegistry.AllTypes);
+        Assert.Equal(EventTypeRegistry.AllTypes.Count, EventTypeRegistry.AllTypes.Distinct().Count());
+        foreach (var type in EventTypeRegistry.AllTypes)
+        {
+            Assert.InRange(EventTypeRegistry.GetPhase(type), 1, 7);
+            Assert.True(Enum.IsDefined(EventTypeRegistry.GetPolicy(type)));
+        }
     }
 
     [Fact]
@@ -41,5 +49,20 @@ public class EventTypeRegistryTests
     {
         var type = typeof(string);
         Assert.Equal("String", EventTypeRegistry.GetName(type));
+    }
+
+    [Fact]
+    public void Catalog_IsExhaustiveOverRecordableEventBusTypes()
+    {
+        Type[] nonRecordable =
+        [
+            typeof(FTG_Framework.Core.Events.DataReloadedEvent),
+            typeof(FTG_Framework.Core.Events.StateRestoredEvent)
+        ];
+        Type[] expected = FTG_Framework.Core.EventBus.Instance.GetKnownEventTypes()
+            .Except(nonRecordable).OrderBy(type => type.FullName, StringComparer.Ordinal).ToArray();
+        Type[] actual = EventTypeRegistry.AllTypes
+            .OrderBy(type => type.FullName, StringComparer.Ordinal).ToArray();
+        Assert.Equal(expected, actual);
     }
 }

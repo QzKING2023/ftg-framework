@@ -87,6 +87,30 @@ public class FrameDataEngineTests : IDisposable
     // --- MoveFrameChanged events (AC 2) ---
 
     [Fact]
+    public void StartMove_DispatchesMoveStartedBeforeFirstMoveFrameChanged()
+    {
+        var (engine, _) = CreateEngine(MakeMove("test", 5, 3, 7));
+        var observed = new List<string>();
+        Action<MoveStartedEvent> started = _ => observed.Add("started");
+        Action<MoveFrameChangedEvent> changed = _ => observed.Add("changed");
+        EventBus.Instance.Subscribe(started);
+        EventBus.Instance.Subscribe(changed);
+        try
+        {
+            engine.StartMove(1, "test");
+            engine.Update();
+            EventBus.Instance.ProcessFrame();
+        }
+        finally
+        {
+            EventBus.Instance.Unsubscribe(started);
+            EventBus.Instance.Unsubscribe(changed);
+        }
+
+        Assert.Equal(["started", "changed"], observed);
+    }
+
+    [Fact]
     public void Update_PublishesMoveFrameChanged_WithCorrectFields()
     {
         var (engine, _) = CreateEngine(MakeMove("fireball_c", 5, 3, 7));

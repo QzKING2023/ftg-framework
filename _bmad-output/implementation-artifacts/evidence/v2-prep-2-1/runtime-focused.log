@@ -1,0 +1,15 @@
+PREP-2.1 runtime focused verification
+Date: 2026-08-01
+Command: dotnet test Tests/FTG_Framework.Tests/FTG_Framework.Tests.csproj --no-restore --filter "FullyQualifiedName~EventBusEpochTests|FullyQualifiedName~CharacterKnockbackEventOrderTests|FullyQualifiedName~StateMachineTests|FullyQualifiedName~PhysicsEngineTests|FullyQualifiedName~KnockbackReplayTests|FullyQualifiedName~CollisionReplayCompatibilityTests|FullyQualifiedName~ReplayVersionValidatorTests"
+Result: PASS
+Passed: 104
+Failed: 0
+Skipped: 0
+
+Additional counter/epoch verification after review fixes:
+Command: dotnet test Tests/FTG_Framework.Tests/FTG_Framework.Tests.csproj --no-restore --filter "FullyQualifiedName~PhysicsEngineTests|FullyQualifiedName~EventBusEpochTests|FullyQualifiedName~CharacterKnockbackEventOrderTests"
+Result: PASS
+Passed: 31
+Failed: 0
+Skipped: 0
+

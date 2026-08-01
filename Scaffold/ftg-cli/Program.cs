@@ -207,7 +207,7 @@ public static class Program
         }
     }
 
-    private static string? ValidateProjectName(string name)
+    internal static string? ValidateProjectName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
             return "Project name must not be empty.";

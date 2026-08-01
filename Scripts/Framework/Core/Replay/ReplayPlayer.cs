@@ -37,6 +37,10 @@ internal sealed class ReplayPlayer : IReplayPlayer
         if (file.Entries is null)
             throw new ArgumentException("Entries must not be null.", nameof(file));
 
+        ReplayVersionValidator.ValidateVersion(file.DataVersion);
+        foreach (var entry in file.Entries)
+            ReplayVersionValidator.ValidateEntryPayload(file.DataVersion, entry);
+
         _eventsByFrame.Clear();
         _dispatchCache.Clear();
         _loadedFile = file;

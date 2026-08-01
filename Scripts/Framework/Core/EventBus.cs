@@ -46,13 +46,19 @@ public sealed class EventBus
     public static EventBus Instance => _instance.Value;
 
     private readonly Dictionary<Type, List<Delegate>> _subscribers = new();
-    private readonly List<object> _currentQueue = new();
-    private readonly List<object> _nextQueue = new();
-    private readonly ConcurrentQueue<Events.DataReloadedEvent> _pendingReloads = new();
+    private readonly record struct Envelope(object Payload, ulong Epoch, int Frame);
+    private readonly List<Envelope> _currentQueue = new();
+    private readonly List<Envelope> _nextQueue = new();
+    private readonly ConcurrentQueue<Envelope> _pendingReloads = new();
+    private readonly object _epochSync = new();
     private bool _dispatching;
     private int _frameNumber;
+    private ulong _lifecycleEpoch = 1;
+    private ulong? _dispatchEpoch;
 
     public int CurrentFrame => _frameNumber;
+    internal ulong LifecycleEpoch => _lifecycleEpoch;
+    internal ulong DispatchEpoch => _dispatchEpoch ?? throw new InvalidOperationException("[EventBus] Dispatch context is only valid during a subscriber callback.");
 
     public bool Paused { get; set; }
     public bool StepRequested { get; set; }
@@ -88,7 +94,8 @@ public sealed class EventBus
     // Drained at step 0 of ProcessFrame on the main thread.
     internal void EnqueueDataReload(Events.DataReloadedEvent evt)
     {
-        _pendingReloads.Enqueue(evt);
+        lock (_epochSync)
+            _pendingReloads.Enqueue(new Envelope(evt, _lifecycleEpoch, _frameNumber));
     }
 
     private EventBus() { }
@@ -118,10 +125,15 @@ public sealed class EventBus
         if (evt is null)
             throw new ArgumentNullException(nameof(evt));
 
-        if (_dispatching)
-            _nextQueue.Add(evt);
-        else
-            _currentQueue.Add(evt);
+        lock (_epochSync)
+        {
+            if (IsLifecycle(evt) && _lifecycleEpoch == ulong.MaxValue)
+                throw new InvalidOperationException("[EventBus] Lifecycle epoch exhausted.");
+            if (_dispatching)
+                _nextQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber));
+            else
+                _currentQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber));
+        }
     }
 
     // Bypasses the frame queue and dispatches to subscribers synchronously. Required
@@ -129,6 +141,16 @@ public sealed class EventBus
     // events would either never arrive or arrive stale (LIFO) on resume.
     public void PublishImmediate<T>(T evt) where T : struct
     {
+        var envelope = new Envelope(evt, _lifecycleEpoch, _frameNumber);
+        if (IsLifecycle(evt))
+            envelope = ActivateLifecycle(envelope);
+        DispatchEnvelope(envelope, evt);
+    }
+
+    private void DispatchEnvelope<T>(Envelope envelope, T evt) where T : struct
+    {
+        if (envelope.Epoch != _lifecycleEpoch)
+            return;
         // Record rewind/restore events that bypass the queue.
         // IMPORTANT: During replay playback, Recorder must be null to prevent
         // double-recording of injected events. See ReplayOrchestrator.
@@ -137,17 +159,25 @@ public sealed class EventBus
         if (_subscribers.TryGetValue(typeof(T), out var handlers))
         {
             var snapshot = handlers.ToArray();
-            foreach (var handler in snapshot)
+            ulong? previousDispatchEpoch = _dispatchEpoch;
+            _dispatchEpoch = envelope.Epoch;
+            try
             {
-                try
+                foreach (var handler in snapshot)
                 {
-                    ((Action<T>)handler)(evt);
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[EventBus] Handler for {typeof(T).Name} threw: {ex}");
+                    if (envelope.Epoch != _lifecycleEpoch)
+                        break;
+                    try
+                    {
+                        ((Action<T>)handler)(evt);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[EventBus] Handler for {typeof(T).Name} threw: {ex}");
+                    }
                 }
             }
+            finally { _dispatchEpoch = previousDispatchEpoch; }
         }
     }
 
@@ -170,13 +200,13 @@ public sealed class EventBus
         try
         {
             // Phase 0: Hot-Reload — drain DataReloadedEvent from FileWatcher
-            while (_pendingReloads.TryDequeue(out var reloadEvt))
-                _currentQueue.Add(reloadEvt);
+            while (_pendingReloads.TryDequeue(out var reloadEnvelope))
+                _currentQueue.Add(reloadEnvelope);
             DispatchType<Events.DataReloadedEvent>();
 
             // Phase 1: Frame tick
             if (!SuppressFrameAdvanced)
-                _currentQueue.Add(new Events.FrameAdvancedEvent(_frameNumber));
+                _currentQueue.Add(new Envelope(new Events.FrameAdvancedEvent(_frameNumber), _lifecycleEpoch, _frameNumber));
             _frameNumber++;
             DispatchType<Events.FrameAdvancedEvent>();
 
@@ -288,26 +318,41 @@ public sealed class EventBus
     {
         for (int i = _currentQueue.Count - 1; i >= 0; i--)
         {
-            if (_currentQueue[i] is T evt)
+            if (_currentQueue[i].Payload is T evt)
             {
-                _currentQueue.RemoveAt(i);
-                Recorder?.Record(_dispatchFrame, evt);
-                if (_subscribers.TryGetValue(typeof(T), out var handlers))
+                var envelope = _currentQueue[i];
+                if (envelope.Epoch != _lifecycleEpoch)
                 {
-                    var snapshot = handlers.ToArray();
-                    foreach (var handler in snapshot)
-                    {
-                        try
-                        {
-                            ((Action<T>)handler)(evt);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.Error.WriteLine($"[EventBus] Handler for {typeof(T).Name} threw: {ex}");
-                        }
-                    }
+                    _currentQueue.RemoveAt(i);
+                    continue;
                 }
+                if (IsLifecycle(evt))
+                {
+                    envelope = ActivateLifecycle(envelope);
+                    DispatchEnvelope(envelope, evt);
+                    return;
+                }
+                _currentQueue.RemoveAt(i);
+                DispatchEnvelope(envelope, evt);
             }
         }
     }
+
+    private static bool IsLifecycle<T>(T evt) =>
+        evt is Events.MatchInitializedEvent or Events.ReplayStartedEvent or Events.ReplayEndedEvent;
+
+    private Envelope ActivateLifecycle(Envelope envelope)
+    {
+        lock (_epochSync)
+        {
+            if (_lifecycleEpoch == ulong.MaxValue)
+                throw new InvalidOperationException("[EventBus] Lifecycle epoch exhausted.");
+            _lifecycleEpoch++;
+            _currentQueue.RemoveAll(e => e.Epoch != _lifecycleEpoch);
+            _nextQueue.RemoveAll(e => e.Epoch != _lifecycleEpoch);
+            return envelope with { Epoch = _lifecycleEpoch };
+        }
+    }
+
+    internal void SetLifecycleEpochForTesting(ulong epoch) => _lifecycleEpoch = epoch;
 }

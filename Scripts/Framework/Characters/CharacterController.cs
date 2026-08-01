@@ -27,8 +27,9 @@ public partial class CharacterController : Node2D, IPhysicsParticipant
     private System.Action<ReplayEndedEvent>? _replayEndedHandler;
     private System.Action<MatchInitializedEvent>? _matchInitializedHandler;
     private PhysicsMotionSnapshot _motion;
-    private long _latestKnockbackGeneration;
+    private ulong _latestKnockbackGeneration;
     private int _latestKnockbackFrame = -1;
+    private KnockbackAppliedEvent? _lastKnockbackEvent;
     private GameLoop? _gameLoop;
     private CharacterState? _displayedState;
 
@@ -132,28 +133,46 @@ public partial class CharacterController : Node2D, IPhysicsParticipant
     {
         if (e.PlayerId != PlayerId || !e.WorldX.HasValue || !e.WorldY.HasValue)
             return;
-        if (!ShouldApplyKnockbackEvent(
-                e.GenerationId, e.FrameNumber,
-                _latestKnockbackGeneration, _latestKnockbackFrame))
+        if (!ShouldApplyKnockbackEvent(e, _lastKnockbackEvent))
             return;
         _latestKnockbackGeneration = e.GenerationId;
         _latestKnockbackFrame = e.FrameNumber;
         GlobalPosition = new Vector2(e.WorldX.Value, e.WorldY.Value);
         _motion = new PhysicsMotionSnapshot(
-            e.HorizontalForce, e.VerticalForce, !e.Completed && e.WorldY.Value < _motion.GroundY,
+            e.HorizontalForce, e.VerticalForce, e.Phase != KnockbackPhase.Completed && e.WorldY.Value < _motion.GroundY,
             _motion.GroundY);
+        _lastKnockbackEvent = e;
     }
 
     internal static bool ShouldApplyKnockbackEvent(
-        long generationId, int frameNumber, long latestGeneration, int latestFrame) =>
+        ulong generationId, int frameNumber, ulong latestGeneration, int latestFrame) =>
         generationId > 0 &&
         (generationId > latestGeneration ||
          generationId == latestGeneration && frameNumber >= latestFrame);
+
+    internal static bool ShouldApplyKnockbackEvent(
+        KnockbackAppliedEvent next, KnockbackAppliedEvent? last)
+    {
+        if (next.GenerationId == 0 || next.Phase == 0) return false;
+        if (last is null) return next.Phase == KnockbackPhase.Started;
+        var prior = last.Value;
+        if (next.Equals(prior)) return false;
+        if (next.GenerationId > prior.GenerationId)
+            return next.Phase == KnockbackPhase.Started &&
+                next.ContactFrame >= prior.ContactFrame && next.FrameNumber >= prior.FrameNumber;
+        if (next.GenerationId < prior.GenerationId || next.ContactFrame != prior.ContactFrame ||
+            next.FrameNumber <= prior.FrameNumber || prior.Phase == KnockbackPhase.Completed)
+            return false;
+        return next.Phase == KnockbackPhase.Completed ||
+               next.Phase == prior.Phase + 1 ||
+               prior.Phase == KnockbackPhase.Progressed && next.Phase == KnockbackPhase.Progressed;
+    }
 
     private void ResetKnockbackEventOrder()
     {
         _latestKnockbackGeneration = 0;
         _latestKnockbackFrame = -1;
+        _lastKnockbackEvent = null;
     }
 
     private void OnStateChanged(StateChangedEvent e)

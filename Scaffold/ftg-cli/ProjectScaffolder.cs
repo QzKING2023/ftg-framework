@@ -3,7 +3,8 @@ namespace FTG_Framework.Scaffold;
 
 internal sealed record ScaffoldHooks(
     Action<string>? Restore = null,
-    Action<string>? BeforePlaceholderReplacement = null);
+    Action<string>? BeforePlaceholderReplacement = null,
+    Action<string>? BeforeFileAccess = null);
 
 internal sealed class ScaffoldArtifactTracker
 {
@@ -63,56 +64,97 @@ public static class ProjectScaffolder
         ScaffoldArtifactTracker artifacts,
         ScaffoldHooks hooks)
     {
-        var templateDir = Path.Combine(repoRoot, "Scaffold", "ftg-project-template");
-        var sourceDirs = ValidateInputs(repoRoot, templateDir);
-
-        // 1. Copy template files
-        CopyDirectory(templateDir, targetDir, artifacts);
-
-        // 2. Rename .csproj (skip when the project name matches the template name)
-        var oldCsproj = Path.Combine(targetDir, "FTG_Game.csproj");
-        var newCsproj = Path.Combine(targetDir, $"{projectName}.csproj");
-        if (!File.Exists(oldCsproj))
-            throw new FileNotFoundException($"Template .csproj not found: {oldCsproj}");
-        if (!string.Equals(oldCsproj, newCsproj, StringComparison.OrdinalIgnoreCase))
+        var plan = BuildPlan(repoRoot, targetDir, projectName, hooks);
+        hooks.BeforePlaceholderReplacement?.Invoke(plan.TargetRoot);
+        foreach (var directory in plan.Directories)
         {
-            File.Move(oldCsproj, newCsproj);
-            artifacts.ReplaceTrackedFile(oldCsproj, newCsproj);
+            ValidateTargetAccess(plan.TargetRoot, directory);
+            artifacts.EnsureDirectory(directory);
         }
+        foreach (var entry in plan.Files)
+            CopyPlannedFile(plan, entry, projectName, artifacts, hooks);
 
-        // 3. Replace placeholders in project.godot and .csproj
-        hooks.BeforePlaceholderReplacement?.Invoke(targetDir);
-        ReplacePlaceholders(targetDir, projectName);
-
-        // 4. Copy framework source
-        var targetScriptsDir = Path.Combine(targetDir, "Scripts");
-        artifacts.EnsureDirectory(targetScriptsDir);
-
-        foreach (var srcDir in sourceDirs)
-        {
-            var sourceFullPath = Path.Combine(repoRoot, srcDir);
-            var targetFullPath = Path.Combine(targetDir, srcDir);
-
-            if (!Directory.Exists(sourceFullPath))
-                throw new DirectoryNotFoundException($"Framework source directory not found: {sourceFullPath}");
-            CopyDirectory(sourceFullPath, targetFullPath, artifacts);
-        }
-
-        // 5. Copy FrameRateManager.cs
-        var frameRateManagerSrc = Path.Combine(repoRoot, "Scripts", "FrameRateManager.cs");
-        var frameRateManagerDst = Path.Combine(targetDir, "Scripts", "FrameRateManager.cs");
-        CopyFile(frameRateManagerSrc, frameRateManagerDst, artifacts);
-
-        // 5.5 Copy Characters/ directory (scene template .tscn)
-        var charactersSrc = Path.Combine(repoRoot, "Characters");
-        var charactersDst = Path.Combine(targetDir, "Characters");
-        CopyDirectory(charactersSrc, charactersDst, artifacts);
-
-        // 6. Run dotnet restore
-        RunDotnetRestore(targetDir, hooks);
+        ValidateTargetTree(plan.TargetRoot);
+        RunDotnetRestore(plan.TargetRoot, hooks);
     }
 
-    private static string[] ValidateInputs(string repoRoot, string templateDir)
+    private sealed record PlannedFile(string Source, string Destination, bool ReplacePlaceholders);
+    private sealed record ScaffoldPlan(
+        string RepoRoot, string TargetRoot, IReadOnlyList<string> Directories, IReadOnlyList<PlannedFile> Files);
+
+    private static ScaffoldPlan BuildPlan(
+        string repoRoot, string targetDir, string projectName, ScaffoldHooks hooks)
+    {
+        var projectNameError = Program.ValidateProjectName(projectName);
+        if (projectNameError is not null)
+            throw new ArgumentException(projectNameError, nameof(projectName));
+
+        var root = Path.GetFullPath(repoRoot);
+        var target = Path.GetFullPath(targetDir);
+        ValidateExistingPathChain(root, root);
+        ValidateTargetAccess(target, target);
+
+        var templateDir = Path.Combine(root, "Scaffold", "ftg-project-template");
+        var sourceDirs = ValidateInputs(root, templateDir, hooks);
+        var files = new List<PlannedFile>();
+        var directories = new List<string>();
+        AddTree(root, target, templateDir, target, projectName, directories, files);
+        foreach (var sourceDir in sourceDirs)
+            AddTree(root, target, Path.Combine(root, sourceDir), Path.Combine(target, sourceDir), projectName, directories, files);
+        AddFile(root, target, Path.Combine(root, "Scripts", "FrameRateManager.cs"),
+            Path.Combine(target, "Scripts", "FrameRateManager.cs"), projectName, files);
+        AddTree(root, target, Path.Combine(root, "Characters"), Path.Combine(target, "Characters"), projectName, directories, files);
+
+        var duplicate = files.GroupBy(entry => entry.Destination, PathComparer)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
+            throw new InvalidOperationException($"Scaffold plan has duplicate destination: {duplicate.Key}");
+        return new ScaffoldPlan(root, target, directories.Distinct(PathComparer).ToArray(), files.ToArray());
+    }
+
+    private static void AddTree(string root, string targetRoot, string sourceDir, string destinationDir,
+        string projectName, List<string> directories, List<PlannedFile> files)
+    {
+        ValidateExistingPathChain(root, sourceDir);
+        destinationDir = Path.GetFullPath(destinationDir);
+        EnsureContained(targetRoot, destinationDir, "destination directory");
+        ValidateTargetAccess(targetRoot, destinationDir);
+        directories.Add(destinationDir);
+        foreach (var file in Directory.EnumerateFiles(sourceDir).OrderBy(path => path, StringComparer.Ordinal))
+        {
+            if (!ExcludedExtensions.Contains(Path.GetExtension(file)))
+                AddFile(root, targetRoot, file, Path.Combine(destinationDir, Path.GetFileName(file)), projectName, files);
+        }
+        foreach (var directory in Directory.EnumerateDirectories(sourceDir).OrderBy(path => path, StringComparer.Ordinal))
+        {
+            ValidateExistingPathChain(root, directory);
+            if (ExcludedDirectories.Contains(Path.GetFileName(directory)))
+                continue;
+            AddTree(root, targetRoot, directory, Path.Combine(destinationDir, Path.GetFileName(directory)), projectName, directories, files);
+        }
+    }
+
+    private static void AddFile(string root, string targetRoot, string source, string destination,
+        string projectName, List<PlannedFile> files)
+    {
+        source = Path.GetFullPath(source);
+        destination = Path.GetFullPath(destination);
+        ValidateExistingPathChain(root, source);
+        EnsureContained(targetRoot, destination, "destination");
+        ValidateTargetAccess(targetRoot, destination);
+        if (string.Equals(Path.GetFileName(source), "FTG_Game.csproj", StringComparison.OrdinalIgnoreCase))
+        {
+            destination = Path.Combine(Path.GetDirectoryName(destination)!, $"{projectName}.csproj");
+            destination = Path.GetFullPath(destination);
+            EnsureContained(targetRoot, destination, "renamed project destination");
+            ValidateTargetAccess(targetRoot, destination);
+        }
+        var replace = string.Equals(Path.GetFileName(source), "project.godot", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(Path.GetFileName(source), "FTG_Game.csproj", StringComparison.OrdinalIgnoreCase);
+        files.Add(new PlannedFile(source, destination, replace));
+    }
+
+    private static string[] ValidateInputs(string repoRoot, string templateDir, ScaffoldHooks hooks)
     {
         if (!Directory.Exists(templateDir))
             throw new DirectoryNotFoundException($"Project template directory not found: {templateDir}");
@@ -124,7 +166,7 @@ public static class ProjectScaffolder
                 throw new FileNotFoundException($"Required template file not found: {path}");
         }
 
-        var sourceDirs = LoadFrameworkSourceDirs(repoRoot);
+        var sourceDirs = LoadFrameworkSourceDirs(repoRoot, hooks);
         foreach (var sourceDir in sourceDirs)
         {
             var path = Path.Combine(repoRoot, sourceDir);
@@ -153,21 +195,117 @@ public static class ProjectScaffolder
         return sourceDirs;
     }
 
-    private static string[] LoadFrameworkSourceDirs(string repoRoot)
+    private static string[] LoadFrameworkSourceDirs(string repoRoot, ScaffoldHooks hooks)
     {
         var manifestPath = Path.Combine(repoRoot, "Scaffold", "framework-source-dirs.txt");
         if (!File.Exists(manifestPath))
             throw new FileNotFoundException($"Framework source manifest not found: {manifestPath}");
 
+        ValidateExistingPathChain(Path.GetFullPath(repoRoot), manifestPath);
+        hooks.BeforeFileAccess?.Invoke(manifestPath);
+        ValidateExistingPathChain(Path.GetFullPath(repoRoot), manifestPath);
         var dirs = File.ReadAllLines(manifestPath)
             .Select(l => l.Trim())
             .Where(l => l.Length > 0 && !l.StartsWith('#'))
-            .Select(l => l.Replace('\\', '/'))
             .ToArray();
         if (dirs.Length == 0)
             throw new InvalidOperationException($"Framework source manifest is empty: {manifestPath}");
+        foreach (var dir in dirs)
+        {
+            if (dir.Contains('\\') || Path.IsPathRooted(dir) || dir.Split('/').Any(part => part is "" or "." or "..") ||
+                dir.Contains(':') || dir.StartsWith("//", StringComparison.Ordinal))
+                throw new InvalidOperationException($"Invalid framework source manifest entry: {dir}");
+            EnsureContained(Path.GetFullPath(repoRoot), Path.GetFullPath(dir, repoRoot), "manifest source");
+        }
+        if (dirs.Distinct(PathComparer).Count() != dirs.Length)
+            throw new InvalidOperationException("Framework source manifest contains duplicate entries.");
         return dirs;
     }
+
+    private static void CopyPlannedFile(ScaffoldPlan plan, PlannedFile entry, string projectName,
+        ScaffoldArtifactTracker artifacts, ScaffoldHooks hooks)
+    {
+        hooks.BeforeFileAccess?.Invoke(entry.Source);
+        hooks.BeforeFileAccess?.Invoke(entry.Destination);
+        ValidateAccess(plan, entry.Source, entry.Destination);
+        artifacts.EnsureDirectory(Path.GetDirectoryName(entry.Destination)!);
+        ValidateAccess(plan, entry.Source, entry.Destination);
+        using var source = new FileStream(entry.Source, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var destination = artifacts.CreateFile(entry.Destination);
+        if (!entry.ReplacePlaceholders)
+        {
+            source.CopyTo(destination);
+            return;
+        }
+        using var reader = new StreamReader(source);
+        using var writer = new StreamWriter(destination);
+        writer.Write(reader.ReadToEnd().Replace("{{FTG_PROJECT_NAME}}", projectName, StringComparison.Ordinal));
+    }
+
+    private static void ValidateAccess(ScaffoldPlan plan, string source, string destination)
+    {
+        ValidateExistingPathChain(plan.RepoRoot, source);
+        ValidateTargetAccess(plan.TargetRoot, destination);
+    }
+
+    private static void EnsureContained(string root, string path, string label)
+    {
+        root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        path = Path.GetFullPath(path);
+        if (!path.Equals(root, PathComparison) &&
+            !path.StartsWith(root + Path.DirectorySeparatorChar, PathComparison))
+            throw new InvalidOperationException($"Scaffold {label} escapes approved root: {path}");
+    }
+
+    private static void ValidateExistingPathChain(string root, string path)
+    {
+        EnsureContained(root, path, "source");
+        var current = Path.GetFullPath(root);
+        RejectReparsePoint(current);
+        var relative = Path.GetRelativePath(current, Path.GetFullPath(path));
+        foreach (var segment in relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, segment);
+            if (!File.Exists(current) && !Directory.Exists(current))
+                throw new FileNotFoundException($"Required scaffold input not found: {current}");
+            RejectReparsePoint(current);
+        }
+    }
+
+    private static void ValidateTargetAccess(string targetRoot, string path)
+    {
+        EnsureContained(targetRoot, path, "destination");
+        var current = Path.GetFullPath(path);
+        while (!File.Exists(current) && !Directory.Exists(current))
+            current = Directory.GetParent(current)?.FullName ?? throw new InvalidOperationException("Cannot resolve target parent.");
+        for (var candidate = current; candidate is not null; candidate = Directory.GetParent(candidate)?.FullName)
+        {
+            RejectReparsePoint(candidate);
+            if (string.Equals(candidate, Path.GetPathRoot(candidate), StringComparison.OrdinalIgnoreCase))
+                break;
+        }
+    }
+
+    private static void RejectReparsePoint(string path)
+    {
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidOperationException($"Scaffold paths must not traverse links or reparse points: {path}");
+    }
+
+    private static void ValidateTargetTree(string targetRoot)
+    {
+        ValidateTargetAccess(targetRoot, targetRoot);
+        if (!Directory.Exists(targetRoot))
+            return;
+        foreach (var path in Directory.EnumerateFileSystemEntries(targetRoot, "*", SearchOption.AllDirectories))
+            RejectReparsePoint(path);
+    }
+
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    private static StringComparer PathComparer =>
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     private static void ReplacePlaceholders(string targetDir, string projectName)
     {

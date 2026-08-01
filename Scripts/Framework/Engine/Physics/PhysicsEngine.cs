@@ -17,14 +17,17 @@ internal sealed class PhysicsEngine : IPhysicsEngine
     private readonly HashSet<HitKey> _currentActive = new();
     private readonly Dictionary<ContextKey, HitContext> _contexts = new();
     private readonly Dictionary<int, TrajectoryState> _trajectories = new();
-    private readonly Dictionary<int, TrajectoryState> _launchCandidates = new();
-    private long _nextGeneration;
+    private readonly Dictionary<int, LaunchCandidate> _launchCandidates = new();
+    private readonly Dictionary<int, ulong> _generationCounters = new();
+    private readonly List<object> _pendingCollisionEvents = new();
     private bool _initialized;
 
     private readonly record struct HitKey(
         long MoveInstanceId, int AttackerId, int DefenderId, string HitboxId);
     private readonly record struct ContextKey(
         int AttackerId, int DefenderId, string HitboxId, int ContactFrame);
+    private readonly record struct LaunchCandidate(
+        TrajectoryState Trajectory, float EffectiveFriction, float GravityScale);
 
     internal PhysicsEngine(
         IDataStore dataStore, IFrameDataEngine frameData, IStateMachine? stateMachine = null)
@@ -47,6 +50,8 @@ internal sealed class PhysicsEngine : IPhysicsEngine
         _contexts.Clear();
         _trajectories.Clear();
         _launchCandidates.Clear();
+        _generationCounters.Clear();
+        _pendingCollisionEvents.Clear();
     }
 
     public void Register(IPhysicsParticipant participant)
@@ -84,20 +89,46 @@ internal sealed class PhysicsEngine : IPhysicsEngine
         _contexts.Clear();
         _currentActive.Clear();
         _launchCandidates.Clear();
+        _pendingCollisionEvents.Clear();
+        bool hadP1Generation = _generationCounters.TryGetValue(1, out ulong p1Generation);
+        bool hadP2Generation = _generationCounters.TryGetValue(2, out ulong p2Generation);
         if (_participants.Count == 2)
         {
-            var firstParticipant = _participants[1];
-            var secondParticipant = _participants[2];
-            var first = firstParticipant.CapturePhysicsSnapshot();
-            var second = secondParticipant.CapturePhysicsSnapshot();
-            ValidateSnapshotIdentity(firstParticipant, first);
-            ValidateSnapshotIdentity(secondParticipant, second);
-            Detect(first, second);
-            Detect(second, first);
+            try
+            {
+                var firstParticipant = _participants[1];
+                var secondParticipant = _participants[2];
+                var first = firstParticipant.CapturePhysicsSnapshot();
+                var second = secondParticipant.CapturePhysicsSnapshot();
+                ValidateSnapshotIdentity(firstParticipant, first);
+                ValidateSnapshotIdentity(secondParticipant, second);
+                Detect(first, second);
+                Detect(second, first);
+            }
+            catch
+            {
+                _generationCounters.Clear();
+                if (hadP1Generation) _generationCounters[1] = p1Generation;
+                if (hadP2Generation) _generationCounters[2] = p2Generation;
+                _contexts.Clear();
+                _currentActive.Clear();
+                _launchCandidates.Clear();
+                _pendingCollisionEvents.Clear();
+                throw;
+            }
         }
-        foreach (var candidate in _launchCandidates)
-            _trajectories[candidate.Key] = candidate.Value;
+        foreach (var pending in _pendingCollisionEvents)
+        {
+            if (pending is HitConnectedEvent hit) EventBus.Instance.Publish(hit);
+            else if (pending is MoveBlockedEvent blocked) EventBus.Instance.Publish(blocked);
+        }
         AdvanceTrajectories();
+        foreach (var candidate in _launchCandidates)
+        {
+            _trajectories[candidate.Key] = candidate.Value.Trajectory;
+            PublishTrajectory(candidate.Key, candidate.Value.Trajectory, KnockbackPhase.Started,
+                candidate.Value.EffectiveFriction, candidate.Value.GravityScale);
+        }
         _previousActive.Clear();
         foreach (var key in _currentActive)
             _previousActive.Add(key);
@@ -153,7 +184,7 @@ internal sealed class PhysicsEngine : IPhysicsEngine
 
             if (IsBlocking(defender.Direction, attacker.WorldX, defender.WorldX))
             {
-                EventBus.Instance.Publish(new MoveBlockedEvent(
+                _pendingCollisionEvents.Add(new MoveBlockedEvent(
                     attacker.PlayerId, defender.PlayerId, move.MoveId,
                     move.BlockAdvantage, move.Damage, contactFrame));
                 continue;
@@ -162,22 +193,20 @@ internal sealed class PhysicsEngine : IPhysicsEngine
             var hitEvent = new HitConnectedEvent(
                 attacker.PlayerId, defender.PlayerId, move.MoveId,
                 move.HitAdvantage, move.Damage, contactFrame, hitbox.BoxId);
-            EventBus.Instance.Publish(hitEvent);
             KnockbackProfile? profile = move.KnockbackProfileId is null
                 ? null
                 : _dataStore.GetKnockbackProfile(move.KnockbackProfileId);
             if (profile is not null)
                 profile = Snapshot.Of(profile);
-            var context = new HitContext(hitEvent, hitbox.BoxId, profile);
-            _contexts[new ContextKey(
-                attacker.PlayerId, defender.PlayerId, hitbox.BoxId, contactFrame)] = context;
+            LaunchCandidate? launchCandidate = null;
             if (profile is not null && _stateMachine is not null &&
                 _participants.TryGetValue(defender.PlayerId, out var participant))
             {
                 var response = _stateMachine.GetEffectivePhysicsProfile(defender.PlayerId);
                 var motion = participant.CaptureMotionSnapshot();
-                _launchCandidates[defender.PlayerId] = ForceCalculator.Launch(
-                    ++_nextGeneration,
+                ulong generation = ReserveGeneration(defender.PlayerId);
+                var trajectory = ForceCalculator.Launch(
+                    generation,
                     defender.WorldX,
                     defender.WorldY,
                     attacker.WorldX,
@@ -186,7 +215,16 @@ internal sealed class PhysicsEngine : IPhysicsEngine
                     profile,
                     response,
                     contactFrame);
+                float effectiveFriction = profile.Friction *
+                    (trajectory.Airborne ? response.AirFriction : response.Friction);
+                launchCandidate = new LaunchCandidate(trajectory, effectiveFriction, response.GravityScale);
             }
+            _pendingCollisionEvents.Add(hitEvent);
+            var context = new HitContext(hitEvent, hitbox.BoxId, profile);
+            _contexts[new ContextKey(
+                attacker.PlayerId, defender.PlayerId, hitbox.BoxId, contactFrame)] = context;
+            if (launchCandidate.HasValue)
+                _launchCandidates[defender.PlayerId] = launchCandidate.Value;
         }
     }
 
@@ -209,23 +247,38 @@ internal sealed class PhysicsEngine : IPhysicsEngine
             _trajectories[playerId] = advanced;
             float effectiveFriction = advanced.Profile.Friction *
                 (current.Airborne ? response.AirFriction : response.Friction);
-            EventBus.Instance.Publish(new KnockbackAppliedEvent(
-                playerId,
-                advanced.VelocityX,
-                advanced.VelocityY,
-                advanced.Profile.Gravity * response.GravityScale,
-                effectiveFriction,
-                advanced.PositionX,
-                advanced.PositionY,
-                advanced.GenerationId,
-                advanced.ContactFrame,
-                EventBus.Instance.CurrentFrame,
-                advanced.Completed));
+            PublishTrajectory(playerId, advanced,
+                advanced.Completed ? KnockbackPhase.Completed : KnockbackPhase.Progressed,
+                effectiveFriction, response.GravityScale);
             if (advanced.Completed)
                 completed[completedCount++] = playerId;
         }
         for (int i = 0; i < completedCount; i++)
             _trajectories.Remove(completed[i]);
+    }
+
+    private ulong ReserveGeneration(int playerId)
+    {
+        _generationCounters.TryGetValue(playerId, out ulong current);
+        if (current == ulong.MaxValue)
+            throw new InvalidOperationException($"[Physics] Knockback generation exhausted for P{playerId}.");
+        ulong next = current + 1;
+        _generationCounters[playerId] = next;
+        return next;
+    }
+
+    internal void SetGenerationForTesting(int playerId, ulong generation) =>
+        _generationCounters[playerId] = generation;
+
+    private static void PublishTrajectory(int playerId, in TrajectoryState trajectory,
+        KnockbackPhase phase, float? effectiveFriction = null, float gravityScale = 1f)
+    {
+        EventBus.Instance.Publish(new KnockbackAppliedEvent(
+            playerId, trajectory.VelocityX, trajectory.VelocityY,
+            trajectory.Profile.Gravity * gravityScale,
+            effectiveFriction ?? trajectory.Profile.Friction,
+            trajectory.PositionX, trajectory.PositionY, trajectory.GenerationId,
+            trajectory.ContactFrame, EventBus.Instance.CurrentFrame, phase));
     }
 
     private static CollisionFrameDefinition? FindFrame(

@@ -1,0 +1,9 @@
+PREP-2.1 scaffold verification
+Date: 2026-08-01
+Command: dotnet test Tests/FTG_Framework.Tests/FTG_Framework.Tests.csproj --no-restore --filter "FullyQualifiedName~FtgCliTests"
+Result: PASS
+Passed: 58
+Failed: 0
+Skipped: 0
+Coverage: manifest traversal/root/separator rejection, duplicate aliases, direct malicious project names, pre-access atomicity, source/destination link escapes, inventory parity, restore/cleanup behavior, generated build tests.
+Post-review coverage additionally rejects direct API reserved names and preserves empty planned directories.

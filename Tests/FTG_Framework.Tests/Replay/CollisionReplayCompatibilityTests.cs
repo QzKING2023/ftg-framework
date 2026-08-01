@@ -10,11 +10,12 @@ namespace FTG_Framework.Tests;
 public sealed class CollisionReplayCompatibilityTests
 {
     [Fact]
-    public void CurrentSchemaVersion_IsTwo_AndPreviousIsAccepted()
+    public void CurrentSchemaVersion_IsThree_AndLegacyContainersAreAccepted()
     {
-        Assert.Equal(2, ReplayVersionValidator.CurrentDataVersion);
+        Assert.Equal(3, ReplayVersionValidator.CurrentDataVersion);
         ReplayVersionValidator.ValidateVersion(1);
         ReplayVersionValidator.ValidateVersion(2);
+        ReplayVersionValidator.ValidateVersion(3);
     }
 
     [Fact]

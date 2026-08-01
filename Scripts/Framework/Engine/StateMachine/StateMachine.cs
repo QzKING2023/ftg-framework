@@ -15,8 +15,10 @@ internal sealed class StateMachine : IModule, IStateMachine
     private readonly Dictionary<CharacterState, string> _stateProfiles = new();
     private readonly Dictionary<CharacterState, HashSet<CharacterState>> _allowedTransitions = new();
     private readonly Dictionary<int, PhysicsResponseProfile> _effectiveProfileSnapshots = new();
-    private readonly Dictionary<int, long> _latestTrajectoryGenerations = new();
-    private readonly Dictionary<int, long> _completedTrajectoryGenerations = new();
+    private readonly Dictionary<int, AwaitingLaunch> _awaitingLaunches = new();
+    private readonly Dictionary<int, KnockbackTuple> _knockbackTuples = new();
+    private readonly Dictionary<int, (ulong Epoch, ulong Generation)> _hitstunOccupancy = new();
+    private readonly Dictionary<int, (ulong Epoch, ulong Generation)> _highestKnockbackGeneration = new();
     private bool _initialized;
 
     public StateMachine(IDataStore dataStore)
@@ -61,8 +63,7 @@ internal sealed class StateMachine : IModule, IStateMachine
         _stacks.Clear();
         _stateProfiles.Clear();
         _effectiveProfileSnapshots.Clear();
-        _latestTrajectoryGenerations.Clear();
-        _completedTrajectoryGenerations.Clear();
+        ResetTrajectoryGenerations();
         _initialized = false;
     }
 
@@ -168,11 +169,15 @@ internal sealed class StateMachine : IModule, IStateMachine
 
         var stack = GetOrCreateStack(playerId);
         var oldStack = stack.ToArray();
+        bool displacesBoundHitstun = stack.Count > 0 && stack[^1] == CharacterState.Hitstun &&
+            newState != CharacterState.Hitstun;
 
         if (stack.Count > 0 && stack[^1] != CharacterState.Idle)
             stack.RemoveAt(stack.Count - 1);
 
         stack.Add(newState);
+        if (displacesBoundHitstun)
+            ClearKnockbackOwnership(playerId);
         CommitStateChange(playerId, oldStack, stack);
     }
 
@@ -275,6 +280,13 @@ internal sealed class StateMachine : IModule, IStateMachine
     private void OnHitConnected(HitConnectedEvent e)
     {
         ReplaceState(e.DefenderId, CharacterState.Hitstun);
+        if (e.DefenderId is >= 1 and <= 2)
+        {
+            _knockbackTuples.Remove(e.DefenderId);
+            _hitstunOccupancy.Remove(e.DefenderId);
+            _awaitingLaunches[e.DefenderId] = new AwaitingLaunch(
+                EventBus.Instance.DispatchEpoch, e.ContactFrame);
+        }
     }
 
     private void OnMoveBlocked(MoveBlockedEvent e)
@@ -294,21 +306,47 @@ internal sealed class StateMachine : IModule, IStateMachine
 
     private void OnKnockbackApplied(KnockbackAppliedEvent e)
     {
-        if (e.GenerationId <= 0 || !e.WorldX.HasValue || !e.WorldY.HasValue)
+        if (e.PlayerId is < 1 or > 2)
+        {
+            FrameworkLog.Error?.Invoke($"[StateMachine] Invalid knockback PlayerId: {e.PlayerId}. Must be 1 or 2.");
             return;
-        if (_latestTrajectoryGenerations.TryGetValue(e.PlayerId, out long latest) &&
-            e.GenerationId < latest)
+        }
+        if (e.GenerationId == 0 || !e.WorldX.HasValue || !e.WorldY.HasValue || e.Phase == 0)
             return;
-        _latestTrajectoryGenerations[e.PlayerId] = e.GenerationId;
-        if (!e.Completed)
+        ulong epoch = EventBus.Instance.DispatchEpoch;
+
+        if (e.Phase == KnockbackPhase.Started)
+        {
+            if (!_awaitingLaunches.TryGetValue(e.PlayerId, out var awaiting) ||
+                awaiting.Epoch != epoch || awaiting.ContactFrame != e.ContactFrame ||
+                GetCurrentState(e.PlayerId) != CharacterState.Hitstun)
+                return;
+            if (_highestKnockbackGeneration.TryGetValue(e.PlayerId, out var highest) &&
+                highest.Epoch == epoch && e.GenerationId <= highest.Generation)
+                return;
+            _awaitingLaunches.Remove(e.PlayerId);
+            _knockbackTuples[e.PlayerId] = new KnockbackTuple(epoch, e.GenerationId, e, false);
+            _hitstunOccupancy[e.PlayerId] = (epoch, e.GenerationId);
+            _highestKnockbackGeneration[e.PlayerId] = (epoch, e.GenerationId);
             return;
-        if (_completedTrajectoryGenerations.TryGetValue(e.PlayerId, out long completed) &&
-            e.GenerationId <= completed)
+        }
+
+        if (!_knockbackTuples.TryGetValue(e.PlayerId, out var tuple) ||
+            tuple.Epoch != epoch || tuple.Generation != e.GenerationId || tuple.Terminal)
             return;
-        _completedTrajectoryGenerations[e.PlayerId] = e.GenerationId;
-        if (GetCurrentState(e.PlayerId) != CharacterState.Hitstun)
+        if (e.Equals(tuple.Last)) return;
+        if (e.ContactFrame != tuple.Last.ContactFrame || e.FrameNumber <= tuple.Last.FrameNumber)
             return;
-        ResetToIdle(e.PlayerId);
+        bool validPhase = e.Phase == KnockbackPhase.Completed ||
+            e.Phase == KnockbackPhase.Progressed;
+        if (!validPhase) return;
+        _knockbackTuples[e.PlayerId] = tuple with { Last = e, Terminal = e.Phase == KnockbackPhase.Completed };
+        if (e.Phase != KnockbackPhase.Completed) return;
+        if (!_hitstunOccupancy.TryGetValue(e.PlayerId, out var owner) ||
+            owner != (epoch, e.GenerationId)) return;
+        _hitstunOccupancy.Remove(e.PlayerId);
+        if (GetCurrentState(e.PlayerId) == CharacterState.Hitstun)
+            ResetToIdle(e.PlayerId);
     }
 
     private void OnReplayStarted(ReplayStartedEvent e) => ResetTrajectoryGenerations();
@@ -317,9 +355,22 @@ internal sealed class StateMachine : IModule, IStateMachine
 
     private void ResetTrajectoryGenerations()
     {
-        _latestTrajectoryGenerations.Clear();
-        _completedTrajectoryGenerations.Clear();
+        _awaitingLaunches.Clear();
+        _knockbackTuples.Clear();
+        _hitstunOccupancy.Clear();
+        _highestKnockbackGeneration.Clear();
     }
+
+    private void ClearKnockbackOwnership(int playerId)
+    {
+        _awaitingLaunches.Remove(playerId);
+        _knockbackTuples.Remove(playerId);
+        _hitstunOccupancy.Remove(playerId);
+    }
+
+    private readonly record struct AwaitingLaunch(ulong Epoch, int ContactFrame);
+    private readonly record struct KnockbackTuple(
+        ulong Epoch, ulong Generation, KnockbackAppliedEvent Last, bool Terminal);
 
     // ── Internals ──
 

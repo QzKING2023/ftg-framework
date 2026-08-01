@@ -390,6 +390,173 @@ public class FtgCliTests
         }
     }
 
+    [Theory]
+    [InlineData("../escape")]
+    [InlineData("Scripts/Framework/Core/../Data")]
+    [InlineData("Scripts\\Framework\\Core")]
+    [InlineData("/tmp/escape")]
+    [InlineData("C:/escape")]
+    [InlineData("//server/share")]
+    public void Scaffold_InvalidManifestEntry_IsRejectedBeforeDestinationMutation(string entry)
+    {
+        var fixture = CreateMinimalScaffoldRepo(includeCharacterTemplate: true);
+        var target = Path.Combine(Path.GetTempPath(), $"ftg_manifest_boundary_{Guid.NewGuid():N}");
+        try
+        {
+            File.AppendAllText(Path.Combine(fixture, "Scaffold", "framework-source-dirs.txt"), entry + "\n");
+
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => ProjectScaffolder.Scaffold(fixture, target, "BoundaryProject"));
+
+            Assert.Contains("manifest entry", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.False(Directory.Exists(target));
+        }
+        finally
+        {
+            TryDelete(fixture);
+            TryDelete(target);
+        }
+    }
+
+    [Fact]
+    public void Scaffold_DuplicateManifestAlias_IsRejectedBeforeDestinationMutation()
+    {
+        var fixture = CreateMinimalScaffoldRepo(includeCharacterTemplate: true);
+        var target = Path.Combine(Path.GetTempPath(), $"ftg_manifest_duplicate_{Guid.NewGuid():N}");
+        try
+        {
+            File.AppendAllText(Path.Combine(fixture, "Scaffold", "framework-source-dirs.txt"),
+                "scripts/framework/core\n");
+
+            Assert.Throws<InvalidOperationException>(
+                () => ProjectScaffolder.Scaffold(fixture, target, "BoundaryProject"));
+            Assert.False(Directory.Exists(target));
+        }
+        finally
+        {
+            TryDelete(fixture);
+            TryDelete(target);
+        }
+    }
+
+    [Theory]
+    [InlineData("../Escape")]
+    [InlineData("Bad/Name")]
+    [InlineData("Bad\\Name")]
+    [InlineData("Bad.Name")]
+    [InlineData("CON")]
+    [InlineData("NUL")]
+    [InlineData("COM1")]
+    [InlineData("class")]
+    public void Scaffold_DirectCallRejectsMaliciousProjectNameBeforeMutation(string projectName)
+    {
+        var fixture = CreateMinimalScaffoldRepo(includeCharacterTemplate: true);
+        var target = Path.Combine(Path.GetTempPath(), $"ftg_project_name_{Guid.NewGuid():N}");
+        try
+        {
+            Assert.Throws<ArgumentException>(() => ProjectScaffolder.Scaffold(fixture, target, projectName));
+            Assert.False(Directory.Exists(target));
+        }
+        finally
+        {
+            TryDelete(fixture);
+            TryDelete(target);
+        }
+    }
+
+    [Fact]
+    public void Scaffold_InvalidLateManifestEntry_NeverAccessesExternalSourceOrMutatesExistingTarget()
+    {
+        var fixture = CreateMinimalScaffoldRepo(includeCharacterTemplate: true);
+        var target = Path.Combine(Path.GetTempPath(), $"ftg_existing_boundary_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(target);
+        var sentinel = Path.Combine(target, "user-owned.bin");
+        File.WriteAllBytes(sentinel, [1, 2, 3, 4]);
+        var accesses = new List<string>();
+        try
+        {
+            File.AppendAllText(Path.Combine(fixture, "Scaffold", "framework-source-dirs.txt"),
+                "Scripts/Framework/Core\n../../external\n");
+            var hooks = new ScaffoldHooks(BeforeFileAccess: accesses.Add);
+
+            Assert.Throws<InvalidOperationException>(() => ProjectScaffolder.Scaffold(
+                fixture, target, "BoundaryProject", new ScaffoldArtifactTracker(), hooks));
+
+            Assert.Equal([1, 2, 3, 4], File.ReadAllBytes(sentinel));
+            Assert.Single(Directory.GetFileSystemEntries(target));
+            Assert.All(accesses, path => Assert.True(
+                Path.GetFullPath(path).StartsWith(Path.GetFullPath(fixture), StringComparison.OrdinalIgnoreCase),
+                $"Unexpected external access: {path}"));
+        }
+        finally
+        {
+            TryDelete(fixture);
+            TryDelete(target);
+        }
+    }
+
+    [Fact]
+    public void Scaffold_SourceDirectoryLinkEscape_IsRejectedBeforeMutation()
+    {
+        var fixture = CreateMinimalScaffoldRepo(includeCharacterTemplate: true);
+        var external = Path.Combine(Path.GetTempPath(), $"ftg_external_source_{Guid.NewGuid():N}");
+        var target = Path.Combine(Path.GetTempPath(), $"ftg_link_source_target_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(external);
+        File.WriteAllText(Path.Combine(external, "secret.txt"), "unchanged");
+        var core = Path.Combine(fixture, "Scripts", "Framework", "Core");
+        Directory.Delete(core, recursive: true);
+        try
+        {
+            try { Directory.CreateSymbolicLink(core, external); }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
+            {
+                return;
+            }
+
+            Assert.Throws<InvalidOperationException>(
+                () => ProjectScaffolder.Scaffold(fixture, target, "BoundaryProject"));
+            Assert.Equal("unchanged", File.ReadAllText(Path.Combine(external, "secret.txt")));
+            Assert.False(Directory.Exists(target));
+        }
+        finally
+        {
+            TryDelete(fixture);
+            TryDelete(target);
+            TryDelete(external);
+        }
+    }
+
+    [Fact]
+    public void Scaffold_DestinationDirectoryLinkEscape_IsRejectedBeforeMutation()
+    {
+        var fixture = CreateMinimalScaffoldRepo(includeCharacterTemplate: true);
+        var external = Path.Combine(Path.GetTempPath(), $"ftg_external_target_{Guid.NewGuid():N}");
+        var target = Path.Combine(Path.GetTempPath(), $"ftg_link_destination_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(external);
+        Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(external, "sentinel.txt"), "unchanged");
+        var scriptsLink = Path.Combine(target, "Scripts");
+        try
+        {
+            try { Directory.CreateSymbolicLink(scriptsLink, external); }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
+            {
+                return;
+            }
+
+            Assert.Throws<InvalidOperationException>(
+                () => ProjectScaffolder.Scaffold(fixture, target, "BoundaryProject"));
+            Assert.Equal("unchanged", File.ReadAllText(Path.Combine(external, "sentinel.txt")));
+            Assert.Single(Directory.GetFileSystemEntries(target));
+        }
+        finally
+        {
+            TryDelete(fixture);
+            TryDelete(target);
+            TryDelete(external);
+        }
+    }
+
     [Fact]
     public void New_RestoreFailure_ReturnsNonZeroAndCleansNewDestination()
     {

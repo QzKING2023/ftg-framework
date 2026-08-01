@@ -1,0 +1,9 @@
+PREP-2.1 replay contract verification
+Date: 2026-08-01
+Command: dotnet test Tests/FTG_Framework.Tests/FTG_Framework.Tests.csproj --filter "FullyQualifiedName~KnockbackReplayTests|FullyQualifiedName~CollisionReplayCompatibilityTests|FullyQualifiedName~ReplayVersionValidatorTests" --no-restore
+Result: PASS
+Passed: 25
+Failed: 0
+Skipped: 0
+Coverage: v3 golden payload, numeric KnockbackPhase, ulong round-trip including MaxValue, v1/v2 container compatibility, missing/invalid phase rejection before load mutation.
+

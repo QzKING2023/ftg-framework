@@ -70,7 +70,7 @@ public partial class ScaffoldSmokeTest : Node
                         return;
                     _knockbackEventCount++;
                     _finalP2X = applied.WorldX.Value;
-                    _knockbackCompleted |= applied.Completed;
+                    _knockbackCompleted |= applied.Phase == KnockbackPhase.Completed;
                 };
                 EventBus.Instance.Subscribe(_knockbackHandler);
                 inputLog.ShowP1 = true;
@@ -147,7 +147,7 @@ public partial class ScaffoldSmokeTest : Node
         if (_finalP2X <= _initialP2X)
             failures.Add($"P2 did not move away from P1 ({_initialP2X} -> {_finalP2X})");
         if (!_knockbackCompleted)
-            failures.Add("knockback trajectory never published Completed=true");
+            failures.Add("knockback trajectory never published the Completed phase");
         if (Godot.Engine.PhysicsTicksPerSecond != 60)
             failures.Add(
                 $"physics tick rate was {Godot.Engine.PhysicsTicksPerSecond}, expected 60 Hz");

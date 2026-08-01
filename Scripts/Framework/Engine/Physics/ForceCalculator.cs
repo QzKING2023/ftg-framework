@@ -10,7 +10,7 @@ internal static class ForceCalculator
     internal const float CompletionEpsilon = 0.001f;
 
     internal static TrajectoryState Launch(
-        long generationId,
+        ulong generationId,
         float currentX,
         float currentY,
         float attackerX,

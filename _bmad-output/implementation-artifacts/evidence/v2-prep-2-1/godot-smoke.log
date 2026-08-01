@@ -1,0 +1,8 @@
+PREP-2.1 generated-project Godot smoke
+Date: 2026-08-01
+Command: D:\Godot\Godot_v4.5.1-stable_mono_win64_console.exe --headless --path D:\Godot\Program\ftg-framework\.tmp\prep21-scaffold\MyFighter res://scaffold_smoke.tscn
+Result: PASS (exit 0)
+Engine: Godot 4.5.1.stable.mono.official.f62fdbde1
+Success marker: [ScaffoldSmoke] PASS: one same-frame 5LP collision at frame 55; P2 knockback 650.0->742.6 completed in 37 events.
+Note: first sandboxed launch could not create the Godot user log and crashed before scenario execution; approved unsandboxed rerun completed successfully.
+Post-review: `ReviewFighter` rerun on Godot 4.5.1 exited zero with the same `[ScaffoldSmoke] PASS` collision and 37-event knockback result.

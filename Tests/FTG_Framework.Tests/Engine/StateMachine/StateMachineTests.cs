@@ -945,25 +945,79 @@ public class StateMachineTests : IDisposable
     {
         RunWithMachine((_, sm) =>
         {
-            sm.ReplaceState(2, CharacterState.Hitstun);
-            EventBus.Instance.Publish(new KnockbackAppliedEvent(
-                2, 1, 0, 1, 0.1f, 10, 0, 2, 1, 1, false));
-            EventBus.Instance.ProcessFrame();
-            EventBus.Instance.Publish(new KnockbackAppliedEvent(
-                2, 0, 0, 1, 0.1f, 10, 0, 1, 1, 2, true));
-            EventBus.Instance.ProcessFrame();
+            EventBus.Instance.PublishImmediate(new HitConnectedEvent(1, 2, "hit", 1, 1, 1));
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 1, 1, 1, KnockbackPhase.Started));
+            EventBus.Instance.PublishImmediate(new HitConnectedEvent(1, 2, "hit2", 1, 1, 2));
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 2, 2, 2, KnockbackPhase.Started));
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 1, 1, 3, KnockbackPhase.Completed));
             Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
 
-            EventBus.Instance.Publish(new KnockbackAppliedEvent(
-                2, 0, 0, 1, 0.1f, 10, 0, 2, 1, 3, true));
-            EventBus.Instance.ProcessFrame();
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 2, 2, 4, KnockbackPhase.Completed));
             Assert.Equal(CharacterState.Idle, sm.GetCurrentState(2));
 
             sm.ReplaceState(2, CharacterState.Hitstun);
-            EventBus.Instance.Publish(new KnockbackAppliedEvent(
-                2, 0, 0, 1, 0.1f, 10, 0, 2, 1, 4, true));
-            EventBus.Instance.ProcessFrame();
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 2, 1, 4, KnockbackPhase.Completed));
             Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
+        });
+    }
+
+    [Theory]
+    [InlineData(int.MinValue)]
+    [InlineData(-42)]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(3)]
+    [InlineData(42)]
+    [InlineData(int.MaxValue)]
+    public void KnockbackEvent_InvalidPlayerBoundary_IsRejectedWithoutMutation(int playerId)
+    {
+        RunWithMachine((_, sm) =>
+        {
+            var beforeP1 = sm.GetStack(1).ToArray();
+            var beforeP2 = sm.GetStack(2).ToArray();
+
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                playerId, 1, 0, 1, 0.1f, 10, 0, 1, 1, 1, KnockbackPhase.Started));
+
+            Assert.Equal(beforeP1, sm.GetStack(1));
+            Assert.Equal(beforeP2, sm.GetStack(2));
+        });
+    }
+
+    [Fact]
+    public void KnockbackTuple_RejectsOutOfOrderConflictsAndPostTerminalEvents()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 7, 4, 10, KnockbackPhase.Progressed));
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 7, 4, 11, KnockbackPhase.Completed));
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(2));
+
+            EventBus.Instance.PublishImmediate(new HitConnectedEvent(1, 2, "hit", 1, 1, 4));
+            var started = new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 7, 4, 12, KnockbackPhase.Started);
+            EventBus.Instance.PublishImmediate(started);
+            EventBus.Instance.PublishImmediate(started); // exact last duplicate
+            var progress = started with { FrameNumber = 13, Phase = KnockbackPhase.Progressed };
+            EventBus.Instance.PublishImmediate(progress);
+            EventBus.Instance.PublishImmediate(progress); // exact last duplicate
+            EventBus.Instance.PublishImmediate(started); // old duplicate after progress
+            EventBus.Instance.PublishImmediate(progress with { HorizontalForce = 99 }); // same-frame conflict
+            Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
+
+            var completed = progress with { FrameNumber = 14, Phase = KnockbackPhase.Completed };
+            EventBus.Instance.PublishImmediate(completed);
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(2));
+            EventBus.Instance.PublishImmediate(completed with
+                { FrameNumber = 15, Phase = KnockbackPhase.Progressed });
+            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(2));
         });
     }
 
@@ -972,21 +1026,21 @@ public class StateMachineTests : IDisposable
     {
         RunWithMachine((_, sm) =>
         {
-            sm.ReplaceState(2, CharacterState.Hitstun);
+            EventBus.Instance.PublishImmediate(new HitConnectedEvent(1, 2, "hit", 1, 1, 1));
             EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
-                2, 1, 0, 1, 0.1f, 10, 0, 100, 1, 100, false));
+                2, 1, 0, 1, 0.1f, 10, 0, 100, 1, 100, KnockbackPhase.Started));
             EventBus.Instance.PublishImmediate(new ReplayStartedEvent(10, 2));
             EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
-                2, 0, 0, 1, 0.1f, 10, 0, 1, 1, 1, true));
-            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(2));
+                2, 0, 0, 1, 0.1f, 10, 0, 1, 1, 1, KnockbackPhase.Completed));
+            Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
 
-            sm.ReplaceState(2, CharacterState.Hitstun);
+            EventBus.Instance.PublishImmediate(new HitConnectedEvent(1, 2, "hit", 1, 1, 2));
             EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
-                2, 1, 0, 1, 0.1f, 10, 0, 100, 1, 100, false));
+                2, 1, 0, 1, 0.1f, 10, 0, 1, 2, 100, KnockbackPhase.Started));
             EventBus.Instance.PublishImmediate(new ReplayEndedEvent(10));
             EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
-                2, 0, 0, 1, 0.1f, 10, 0, 1, 1, 101, true));
-            Assert.Equal(CharacterState.Idle, sm.GetCurrentState(2));
+                2, 0, 0, 1, 0.1f, 10, 0, 1, 2, 101, KnockbackPhase.Completed));
+            Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
         });
     }
 
@@ -998,6 +1052,59 @@ public class StateMachineTests : IDisposable
             sm.ReplaceState(2, CharacterState.Hitstun);
             EventBus.Instance.Publish(new KnockbackAppliedEvent(2, 0, 0, 1, 0.1f));
             EventBus.Instance.ProcessFrame();
+            Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
+        });
+    }
+
+    [Fact]
+    public void QueuedKnockback_OldCompletionCannotClearNewGeneration()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            EventBus.Instance.Publish(new HitConnectedEvent(1, 2, "g1", 1, 1, 10));
+            EventBus.Instance.Publish(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 1, 10, 10, KnockbackPhase.Started));
+            EventBus.Instance.ProcessFrame();
+            EventBus.Instance.Publish(new HitConnectedEvent(1, 2, "g2", 1, 1, 11));
+            EventBus.Instance.Publish(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 2, 11, 11, KnockbackPhase.Started));
+            EventBus.Instance.ProcessFrame();
+            EventBus.Instance.Publish(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 1, 10, 12, KnockbackPhase.Completed));
+            EventBus.Instance.ProcessFrame();
+            Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
+        });
+    }
+
+    [Fact]
+    public void DisplacedHitstun_CannotBeClearedByFormerOwner()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            EventBus.Instance.PublishImmediate(new HitConnectedEvent(1, 2, "g1", 1, 1, 10));
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 1, 10, 10, KnockbackPhase.Started));
+            sm.ReplaceState(2, CharacterState.Blockstun);
+            sm.ReplaceState(2, CharacterState.Hitstun);
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 1, 10, 11, KnockbackPhase.Completed));
+            Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
+        });
+    }
+
+    [Fact]
+    public void StartedGeneration_CannotMoveBackwardWithinEpoch()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            EventBus.Instance.PublishImmediate(new HitConnectedEvent(1, 2, "g2", 1, 1, 20));
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 2, 20, 20, KnockbackPhase.Started));
+            EventBus.Instance.PublishImmediate(new HitConnectedEvent(1, 2, "g1", 1, 1, 21));
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 1, 21, 21, KnockbackPhase.Started));
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 1, 21, 22, KnockbackPhase.Completed));
             Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
         });
     }

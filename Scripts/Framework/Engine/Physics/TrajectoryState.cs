@@ -4,7 +4,7 @@ using FTG_Framework.Data;
 namespace FTG_Framework.Engine.Physics;
 
 internal readonly record struct TrajectoryState(
-    long GenerationId,
+    ulong GenerationId,
     float PositionX,
     float PositionY,
     float VelocityX,

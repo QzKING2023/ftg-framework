@@ -25,7 +25,7 @@ public sealed class ForceCalculatorTests
         Assert.Equal(3, trajectory.VelocityX);
         Assert.Equal(-0.9f, trajectory.VelocityY, 5);
         Assert.True(trajectory.Airborne);
-        Assert.Equal(7, trajectory.GenerationId);
+        Assert.Equal(7UL, trajectory.GenerationId);
     }
 
     [Fact]

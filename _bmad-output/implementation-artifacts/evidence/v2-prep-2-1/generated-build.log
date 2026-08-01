@@ -1,0 +1,7 @@
+PREP-2.1 generated-project build
+Date: 2026-08-01
+Generate: dotnet run --project Scaffold/ftg-cli -- new MyFighter --output D:\Godot\Program\ftg-framework\.tmp\prep21-scaffold
+Generate result: PASS (exit 0)
+Build: dotnet build D:\Godot\Program\ftg-framework\.tmp\prep21-scaffold\MyFighter\MyFighter.csproj --no-restore
+Build result: PASS (exit 0, 0 errors, 1 NU1900 warning)
+Post-review: generated `ReviewFighter` and built with `dotnet build --no-restore`: PASS (exit 0, 0 errors, 1 NU1900 warning).

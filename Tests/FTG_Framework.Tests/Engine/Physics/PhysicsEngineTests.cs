@@ -312,12 +312,107 @@ public sealed class PhysicsEngineTests : IDisposable
             engine.Update();
             EventBus.Instance.ProcessFrame();
             Assert.NotNull(observed);
-            Assert.Equal(13, observed.Value.WorldX);
-            Assert.Equal(-3, observed.Value.WorldY);
-            Assert.Equal(1, observed.Value.GenerationId);
-            Assert.False(observed.Value.Completed);
+            Assert.Equal(5, observed.Value.WorldX);
+            Assert.Equal(0, observed.Value.WorldY);
+            Assert.Equal(1UL, observed.Value.GenerationId);
+            Assert.Equal(KnockbackPhase.Started, observed.Value.Phase);
         }
         finally { EventBus.Instance.Unsubscribe(handler); }
+    }
+
+    [Fact]
+    public void Update_GenerationCountersAreIndependentPerPlayer()
+    {
+        var profile = new KnockbackProfile { ProfileId = "launch", Horizontal = 8, Friction = 0.3f };
+        var (engine, frames, _) = MakeEngine(profile, stateMachine: new StubStateMachine());
+        engine.Register(new StubParticipant(1, -5, DirectionValue.Neutral, true));
+        engine.Register(new StubParticipant(2, 5, DirectionValue.Neutral, false));
+        var started = new List<KnockbackAppliedEvent>();
+        Action<KnockbackAppliedEvent> handler = e =>
+        {
+            if (e.Phase == KnockbackPhase.Started) started.Add(e);
+        };
+        EventBus.Instance.Subscribe(handler);
+        try
+        {
+            frames.P1 = new EvaluatedMoveFrame("5A", 1, 1, MovePhase.Active);
+            engine.Update();
+            EventBus.Instance.ProcessFrame();
+            frames.P1 = EvaluatedMoveFrame.Idle;
+            frames.P2 = new EvaluatedMoveFrame("5A", 2, 1, MovePhase.Active);
+            engine.Update();
+            EventBus.Instance.ProcessFrame();
+
+            Assert.Contains(started, e => e.PlayerId == 2 && e.GenerationId == 1);
+            Assert.Contains(started, e => e.PlayerId == 1 && e.GenerationId == 1);
+        }
+        finally { EventBus.Instance.Unsubscribe(handler); }
+    }
+
+    [Fact]
+    public void Update_GenerationExhaustionRejectsBeforePublishingOrReplacingTrajectory()
+    {
+        var profile = new KnockbackProfile { ProfileId = "launch", Horizontal = 8, Friction = 0.3f };
+        var (engine, frames, _) = MakeEngine(profile, stateMachine: new StubStateMachine());
+        frames.P1 = new EvaluatedMoveFrame("5A", 1, 1, MovePhase.Active);
+        engine.Register(new StubParticipant(1, -5, DirectionValue.Neutral, true));
+        engine.Register(new StubParticipant(2, 5, DirectionValue.Neutral, false));
+        engine.SetGenerationForTesting(2, ulong.MaxValue);
+        int published = 0;
+        int hits = 0;
+        Action<KnockbackAppliedEvent> handler = _ => published++;
+        Action<HitConnectedEvent> hitHandler = _ => hits++;
+        EventBus.Instance.Subscribe(handler);
+        EventBus.Instance.Subscribe(hitHandler);
+        try
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() => engine.Update());
+            Assert.Contains("[Physics]", ex.Message);
+            EventBus.Instance.ProcessFrame();
+            Assert.Equal(0, published);
+            Assert.Equal(0, hits);
+        }
+        finally
+        {
+            EventBus.Instance.Unsubscribe(handler);
+            EventBus.Instance.Unsubscribe(hitHandler);
+        }
+    }
+
+    [Fact]
+    public void Update_LaterGenerationExhaustionRollsBackEarlierSameUpdateLaunch()
+    {
+        var profile = new KnockbackProfile { ProfileId = "launch", Horizontal = 8, Friction = 0.3f };
+        var (engine, frames, _) = MakeEngine(profile, twoHitboxes: true, stateMachine: new StubStateMachine());
+        frames.P1 = new EvaluatedMoveFrame("5A", 1, 1, MovePhase.Active);
+        engine.Register(new StubParticipant(1, -5, DirectionValue.Neutral, true));
+        engine.Register(new StubParticipant(2, 5, DirectionValue.Neutral, false));
+        engine.SetGenerationForTesting(2, ulong.MaxValue - 1);
+        var started = new List<KnockbackAppliedEvent>();
+        int hits = 0;
+        Action<KnockbackAppliedEvent> knockback = e => started.Add(e);
+        Action<HitConnectedEvent> hit = _ => hits++;
+        EventBus.Instance.Subscribe(knockback);
+        EventBus.Instance.Subscribe(hit);
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => engine.Update());
+            EventBus.Instance.ProcessFrame();
+            Assert.Empty(started);
+            Assert.Equal(0, hits);
+
+            engine.SetGenerationForTesting(2, 0);
+            engine.Update();
+            EventBus.Instance.ProcessFrame();
+            var accepted = Assert.Single(started, e => e.Phase == KnockbackPhase.Started);
+            Assert.Equal(2UL, accepted.GenerationId);
+            Assert.Equal(2, hits);
+        }
+        finally
+        {
+            EventBus.Instance.Unsubscribe(knockback);
+            EventBus.Instance.Unsubscribe(hit);
+        }
     }
 
     [Fact]

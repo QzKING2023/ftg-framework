@@ -1,0 +1,250 @@
+# generated: 2026-07-27
+# last_updated: 2026-08-01
+# project: ftg-framework
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; sprint-status surfaces open ones
+#
+# V2 entries use v2- prefix to avoid key collision with V1 epics (V1 epics 1-3 are done).
+
+generated: 2026-07-27
+last_updated: 2026-08-01
+# Note: Story 3.0 (Replay Spike) is intentionally started before Epic 1 per Implementation Readiness Advisory #1.
+# The spike's go/no-go decision may affect event design across all epics.
+
+project: ftg-framework
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+action_items:
+  - epic: 1
+    action: "Change MoveCategory default from Special to Normal in MoveInputConfig.cs"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: 1
+    action: "Add unit test project (xUnit/NUnit) to FTG_Framework.sln"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: 1
+    action: "Add ChargeTracker unit tests — state transitions, retention window, validation"
+    owner: "Dana (QA Engineer)"
+    status: done
+  - epic: 1
+    action: "Add DefaultPriorityResolver unit tests — priority sort, charge filter, edge cases"
+    owner: "Dana (QA Engineer)"
+    status: done
+  - epic: 2
+    action: "Continue per-story code review for Epic 3"
+    owner: "Dev workflow"
+    status: open
+  - epic: 2
+    action: "Document AD-4 dispatch semantics centrally (LIFO, per-phase grouping, same-frame queuing)"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: 2
+    action: "Godot integration verification — run Epic 2 full pipeline in Godot editor"
+    owner: "Q1625 (Project Lead)"
+    status: done
+  - epic: 2
+    action: "Implement minimal hit registration API in FrameDataEngine (RegisterHit for HitConnected/MoveBlocked events)"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: 2
+    action: "UI ViewModel separation — extract display logic from Godot Controls to testable pure C# ViewModels"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: 3
+    action: "Resolve Godot Control test crash — AccessViolationException under dotnet test"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: 3
+    action: "Add IInputLogFormatter interface for pluggable input log display"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: 3
+    action: "Add GameLoop shutdown/disposal to prevent zombie EventBus subscriptions"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: 3
+    action: "Enable #nullable enable on all Core.Events/ record structs"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: 3
+    action: "Tighten cancel window end-frame precision — guard TryCancel against extra frame"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: "v2-3"
+    action: "Implement SceneManager infrastructure — ISceneManager interface in Core, internal sealed implementation, scene registration/switch/lifecycle, automatic EventBus subscription cleanup on Exit()"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: "v2-3"
+    action: "Split scenes — character_select.tscn + training.tscn replacing single main.tscn; migrate GameLoop hardcoded UI instantiation into scene Enter()"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: "v2-3"
+    action: "Fix Story 3.6 critical deferred — CaptureSnapshot wiring, CancelWindowTracker snapshot integration, FrameAdvanced double-dispatch, frame number reset, IFrameDataEngine circular dependency, StepFrame dead code, Resume() frame skip, FrameCount off-by-one"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: "v2-3"
+    action: "Godot editor manual verification — run all deferred manual tests (Pool GC, SOCD smoke, Debug Panel live, Template Play)"
+    owner: "Q1625 (Project Lead)"
+    status: done
+  - epic: "v2-3"
+    action: "Epic 4 EditorPlugin infrastructure spike — validate thin Godot adapter pattern for EditorInterface/EditorSelection/UndoRedo"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: "v2-3"
+    action: "Review Epic 4 stories against Epic 3 learnings — re-assess estimates considering SceneManager, EditorPlugin spike result, Story 3.6 deferred impact"
+    owner: "Alice (Product Owner)"
+    status: open
+
+  - epic: "v2-1"
+    action: "Fix knockback completion ownership so an old trajectory cannot reset a newer Hitstun occupancy"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: "v2-1"
+    action: "Reject invalid player IDs before StateMachine knockback-completion handling"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: "v2-1"
+    action: "Reject rooted and parent-traversing scaffold source-manifest entries"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: "v2-1"
+    action: "Remove fixed-delay FileWatcher testing and isolate EventBus singleton state between tests"
+    owner: "Dana (QA Engineer)"
+    status: open
+  - epic: "v2-1"
+    action: "Define immutable state-event boundaries, event ordering, and missing physics-field semantics"
+    owner: "Winston (System Architect)"
+    status: open
+  - epic: "v2-1"
+    action: "Align Story 1.3, V2 Epic 1, retrospective, and sprint tracking states"
+    owner: "Amelia (Developer)"
+    status: open
+  - epic: "v2-1"
+    action: "Create and apply a cross-story lifecycle and architecture risk checklist"
+    owner: "Winston (System Architect)"
+    status: open
+  - epic: "v2-1"
+    action: "Define required unit, integration, Godot, scaffold, and end-to-end evidence per Epic 2 story"
+    owner: "Dana (QA Engineer)"
+    status: open
+  - epic: "v2-1"
+    action: "Review and revise all V2 Epic 2 stories, including a versioned state-snapshot boundary for Story 2.5"
+    owner: "Alice (Product Owner) and Winston (System Architect)"
+    status: open
+
+development_status:
+  # ============ V1 Epics (complete) ============
+  epic-1: done
+  1-1-project-scaffold-core-infrastructure: done
+  1-2-data-layer-json-move-loading: done
+  1-3-dual-track-input-storage-fr-1: done
+  1-4-directional-input-leniency-fr-2: done
+  1-5-input-buffer-fr-3: done
+  1-6-charge-retention-fr-4: done
+  1-7-input-priority-resolution-fr-5: done
+  epic-1-retrospective: done
+
+  epic-2: done
+  2-1-move-frame-data-registration-fr-6: done
+  2-2-cancel-window-tracking-fr-7: done
+  2-3-frame-data-panel-ui-fr-8: done
+  2-4-frame-advantage-display-fr-9: done
+  2-5-historical-input-log-ui-fr-10: done
+  2-6-frame-by-frame-playback-fr-11: done
+  epic-2-retrospective: done
+
+  epic-3: done
+  3-1-gatling-table-registration: done
+  3-2-cancel-window-consumption: done
+  3-3-combo-chain-uniqueness-enforcement: done
+  3-4-combo-state-tracking: done
+  epic-3-retrospective: done
+
+  # ============ V2 Epics (backlog) ============
+  # Epic 1: Character Foundation & Physics Engine (FR-16~22, FR-32)
+  v2-epic-1: done
+  v2-1-0-snapshot-helper-frame-order: done
+  v2-1-1-physics-knockback-data-models: done
+  v2-1-2-state-machine-physics-association: done
+  v2-1-3-character-scene-template: done
+  v2-1-4-project-template-early: done
+  v2-1-5-hitbox-hurtbox-collision: done
+  v2-1-6-knockback-system: done
+  v2-1-7-physics-hot-reload: done
+  v2-epic-1-retrospective: done
+
+  # V2 Epic 2 Readiness Gate — non-epic preparation work.
+  # Completing these entries does not reopen Epic 1 or start Epic 2.
+  # EPIC 2 START GATE: v2-epic-2 may leave backlog only when all four
+  # v2-prep-2-* entries and all v2-1 retrospective actions are done, and
+  # revised Stories 2.1-2.5 have Product Owner and Architect approval.
+  v2-prep-2-1-runtime-and-scaffold-boundary-hardening: done
+  v2-prep-2-2-deterministic-test-infrastructure: backlog
+  v2-prep-2-3-data-event-and-snapshot-contracts: backlog
+  v2-prep-2-4-epic-2-planning-and-evidence-review: backlog
+
+  # Epic 2: Move Authoring & Training Suite (FR-23~27)
+  v2-epic-2: backlog
+  v2-2-1-editorplugin-move-authoring: backlog
+  v2-2-2-runtime-tuning-writeback: backlog
+  v2-2-3-combo-counter-damage-display: backlog
+  v2-2-4-input-recording-playback: backlog
+  v2-2-5-training-state-save-load: backlog
+  v2-epic-2-retrospective: optional
+
+  # Epic 3: Runtime Infrastructure & Developer Experience (FR-28~31, FR-33)
+  v2-epic-3: done
+  v2-3-0-replay-architecture-spike: done
+  v2-3-1-object-pool: done
+  v2-3-2-socd-input-cleaning: done
+  v2-3-3-character-select: done
+  v2-3-4-eventbus-debug-panel: done
+  v2-3-5-project-template-polish: done
+  v2-3-6-deterministic-replay: done
+  v2-epic-3-retrospective: done
+
+  # Epic 4: Cross-Dimensional Integrations (FR-34~36)
+  v2-epic-4: backlog
+  v2-4-1-deterministic-balance-testbed: backlog
+  v2-4-2-state-scoped-save-replay: backlog
+  v2-4-3-unified-toolbox-dock: backlog
+  v2-epic-4-retrospective: optional

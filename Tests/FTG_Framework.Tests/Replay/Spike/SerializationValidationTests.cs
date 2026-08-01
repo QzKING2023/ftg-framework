@@ -367,8 +367,10 @@ public static class EventTypeRegistry
     }
 }
 
-public class TypeRegistryTests
+[Collection(EventBusTestCollection.Name)]
+public class TypeRegistryTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new();
     private static readonly JsonSerializerOptions Options = new()
     {
         PropertyNameCaseInsensitive = true
@@ -497,4 +499,6 @@ public class TypeRegistryTests
 
     // Instance method — the first arg of CreateDelegate becomes the 'this' target
     private static void CaptureToList<T>(List<object> list, T evt) => list.Add(evt!);
+
+    public void Dispose() => _eventBusScope.Dispose();
 }

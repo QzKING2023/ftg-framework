@@ -9,8 +9,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests;
 
+[Collection(EventBusTestCollection.Name)]
 public sealed class PhysicsProfileHotReloadServiceTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new();
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), $"ftg-hot-reload-{Guid.NewGuid():N}");
     private PhysicsProfileHotReloadService? _service;
@@ -24,10 +26,10 @@ public sealed class PhysicsProfileHotReloadServiceTests : IDisposable
     public void Dispose()
     {
         _service?.Shutdown();
-        EventBusTestHelper.Drain();
         FrameworkLog.Info = Console.WriteLine;
         FrameworkLog.Error = message => Console.Error.WriteLine(message);
         Directory.Delete(_directory, recursive: true);
+        _eventBusScope.Dispose();
     }
 
     [Fact]

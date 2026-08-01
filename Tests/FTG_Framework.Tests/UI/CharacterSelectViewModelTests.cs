@@ -7,8 +7,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests.UI;
 
-public class CharacterSelectViewModelTests
+[Collection(EventBusTestCollection.Name)]
+public class CharacterSelectViewModelTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Queues);
     // -- Roster empty --
 
     [Fact]
@@ -331,4 +333,5 @@ public class CharacterSelectViewModelTests
         var dataStore = new DataStore(Array.Empty<MoveDefinition>());
         Assert.Empty(dataStore.GetAllCharacters());
     }
+    public void Dispose() => _eventBusScope.Dispose();
 }

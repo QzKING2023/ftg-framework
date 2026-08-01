@@ -8,6 +8,7 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Replay;
 
+[Collection(EventBusTestCollection.Name)]
 public class ReplayRecorderTests
 {
     [Fact]

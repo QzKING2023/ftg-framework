@@ -8,8 +8,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests;
 
+[Collection(EventBusTestCollection.Name)]
 public class CancelWindowTrackerTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new();
     private static CancelWindow MakeWindow(int startFrame, int endFrame, string targetCategory = "special") => new()
     {
         StartFrame = startFrame,
@@ -36,7 +38,7 @@ public class CancelWindowTrackerTests : IDisposable
 
     public void Dispose()
     {
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     // --- 3.2: Single window [3,7] ---

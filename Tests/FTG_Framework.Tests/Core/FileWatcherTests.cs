@@ -1,15 +1,17 @@
 #nullable enable
 using System;
 using System.IO;
-using System.Threading;
+using System.Threading.Tasks;
 using FTG_Framework.Core;
-using FTG_Framework.Core.Events;
 using Xunit;
 
 namespace FTG_Framework.Tests.Core;
 
-public class FileWatcherTests : IDisposable
+[Collection(EventBusTestCollection.Name)]
+public sealed class FileWatcherTests : IDisposable
 {
+    private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(5);
+    private readonly EventBusTestScope _eventBusScope = new();
     private readonly string _tempDir;
 
     public FileWatcherTests()
@@ -20,160 +22,163 @@ public class FileWatcherTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_tempDir, recursive: true); } catch { /* best-effort cleanup */ }
-    }
-
-    // ── File creation enqueues DataReloadedEvent ──
-
-    [Fact]
-    public void FileCreated_EnqueuesDataReloadedEvent()
-    {
-        string filePath = Path.Combine(_tempDir, "test.json");
-
-        using var watcher = new FileWatcher(_tempDir, "*.json");
-
-        // Create a file — OS file system events are asynchronous, wait briefly
-        File.WriteAllText(filePath, "{}");
-        Thread.Sleep(200);
-
-        // Drain events from EventBus via ProcessFrame step 0
-        var events = CollectDataReloadedEvents();
-
-        Assert.Contains(events, e => e.FilePath.EndsWith("test.json"));
-    }
-
-    // ── File modification enqueues DataReloadedEvent ──
-
-    [Fact]
-    public void FileModified_EnqueuesDataReloadedEvent()
-    {
-        string filePath = Path.Combine(_tempDir, "modify.json");
-        File.WriteAllText(filePath, "{}");
-        Thread.Sleep(50);
-
-        using var watcher = new FileWatcher(_tempDir, "*.json");
-
-        // Modify the file
-        File.WriteAllText(filePath, "{\"changed\":true}");
-        Thread.Sleep(200);
-
-        var events = CollectDataReloadedEvents();
-        Assert.Contains(events, e => e.FilePath.EndsWith("modify.json"));
-    }
-
-    // ── Multiple rapid changes ──
-
-    [Fact]
-    public void MultipleRapidChanges_ProduceMultipleEvents()
-    {
-        string filePath = Path.Combine(_tempDir, "rapid.json");
-
-        using var watcher = new FileWatcher(_tempDir, "*.json");
-
-        File.WriteAllText(filePath, "v1");
-        Thread.Sleep(50);
-        File.WriteAllText(filePath, "v2");
-        Thread.Sleep(200);
-
-        // At least one event for each change — OS may coalesce some
-        var events = CollectDataReloadedEvents();
-        Assert.NotEmpty(events);
-    }
-
-    [Fact]
-    public void FileDeleted_EnqueuesDeletedTargetPath()
-    {
-        string filePath = Path.Combine(_tempDir, "delete.json");
-        File.WriteAllText(filePath, "{}");
-        using var watcher = new FileWatcher(_tempDir, "*.json");
-
-        File.Delete(filePath);
-        Thread.Sleep(200);
-
-        var events = CollectDataReloadedEvents();
-        Assert.Contains(events, e => Path.GetFullPath(e.FilePath) == Path.GetFullPath(filePath));
-    }
-
-    [Fact]
-    public void FileRenamed_EnqueuesOldAndNewPaths()
-    {
-        string oldPath = Path.Combine(_tempDir, "old.json");
-        string newPath = Path.Combine(_tempDir, "new.json");
-        File.WriteAllText(oldPath, "{}");
-        using var watcher = new FileWatcher(_tempDir, "*.json");
-
-        File.Move(oldPath, newPath);
-        Thread.Sleep(200);
-
-        var events = CollectDataReloadedEvents();
-        Assert.Contains(events, e => Path.GetFullPath(e.FilePath) == Path.GetFullPath(oldPath));
-        Assert.Contains(events, e => Path.GetFullPath(e.FilePath) == Path.GetFullPath(newPath));
-    }
-
-    // ── Disposal stops watching ──
-
-    [Fact]
-    public void Dispose_StopsWatching()
-    {
-        using (var watcher = new FileWatcher(_tempDir, "*.json"))
-        {
-            // watcher disposed here
-        }
-
-        // Drain any events already in the queue
-        DrainAllEvents();
-
-        // Now create a file — should NOT produce events via the disposed watcher
-        string filePath = Path.Combine(_tempDir, "after_dispose.json");
-        File.WriteAllText(filePath, "{}");
-        Thread.Sleep(200);
-
-        var events = CollectDataReloadedEvents();
-        Assert.Empty(events);
-    }
-
-    // ── Constructor validates arguments ──
-
-    [Fact]
-    public void Constructor_NullDirectory_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() => new FileWatcher(null!, "*.json"));
-    }
-
-    [Fact]
-    public void Constructor_NullFilter_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() => new FileWatcher(_tempDir, null!));
-    }
-
-    // ── Helpers ──
-
-    private static System.Collections.Generic.List<DataReloadedEvent> CollectDataReloadedEvents()
-    {
-        var events = new System.Collections.Generic.List<DataReloadedEvent>();
-        var bus = EventBus.Instance;
-
-        Action<DataReloadedEvent> handler = e => events.Add(e);
-        bus.Subscribe(handler);
         try
         {
-            bus.ProcessFrame();
+            if (Directory.Exists(_tempDir))
+                Directory.Delete(_tempDir, recursive: true);
         }
         finally
         {
-            bus.Unsubscribe(handler);
+            EventBus.Instance.ProcessFrame(); // Watchers are quiesced; drain notifications admitted before disposal.
+            _eventBusScope.Dispose();
         }
-
-        return events;
     }
 
-    private static void DrainAllEvents()
+    [Fact]
+    public void FileCreated_ObservesCanonicalPathAndCommittedContent()
     {
-        var bus = EventBus.Instance;
-        var dummy = new System.Collections.Generic.List<DataReloadedEvent>();
-        Action<DataReloadedEvent> handler = _ => { };
-        bus.Subscribe(handler);
-        try { bus.ProcessFrame(); }
-        finally { bus.Unsubscribe(handler); }
+        string path = Path.Combine(_tempDir, "create.json");
+        const string token = "create-v1";
+        using var observation = new FileWatcherObservation();
+        using var watcher = new FileWatcher(_tempDir, "*.json");
+        long sequence = observation.Sequence;
+
+        File.WriteAllText(path, token);
+
+        observation.WaitForOutcomeAsync(
+            () => observation.SawAfter(sequence, path) && File.ReadAllText(path) == token,
+            ObservationTimeout, path, token).GetAwaiter().GetResult();
+    }
+
+    [Fact]
+    public void FileModified_ObservesCanonicalPathAndFinalVersion()
+    {
+        string path = Path.Combine(_tempDir, "modify.json");
+        File.WriteAllText(path, "initial");
+        using var observation = new FileWatcherObservation();
+        using var watcher = new FileWatcher(_tempDir, "*.json");
+        long sequence = observation.Sequence;
+
+        const string token = "modify-v2";
+        File.WriteAllText(path, token);
+
+        observation.WaitForOutcomeAsync(
+            () => observation.SawAfter(sequence, path) && File.ReadAllText(path) == token,
+            ObservationTimeout, path, token).GetAwaiter().GetResult();
+    }
+
+    [Fact]
+    public void RapidWrites_AssertFinalOutcome_NotCallbackCount()
+    {
+        string path = Path.Combine(_tempDir, "rapid.json");
+        using var observation = new FileWatcherObservation();
+        using var watcher = new FileWatcher(_tempDir, "*.json");
+        long sequence = observation.Sequence;
+
+        File.WriteAllText(path, "rapid-v1");
+        File.WriteAllText(path, "rapid-v2");
+
+        observation.WaitForOutcomeAsync(
+            () => observation.SawAfter(sequence, path) && File.ReadAllText(path) == "rapid-v2",
+            ObservationTimeout, path, "rapid-v2").GetAwaiter().GetResult();
+    }
+
+    [Fact]
+    public void FileDeleted_ObservesPathAndFinalAbsence()
+    {
+        string path = Path.Combine(_tempDir, "delete.json");
+        File.WriteAllText(path, "delete-v1");
+        using var observation = new FileWatcherObservation();
+        using var watcher = new FileWatcher(_tempDir, "*.json");
+        long sequence = observation.Sequence;
+
+        File.Delete(path);
+
+        observation.WaitForOutcomeAsync(
+            () => observation.SawAfter(sequence, path) && !File.Exists(path),
+            ObservationTimeout, path, "deleted").GetAwaiter().GetResult();
+    }
+
+    [Fact]
+    public void FileRenamed_ObservesBothPathsAndFinalState()
+    {
+        string oldPath = Path.Combine(_tempDir, "old.json");
+        string newPath = Path.Combine(_tempDir, "new.json");
+        File.WriteAllText(oldPath, "rename-v1");
+        using var observation = new FileWatcherObservation();
+        using var watcher = new FileWatcher(_tempDir, "*.json");
+        long sequence = observation.Sequence;
+
+        File.Move(oldPath, newPath);
+
+        observation.WaitForOutcomeAsync(
+            () => observation.SawAfter(sequence, oldPath)
+                && observation.SawAfter(sequence, newPath)
+                && !File.Exists(oldPath)
+                && File.ReadAllText(newPath) == "rename-v1",
+            ObservationTimeout, newPath, "old absent/new rename-v1").GetAwaiter().GetResult();
+    }
+
+    [Fact]
+    public void Dispose_ProducesNoPostDisposalNotification()
+    {
+        string path = Path.Combine(_tempDir, "after-dispose.json");
+        using var observation = new FileWatcherObservation();
+        var watcher = new FileWatcher(_tempDir, "*.json");
+        watcher.Dispose();
+        EventBus.Instance.ProcessFrame();
+
+        File.WriteAllText(path, "after-dispose-v1");
+
+        observation.AssertQuietAsync(path, TimeSpan.FromMilliseconds(150)).GetAwaiter().GetResult();
+    }
+
+    [Fact]
+    public void Dispose_ConcurrentCalls_AreIdempotent()
+    {
+        var watcher = new FileWatcher(_tempDir, "*.json");
+        Task first = Task.Run(watcher.Dispose);
+        Task second = Task.Run(watcher.Dispose);
+
+        Task.WaitAll(first, second);
+        watcher.Dispose();
+    }
+
+    [Fact]
+    public void Observation_AcceptsDuplicateAndReorderedNotifications()
+    {
+        using var observation = new FileWatcherObservation();
+        string first = Path.Combine(_tempDir, "first.json");
+        string final = Path.Combine(_tempDir, "final.json");
+        long sequence = observation.Sequence;
+
+        observation.InjectForTesting(final, first, final);
+
+        Assert.True(observation.SawAfter(sequence, first));
+        Assert.True(observation.SawAfter(sequence, final));
+    }
+
+    [Fact]
+    public void Timeout_ReportsExpectedOutcomeObservationsBusAndPlatform()
+    {
+        using var observation = new FileWatcherObservation();
+        string path = Path.Combine(_tempDir, "never.json");
+
+        var error = Assert.Throws<TimeoutException>(() => observation.WaitForOutcomeAsync(
+            () => false, TimeSpan.FromMilliseconds(20), path, "never-v1").GetAwaiter().GetResult());
+
+        Assert.Contains("ExpectedPath=", error.Message);
+        Assert.Contains("ExpectedMutation=never-v1", error.Message);
+        Assert.Contains("Observed=", error.Message);
+        Assert.Contains("EventBus=", error.Message);
+        Assert.Contains("Elapsed=", error.Message);
+        Assert.Contains("Platform=", error.Message);
+    }
+
+    [Fact]
+    public void Constructor_ValidatesArguments()
+    {
+        Assert.Throws<ArgumentNullException>(() => new FileWatcher(null!, "*.json"));
+        Assert.Throws<ArgumentNullException>(() => new FileWatcher(_tempDir, null!));
     }
 }

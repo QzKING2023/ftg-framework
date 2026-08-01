@@ -6,8 +6,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Replay;
 
+[Collection(EventBusTestCollection.Name)]
 public class EventBusRecordingTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Recorder);
     private readonly EventBus _bus;
 
     public EventBusRecordingTests()
@@ -19,8 +21,7 @@ public class EventBusRecordingTests : IDisposable
 
     public void Dispose()
     {
-        _bus.Recorder = null;
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     [Fact]

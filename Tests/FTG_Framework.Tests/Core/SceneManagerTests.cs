@@ -7,8 +7,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Core;
 
-public sealed class SceneManagerTests
+[Collection(EventBusTestCollection.Name)]
+public sealed class SceneManagerTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new();
     private static SceneManager CreateManager() => new(null);
 
     // ── RegisterScene ──
@@ -329,4 +331,5 @@ public sealed class SceneManagerTests
         Assert.Single(events);
         Assert.Equal("s1", events[0].SceneId);
     }
+    public void Dispose() => _eventBusScope.Dispose();
 }

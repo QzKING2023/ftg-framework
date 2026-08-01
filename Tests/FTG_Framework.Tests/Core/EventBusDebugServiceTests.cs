@@ -5,8 +5,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Core;
 
-public sealed class EventBusDebugServiceTests
+[Collection(EventBusTestCollection.Name)]
+public sealed class EventBusDebugServiceTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new();
     private static HitConnectedEvent MakeHit(string moveId = "5A", int frame = 5)
         => new(AttackerId: 1, DefenderId: 2, MoveId: moveId, HitAdvantage: 3, Damage: 50);
 
@@ -248,6 +250,7 @@ public sealed class EventBusDebugServiceTests
             service.Disable();
         }
     }
+    public void Dispose() => _eventBusScope.Dispose();
 }
 
 internal static class TestExtensions

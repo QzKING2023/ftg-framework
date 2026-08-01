@@ -8,14 +8,16 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Input;
 
+[Collection(EventBusTestCollection.Name)]
 public class InputHistoryRewindTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Queues);
     private readonly InputHistory _history = new(capacity: 10);
 
     public void Dispose()
     {
         _history.Shutdown();
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     [Fact]

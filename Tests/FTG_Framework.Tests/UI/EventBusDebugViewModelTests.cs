@@ -5,8 +5,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests.UI;
 
-public sealed class EventBusDebugViewModelTests
+[Collection(EventBusTestCollection.Name)]
+public sealed class EventBusDebugViewModelTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new();
     private static EventBusDebugViewModel CreateViewModel(bool enabled = true)
     {
         var service = new EventBusDebugService();
@@ -252,4 +254,5 @@ public sealed class EventBusDebugViewModelTests
             TearDown(vm);
         }
     }
+    public void Dispose() => _eventBusScope.Dispose();
 }

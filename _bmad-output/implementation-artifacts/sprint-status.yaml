@@ -149,7 +149,7 @@ action_items:
   - epic: "v2-1"
     action: "Remove fixed-delay FileWatcher testing and isolate EventBus singleton state between tests"
     owner: "Dana (QA Engineer)"
-    status: open
+    status: in-progress
   - epic: "v2-1"
     action: "Define immutable state-event boundaries, event ordering, and missing physics-field semantics"
     owner: "Winston (System Architect)"
@@ -218,7 +218,7 @@ development_status:
   # v2-prep-2-* entries and all v2-1 retrospective actions are done, and
   # revised Stories 2.1-2.5 have Product Owner and Architect approval.
   v2-prep-2-1-runtime-and-scaffold-boundary-hardening: done
-  v2-prep-2-2-deterministic-test-infrastructure: backlog
+  v2-prep-2-2-deterministic-test-infrastructure: in-progress
   v2-prep-2-3-data-event-and-snapshot-contracts: backlog
   v2-prep-2-4-epic-2-planning-and-evidence-review: backlog
 

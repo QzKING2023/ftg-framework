@@ -6,11 +6,13 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Replay;
 
+[Collection(EventBusTestCollection.Name)]
 public class FrameDataEngineReplayTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Queues);
     public void Dispose()
     {
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     [Fact]

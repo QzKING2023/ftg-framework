@@ -8,15 +8,15 @@ using Xunit;
 
 namespace FTG_Framework.Tests;
 
+[Collection(EventBusTestCollection.Name)]
 public class FrameDataEngineSnapshotTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Flags);
     private FrameDataEngine? _engine;
 
     public void Dispose()
     {
-        EventBus.Instance.Paused = false;
-        EventBus.Instance.StepRequested = false;
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     private static Data.DataStore MakeDataStore()

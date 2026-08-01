@@ -12,8 +12,10 @@ using StateMachineImpl = FTG_Framework.Engine.StateMachine.StateMachine;
 
 namespace FTG_Framework.Tests.Engine.StateMachine;
 
+[Collection(EventBusTestCollection.Name)]
 public class StateMachineTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Subscribers | EventBusResidualState.Queues);
     public StateMachineTests()
     {
         EventBusTestHelper.Drain();
@@ -21,7 +23,7 @@ public class StateMachineTests : IDisposable
 
     public void Dispose()
     {
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     private static (StubDataStore store, StateMachineImpl sm, Action dispose) CreateMachine()

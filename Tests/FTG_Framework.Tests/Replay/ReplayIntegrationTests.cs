@@ -10,12 +10,13 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Replay;
 
+[Collection(EventBusTestCollection.Name)]
 public class ReplayIntegrationTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Subscribers | EventBusResidualState.Queues);
     public void Dispose()
     {
-        EventBus.Instance.Recorder = null;
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     private static (StubDataStore data, ComboStateTracker tracker, FrameDataEngine engine, ComboExecutor executor)

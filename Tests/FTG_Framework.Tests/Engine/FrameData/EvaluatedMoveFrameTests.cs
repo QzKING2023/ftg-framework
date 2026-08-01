@@ -6,8 +6,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests;
 
-public sealed class EvaluatedMoveFrameTests
+[Collection(EventBusTestCollection.Name)]
+public sealed class EvaluatedMoveFrameTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Queues);
     [Fact]
     public void Update_ExposesPreTickFrameForPhysics()
     {
@@ -39,4 +41,5 @@ public sealed class EvaluatedMoveFrameTests
         long second = engine.GetLastEvaluatedFrame(1).MoveInstanceId;
         Assert.True(second > first);
     }
+    public void Dispose() => _eventBusScope.Dispose();
 }

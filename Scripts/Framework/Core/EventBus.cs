@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
 using FTG_Framework.Core.Replay;
 
 namespace FTG_Framework.Core;
@@ -51,6 +53,8 @@ public sealed class EventBus
     private readonly List<Envelope> _nextQueue = new();
     private readonly ConcurrentQueue<Envelope> _pendingReloads = new();
     private readonly object _epochSync = new();
+    private long _testGeneration;
+    private int? _testOwnerThreadId;
     private bool _dispatching;
     private int _frameNumber;
     private ulong _lifecycleEpoch = 1;
@@ -114,7 +118,11 @@ public sealed class EventBus
     {
         var type = typeof(T);
         if (_subscribers.TryGetValue(type, out var handlers))
+        {
             handlers.Remove(handler);
+            if (handlers.Count == 0)
+                _subscribers.Remove(type);
+        }
     }
 
     // Events published outside a dispatch go to _currentQueue (processed this frame).
@@ -355,4 +363,140 @@ public sealed class EventBus
     }
 
     internal void SetLifecycleEpochForTesting(ulong epoch) => _lifecycleEpoch = epoch;
+
+    internal EventBusTestDiagnostic BeginTestScope()
+    {
+        lock (_epochSync)
+        {
+            int threadId = Environment.CurrentManagedThreadId;
+            if (_dispatching)
+                throw new InvalidOperationException("[EventBus] Cannot begin a test scope during dispatch.");
+            if (_testOwnerThreadId is not null)
+                throw new InvalidOperationException("[EventBus] A test scope is already active.");
+
+            _testOwnerThreadId = threadId;
+            ResetTestState();
+            return GetTestDiagnosticCore();
+        }
+    }
+
+    internal EventBusTestDiagnostic EndTestScope()
+    {
+        lock (_epochSync)
+        {
+            EnsureTestOwner();
+            if (_dispatching)
+                throw new InvalidOperationException("[EventBus] Cannot end a test scope during dispatch.");
+
+            EventBusTestDiagnostic residual = GetTestDiagnosticCore();
+            ResetTestState();
+            _testOwnerThreadId = null;
+            return residual;
+        }
+    }
+
+    internal EventBusTestDiagnostic GetTestDiagnostic()
+    {
+        lock (_epochSync)
+            return GetTestDiagnosticCore();
+    }
+
+    private void EnsureTestOwner()
+    {
+        if (_testOwnerThreadId != Environment.CurrentManagedThreadId)
+            throw new InvalidOperationException("[EventBus] Test state may only be changed by the owning test thread.");
+    }
+
+    private void ResetTestState()
+    {
+        _subscribers.Clear();
+        _currentQueue.Clear();
+        _nextQueue.Clear();
+        while (_pendingReloads.TryDequeue(out _)) { }
+        _dispatching = false;
+        _frameNumber = 0;
+        _dispatchFrame = 0;
+        _dispatchEpoch = null;
+        Paused = false;
+        StepRequested = false;
+        SuppressFrameAdvanced = false;
+        Recorder = null;
+
+        long generation = checked(++_testGeneration);
+        _lifecycleEpoch = checked((ulong)generation + 1UL);
+    }
+
+    private EventBusTestDiagnostic GetTestDiagnosticCore()
+    {
+        var subscriberTypes = _subscribers
+            .Where(pair => pair.Value.Count > 0)
+            .Select(pair => new EventBusSubscriberDiagnostic(pair.Key.FullName ?? pair.Key.Name, pair.Value.Count))
+            .OrderBy(item => item.EventType, StringComparer.Ordinal)
+            .ToArray();
+
+        return new EventBusTestDiagnostic(
+            subscriberTypes,
+            subscriberTypes.Sum(item => item.Count),
+            _currentQueue.Count,
+            _nextQueue.Count,
+            _pendingReloads.Count,
+            _frameNumber,
+            _dispatchFrame,
+            _lifecycleEpoch,
+            checked((ulong)_testGeneration),
+            _dispatching,
+            _dispatchEpoch,
+            Paused,
+            StepRequested,
+            SuppressFrameAdvanced,
+            Recorder is not null);
+    }
+}
+
+internal sealed record EventBusSubscriberDiagnostic(string EventType, int Count);
+
+internal sealed record EventBusTestDiagnostic(
+    IReadOnlyList<EventBusSubscriberDiagnostic> SubscriberTypes,
+    int SubscriberCount,
+    int CurrentQueueCount,
+    int NextQueueCount,
+    int PendingReloadCount,
+    int FrameNumber,
+    int DispatchFrame,
+    ulong LifecycleEpoch,
+    ulong TestGeneration,
+    bool IsDispatching,
+    ulong? DispatchEpoch,
+    bool Paused,
+    bool StepRequested,
+    bool SuppressFrameAdvanced,
+    bool HasRecorder)
+{
+    public int SubscriberTypeCount => SubscriberTypes.Count;
+
+    public bool HasResidualState => SubscriberTypeCount != 0
+        || SubscriberCount != 0
+        || CurrentQueueCount != 0
+        || NextQueueCount != 0
+        || PendingReloadCount != 0
+        || IsDispatching
+        || DispatchEpoch is not null
+        || Paused
+        || StepRequested
+        || SuppressFrameAdvanced
+        || HasRecorder;
+
+    public bool IsClean => SubscriberTypeCount == 0
+        && SubscriberCount == 0
+        && CurrentQueueCount == 0
+        && NextQueueCount == 0
+        && PendingReloadCount == 0
+        && FrameNumber == 0
+        && DispatchFrame == 0
+        && !IsDispatching
+        && DispatchEpoch is null
+        && !Paused
+        && !StepRequested
+        && !SuppressFrameAdvanced
+        && !HasRecorder;
 }

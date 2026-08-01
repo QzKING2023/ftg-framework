@@ -18,8 +18,10 @@ namespace FTG_Framework.Tests.Replay.Spike;
 // event-driven module with easily measurable state (HitCount, CurrentMoveId).
 // ============================================================================
 
+[Collection(EventBusTestCollection.Name)]
 public class ReferenceReplayTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -30,7 +32,7 @@ public class ReferenceReplayTests : IDisposable
 
     public void Dispose()
     {
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     /// <summary>

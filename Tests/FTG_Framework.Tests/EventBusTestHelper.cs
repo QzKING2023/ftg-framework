@@ -5,17 +5,16 @@ using FTG_Framework.Core;
 
 namespace FTG_Framework.Tests;
 
-// EventBus.Instance is process-global and not thread-safe (see xunit.runner.json).
-// Every scenario must drain stale events before subscribing and flush+unsubscribe
-// afterwards, or events leak across tests. Use these helpers instead of
-// re-implementing the pattern per test class.
+// EventBus.Instance is process-global and serialized by EventBusTestCollection.
+// EventBusTestScope owns baseline/reset responsibility; these helpers only capture
+// typed events and process the frame requested by the scenario.
 public static class EventBusTestHelper
 {
     public static void Drain() => EventBus.Instance.ProcessFrame();
 
     public static List<T> Collect<T>(Action scenario)
     {
-        Drain();
+        Drain(); // Establish the capture boundary; EventBusTestScope owns test isolation.
         var events = new List<T>();
         void Handler(T e) => events.Add(e);
         EventBus.Instance.Subscribe<T>(Handler);
@@ -33,7 +32,7 @@ public static class EventBusTestHelper
 
     public static (List<T1> first, List<T2> second) Collect<T1, T2>(Action scenario)
     {
-        Drain();
+        Drain(); // Establish the capture boundary; EventBusTestScope owns test isolation.
         var first = new List<T1>();
         var second = new List<T2>();
         void OnFirst(T1 e) => first.Add(e);
@@ -55,7 +54,7 @@ public static class EventBusTestHelper
 
     public static (List<T1> first, List<T2> second, List<T3> third) Collect<T1, T2, T3>(Action scenario)
     {
-        Drain();
+        Drain(); // Establish the capture boundary; EventBusTestScope owns test isolation.
         var first = new List<T1>();
         var second = new List<T2>();
         var third = new List<T3>();

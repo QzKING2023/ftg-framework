@@ -13,10 +13,14 @@ using StateMachineImpl = FTG_Framework.Engine.StateMachine.StateMachine;
 
 namespace FTG_Framework.Tests.Engine.FrameData;
 
+[Collection(EventBusTestCollection.Name)]
 public class FrameDataStateLifecycleTests : IDisposable
 {
-    public FrameDataStateLifecycleTests() => EventBusTestHelper.Drain();
-    public void Dispose() => EventBusTestHelper.Drain();
+    private readonly EventBusTestScope _eventBusScope = new();
+    public void Dispose()
+    {
+        _eventBusScope.Dispose();
+    }
 
     [Fact]
     public void NaturalCompletion_CascadesToAuthoritativeDisplayedAndComboIdle()

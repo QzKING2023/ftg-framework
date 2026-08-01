@@ -1,0 +1,11 @@
+captured_utc=2026-08-01T05:39:34.5648215Z
+repository_commit=e139032416e1ef674702fc3ccf00bae630f765af
+worktree_state=dirty (50 porcelain entries before evidence refresh)
+os=Microsoft Windows NT 10.0.26200.0
+platform=Microsoft Windows 10.0.26200 
+dotnet_sdk=10.0.201
+xunit=2.9.3
+vstest_adapter=3.0.1
+stress_processes=20
+stress_seeds=2202,2203,2204,2205,2206
+outer_timeout_seconds=90

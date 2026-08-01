@@ -9,16 +9,17 @@ using Xunit;
 
 namespace FTG_Framework.Tests;
 
+[Collection(EventBusTestCollection.Name)]
 public class ComboExecutorCancelTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Subscribers | EventBusResidualState.Queues);
     public ComboExecutorCancelTests()
     {
-        EventBusTestHelper.Drain();
     }
 
     public void Dispose()
     {
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     private static MoveDefinition MakeMove(string moveId, string[] categories, bool chainRepeatable = false) => new()

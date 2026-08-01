@@ -8,10 +8,14 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Replay;
 
+[Collection(EventBusTestCollection.Name)]
 public sealed class KnockbackReplayTests : IDisposable
 {
-    public KnockbackReplayTests() => EventBusTestHelper.Drain();
-    public void Dispose() => EventBusTestHelper.Drain();
+    private readonly EventBusTestScope _eventBusScope = new();
+    public void Dispose()
+    {
+        _eventBusScope.Dispose();
+    }
 
     [Fact]
     public void Event_RoundTripsAllAuthoritativeTrajectoryFields()

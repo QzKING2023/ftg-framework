@@ -9,8 +9,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests;
 
+[Collection(EventBusTestCollection.Name)]
 public class FrameDataEngineTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Queues);
     private static MoveDefinition MakeMove(
         string moveId, int startup, int active, int recovery,
         int hitAdvantage = 0, int blockAdvantage = 0, int damage = 0) => new()
@@ -40,7 +42,7 @@ public class FrameDataEngineTests : IDisposable
 
     public void Dispose()
     {
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     // --- Phase transitions (AC 1) ---

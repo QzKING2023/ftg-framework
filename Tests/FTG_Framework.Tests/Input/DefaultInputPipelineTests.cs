@@ -6,8 +6,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Input;
 
+[Collection(EventBusTestCollection.Name)]
 public class DefaultInputPipelineTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Queues);
     private readonly InputHistory _history = new(60);
     private readonly InputLeniencyMatcher _matcher;
     private readonly InputBuffer _buffer;
@@ -25,7 +27,7 @@ public class DefaultInputPipelineTests : IDisposable
     public void Dispose()
     {
         _history.Shutdown();
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     [Theory]

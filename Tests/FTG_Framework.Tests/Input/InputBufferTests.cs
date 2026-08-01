@@ -7,11 +7,13 @@ using Xunit;
 
 namespace FTG_Framework.Tests;
 
+[Collection(EventBusTestCollection.Name)]
 public class InputBufferTests : System.IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new();
     public void Dispose()
     {
-        EventBus.Instance.ProcessFrame();
+        _eventBusScope.Dispose();
     }
 
     [Fact]

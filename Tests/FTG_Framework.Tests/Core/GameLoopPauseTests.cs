@@ -5,13 +5,13 @@ using Xunit;
 
 namespace FTG_Framework.Tests;
 
+[Collection(EventBusTestCollection.Name)]
 public class GameLoopPauseTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Flags);
     public void Dispose()
     {
-        EventBus.Instance.Paused = false;
-        EventBus.Instance.StepRequested = false;
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     [Fact]
@@ -41,13 +41,13 @@ public class GameLoopPauseTests : IDisposable
     }
 }
 
+[Collection(EventBusTestCollection.Name)]
 public class EventBusPauseTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Flags);
     public void Dispose()
     {
-        EventBus.Instance.Paused = false;
-        EventBus.Instance.StepRequested = false;
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     [Fact]

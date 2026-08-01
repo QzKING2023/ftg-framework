@@ -8,16 +8,17 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Engine.Combo;
 
+[Collection(EventBusTestCollection.Name)]
 public class ComboStateTrackerTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Queues);
     public ComboStateTrackerTests()
     {
-        EventBusTestHelper.Drain();
     }
 
     public void Dispose()
     {
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     private static (StubDataStore store, ComboStateTracker tracker, Action dispose) CreateTracker()

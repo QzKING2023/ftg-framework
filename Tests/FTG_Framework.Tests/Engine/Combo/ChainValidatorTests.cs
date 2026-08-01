@@ -8,16 +8,13 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Engine.Combo;
 
+[Collection(EventBusTestCollection.Name)]
 public class ChainValidatorTests : IDisposable
 {
-    public ChainValidatorTests()
-    {
-        EventBusTestHelper.Drain();
-    }
-
+    private readonly EventBusTestScope _eventBusScope = new();
     public void Dispose()
     {
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     private static MoveDefinition MakeMove(string moveId, bool chainRepeatable = false) => new()

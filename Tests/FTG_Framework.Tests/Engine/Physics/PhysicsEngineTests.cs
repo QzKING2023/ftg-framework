@@ -10,11 +10,14 @@ using Xunit;
 
 namespace FTG_Framework.Tests;
 
+[Collection(EventBusTestCollection.Name)]
 public sealed class PhysicsEngineTests : IDisposable
 {
-    public PhysicsEngineTests() => EventBusTestHelper.Drain();
-
-    public void Dispose() => EventBusTestHelper.Drain();
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Queues);
+    public void Dispose()
+    {
+        _eventBusScope.Dispose();
+    }
 
     [Fact]
     public void Update_ActiveOverlap_PublishesSameContactFrameAndStoresSnapshot()

@@ -7,8 +7,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests.UI.Training.ViewModels;
 
+[Collection(EventBusTestCollection.Name)]
 public class PlaybackControlsViewModelTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Flags);
     public PlaybackControlsViewModelTests()
     {
         EventBusTestHelper.Drain();
@@ -16,9 +18,7 @@ public class PlaybackControlsViewModelTests : IDisposable
 
     public void Dispose()
     {
-        EventBus.Instance.Paused = false;
-        EventBus.Instance.StepRequested = false;
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     [Fact]

@@ -8,11 +8,13 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Replay;
 
+[Collection(EventBusTestCollection.Name)]
 public class ReplayPlayerTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new();
     public void Dispose()
     {
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     private static ReplayFile CreateTestFile(List<ReplayEntry> entries, int frameCount)

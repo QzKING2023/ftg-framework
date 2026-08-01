@@ -6,8 +6,10 @@ using Xunit;
 
 namespace FTG_Framework.Tests.Core;
 
+[Collection(EventBusTestCollection.Name)]
 public sealed class EventBusEpochTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Recorder);
     private sealed class RecordingSpy : IReplayRecorder
     {
         internal readonly List<object> Events = new();
@@ -18,20 +20,16 @@ public sealed class EventBusEpochTests : IDisposable
         public bool IsRecording { get; set; } = true;
     }
     private readonly EventBus _bus = EventBus.Instance;
+    private readonly ulong _initialEpoch;
 
     public EventBusEpochTests()
     {
-        EventBusTestHelper.Drain();
-        _bus.Recorder = null;
-        _bus.SetLifecycleEpochForTesting(1);
+        _initialEpoch = _bus.LifecycleEpoch;
     }
 
     public void Dispose()
     {
-        _bus.Recorder = null;
-        _bus.RewindFrameCounter(_bus.CurrentFrame);
-        _bus.SetLifecycleEpochForTesting(1);
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     [Fact]
@@ -44,8 +42,8 @@ public sealed class EventBusEpochTests : IDisposable
         {
             _bus.PublishImmediate(new MatchInitializedEvent("p1", "p2"));
 
-            Assert.Equal(2UL, observed);
-            Assert.Equal(2UL, _bus.LifecycleEpoch);
+            Assert.Equal(_initialEpoch + 1, observed);
+            Assert.Equal(_initialEpoch + 1, _bus.LifecycleEpoch);
             Assert.Throws<InvalidOperationException>(() => _ = _bus.DispatchEpoch);
         }
         finally { _bus.Unsubscribe(handler); }
@@ -88,8 +86,8 @@ public sealed class EventBusEpochTests : IDisposable
             Assert.Equal(0UL, publishedEpoch);
             _bus.ProcessFrame();
 
-            Assert.Equal(2UL, lifecycleEpoch);
-            Assert.Equal(2UL, publishedEpoch);
+            Assert.Equal(_initialEpoch + 1, lifecycleEpoch);
+            Assert.Equal(_initialEpoch + 1, publishedEpoch);
         }
         finally
         {
@@ -128,7 +126,7 @@ public sealed class EventBusEpochTests : IDisposable
         {
             _bus.PublishImmediate(new MatchInitializedEvent("p1", "p2"));
             Assert.Equal(0, staleSubscriberCalls);
-            Assert.Equal(3UL, _bus.LifecycleEpoch);
+            Assert.Equal(_initialEpoch + 2, _bus.LifecycleEpoch);
         }
         finally
         {

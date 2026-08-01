@@ -1,0 +1,6 @@
+command=rg -n "Thread\.Sleep|Task\.Delay|\.Wait\(|WaitOne|SpinWait" Tests/FTG_Framework.Tests/Core/FileWatcherTests.cs Tests/FTG_Framework.Tests/Core/FileWatcherObservation.cs
+scope=FileWatcherTests.cs; FileWatcherObservation.cs
+exemption=FileWatcherObservation.DeadlineBackoffAsync Task.Delay is the single deadline-bound backoff primitive
+matches:
+Tests/FTG_Framework.Tests/Core/FileWatcherObservation.cs:90:        return delay > TimeSpan.Zero ? Task.Delay(delay) : Task.CompletedTask;
+exit_code=0 (only named exemption matched)

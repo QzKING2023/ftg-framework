@@ -10,16 +10,17 @@ using Xunit;
 
 namespace FTG_Framework.Tests;
 
+[Collection(EventBusTestCollection.Name)]
 public class CancelWindowConsumptionIntegrationTests : IDisposable
 {
+    private readonly EventBusTestScope _eventBusScope = new(EventBusResidualState.Subscribers | EventBusResidualState.Queues);
     public CancelWindowConsumptionIntegrationTests()
     {
-        EventBusTestHelper.Drain();
     }
 
     public void Dispose()
     {
-        EventBusTestHelper.Drain();
+        _eventBusScope.Dispose();
     }
 
     private static MoveDefinition MakeMove(string moveId, int startup = 5, int active = 3, int recovery = 7,

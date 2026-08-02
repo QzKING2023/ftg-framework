@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -10,9 +11,11 @@ namespace FTG_Framework.Data;
 internal enum MovePersistenceFaultPoint
 {
     AfterSerialize,
+    BeforeInitialIdentityRead,
     BeforeStageFlush,
     AfterStage,
     AfterStagedValidation,
+    BeforeCoordinatedCommit,
     BeforeContainmentRecheck,
     BeforeReplace,
     DuringErrorCleanup,
@@ -34,16 +37,21 @@ internal sealed class MoveDatasetPersistence
     private readonly DataStore _store;
     private readonly Action<MovePersistenceFaultPoint>? _fault;
     private readonly Action<string>? _diagnostic;
+    private readonly Func<string, bool> _isReparsePoint;
     private readonly Dictionary<string, string> _destinationIdentities = new(PathComparer);
     private readonly object _destinationIdentitySync = new();
+    private static readonly ConcurrentDictionary<string, object> DestinationCommitLocks =
+        new(PathComparer);
 
     internal MoveDatasetPersistence(
         string root, DataStore store,
         Action<MovePersistenceFaultPoint>? fault = null,
-        Action<string>? diagnostic = null)
+        Action<string>? diagnostic = null,
+        Func<string, bool>? isReparsePoint = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         _root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        _isReparsePoint = isReparsePoint ?? IsReparsePoint;
         if (!Directory.Exists(_root))
             throw new DirectoryNotFoundException($"[Data] Move-data root does not exist: {_root}");
         RejectReparsePoints(_root, _root);
@@ -55,8 +63,7 @@ internal sealed class MoveDatasetPersistence
     internal MoveDatasetDocument Load(string documentIdentifier)
     {
         string path = Resolve(documentIdentifier);
-        RejectReparsePoints(_root, path);
-        byte[] bytes = File.ReadAllBytes(path);
+        byte[] bytes = ReadConfinedBytes(path);
         return MoveDatasetCodec.Parse(System.Text.Encoding.UTF8.GetString(bytes));
     }
 
@@ -81,8 +88,17 @@ internal sealed class MoveDatasetPersistence
             return new MoveSaveResult(MoveSaveStatus.ValidationFailed, candidate.SourceIdentity, Errors: missingProfiles);
         }
 
-        byte[] currentBytes = File.ReadAllBytes(destination);
-        var currentIdentity = MoveContentIdentity.FromBytes(currentBytes);
+        MoveContentIdentity currentIdentity;
+        try
+        {
+            _fault?.Invoke(MovePersistenceFaultPoint.BeforeInitialIdentityRead);
+            currentIdentity = ReadConfinedIdentity(destination);
+        }
+        catch (Exception ex)
+        {
+            return new MoveSaveResult(MoveSaveStatus.Failed, candidate.SourceIdentity,
+                Diagnostic: $"[Data] Destination identity read failed: {ex.Message}");
+        }
         if (currentIdentity != candidate.SourceIdentity)
             return new MoveSaveResult(MoveSaveStatus.Conflict, candidate.SourceIdentity, currentIdentity);
         if (cancellationToken.IsCancellationRequested)
@@ -114,27 +130,47 @@ internal sealed class MoveDatasetPersistence
             staged = PhysicsDataPersistence.StageSameDirectory(destination, bytes,
                 () => _fault?.Invoke(MovePersistenceFaultPoint.BeforeStageFlush));
             _fault?.Invoke(MovePersistenceFaultPoint.AfterStage);
-            var stagedDocument = MoveDatasetCodec.Parse(System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(staged)));
+            byte[] stagedBytes = ReadConfinedBytes(staged);
+            EnsureExpectedStagedBytes(bytes, stagedBytes);
+            var stagedDocument = MoveDatasetCodec.Parse(System.Text.Encoding.UTF8.GetString(stagedBytes));
             _fault?.Invoke(MovePersistenceFaultPoint.AfterStagedValidation);
             ulong expectedDatasetVersion = _store.MoveDatasetVersion;
+            _fault?.Invoke(MovePersistenceFaultPoint.BeforeCoordinatedCommit);
             bool won = _store.TryCommitMoveDataset(stagedDocument.Moves.ToArray(), expectedDatasetVersion, () =>
             {
                 if (cancellationToken.IsCancellationRequested)
                     return false;
-                _fault?.Invoke(MovePersistenceFaultPoint.BeforeContainmentRecheck);
-                RejectReparsePoints(_root, destination);
-                var accessIdentity = MoveContentIdentity.FromBytes(File.ReadAllBytes(destination));
-                if (accessIdentity != candidate.SourceIdentity)
-                    return false;
-                _fault?.Invoke(MovePersistenceFaultPoint.BeforeReplace);
-                PhysicsDataPersistence.ReplaceStaged(staged, destination);
-                committed = true;
-                return true;
+                lock (DestinationCommitLocks.GetOrAdd(destination, static _ => new object()))
+                {
+                    _fault?.Invoke(MovePersistenceFaultPoint.BeforeContainmentRecheck);
+                    var accessIdentity = ReadConfinedIdentity(destination);
+                    if (accessIdentity != candidate.SourceIdentity)
+                        return false;
+                    _fault?.Invoke(MovePersistenceFaultPoint.BeforeReplace);
+
+                    // No injectable/user code may run after these final boundary checks.
+                    byte[] finalStagedBytes = ReadConfinedBytes(staged);
+                    EnsureExpectedStagedBytes(bytes, finalStagedBytes);
+                    var finalDestinationIdentity = ReadConfinedIdentity(destination);
+                    if (finalDestinationIdentity != candidate.SourceIdentity)
+                        return false;
+                    PhysicsDataPersistence.ReplaceStaged(staged, destination);
+                    committed = true;
+                    return true;
+                }
             });
             if (!won)
             {
-                currentIdentity = MoveContentIdentity.FromBytes(File.ReadAllBytes(destination));
-                return new MoveSaveResult(MoveSaveStatus.Conflict, candidate.SourceIdentity, currentIdentity);
+                try
+                {
+                    currentIdentity = ReadConfinedIdentity(destination);
+                    return new MoveSaveResult(MoveSaveStatus.Conflict, candidate.SourceIdentity, currentIdentity);
+                }
+                catch (Exception ex)
+                {
+                    return new MoveSaveResult(MoveSaveStatus.Failed, candidate.SourceIdentity,
+                        Diagnostic: $"[Data] Conflict identity read failed: {ex.Message}");
+                }
             }
         }
         catch (Exception ex)
@@ -193,8 +229,8 @@ internal sealed class MoveDatasetPersistence
     private string Resolve(string identifier)
     {
         if (string.IsNullOrWhiteSpace(identifier) || Path.IsPathRooted(identifier) ||
-            identifier.Contains('/') || identifier.Contains('\\') || identifier is "." or ".." ||
-            identifier.Contains("..", StringComparison.Ordinal))
+            identifier.Any(static character =>
+                !(char.IsAsciiLetterOrDigit(character) || character is '_' or '-')))
             throw new ArgumentException("[Data] Document identifier must be a non-empty path-free ordinal identifier.", nameof(identifier));
         string path = Path.GetFullPath(Path.Combine(_root, identifier + ".json"));
         string prefix = _root + Path.DirectorySeparatorChar;
@@ -212,19 +248,41 @@ internal sealed class MoveDatasetPersistence
         return path;
     }
 
-    private static void RejectReparsePoints(string root, string destination)
+    private void RejectReparsePoints(string root, string destination)
     {
         string? current = File.Exists(destination) ? destination : Path.GetDirectoryName(destination);
         while (current is not null && current.Length >= root.Length)
         {
             if (File.Exists(current) || Directory.Exists(current))
             {
-                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                if (_isReparsePoint(current))
                     throw new IOException($"[Data] Reparse points are not allowed in the move-data path: {current}");
             }
             if (string.Equals(current, root, PathComparison)) break;
             current = Path.GetDirectoryName(current);
         }
+    }
+
+    private static bool IsReparsePoint(string path) =>
+        (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+
+    private MoveContentIdentity ReadConfinedIdentity(string destination)
+    {
+        return MoveContentIdentity.FromBytes(ReadConfinedBytes(destination));
+    }
+
+    private byte[] ReadConfinedBytes(string path)
+    {
+        RejectReparsePoints(_root, path);
+        byte[] bytes = File.ReadAllBytes(path);
+        RejectReparsePoints(_root, path);
+        return bytes;
+    }
+
+    private static void EnsureExpectedStagedBytes(byte[] expected, byte[] actual)
+    {
+        if (!expected.AsSpan().SequenceEqual(actual))
+            throw new IOException("[Data] Staged move dataset changed after validation.");
     }
 
     private static StringComparison PathComparison => OperatingSystem.IsWindows()

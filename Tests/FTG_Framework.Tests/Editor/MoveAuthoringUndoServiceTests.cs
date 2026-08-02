@@ -88,6 +88,32 @@ public sealed class MoveAuthoringUndoServiceTests : IDisposable
     }
 
     [Fact]
+    public void Undo_WhenFileChangedAfterSave_ReportsConflictWithoutOverwritingExternalBytes()
+    {
+        string path = Path.Combine(_root, "moves.json");
+        File.WriteAllText(path, Json, new UTF8Encoding(false));
+        var store = new DataStore(MoveDataLoader.LoadFromJson(Json), knockbackProfiles: new[]
+        {
+            new KnockbackProfile { ProfileId = "light", Horizontal = 1, Vertical = 1, Gravity = 1, Friction = 1 }
+        });
+        var persistence = new MoveDatasetPersistence(_root, store);
+        var desired = MoveAuthoringCandidate.FromDocument(persistence.Load("moves"))
+            .EditMove("5A", move => move with { Damage = 11 });
+        var context = new UndoContext();
+        var service = new MoveAuthoringUndoService(context, persistence, "moves");
+        service.SaveUndoable(desired);
+        byte[] external = new UTF8Encoding(false).GetBytes(
+            Json.Replace("\"damage\":10", "\"damage\":12", StringComparison.Ordinal));
+        File.WriteAllBytes(path, external);
+
+        context.Undo();
+
+        Assert.Equal(MoveSaveStatus.Conflict, service.LastResult!.Status);
+        Assert.Equal(external, File.ReadAllBytes(path));
+        Assert.Equal(11, store.GetMove("5A")!.Damage);
+    }
+
+    [Fact]
     public void SaveUndoable_WhenEditorDefersDoCallback_CompletesCurrentSaveBeforeReturning()
     {
         File.WriteAllText(Path.Combine(_root, "moves.json"), Json, new UTF8Encoding(false));

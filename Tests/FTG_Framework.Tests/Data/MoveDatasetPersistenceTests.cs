@@ -17,10 +17,19 @@ public sealed class MoveDatasetPersistenceTests : IDisposable
 
     [Theory]
     [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(".")]
+    [InlineData("..")]
     [InlineData("../outside")]
+    [InlineData("name..alias")]
+    [InlineData("name.alias")]
+    [InlineData("name:stream")]
+    [InlineData("bad*name")]
+    [InlineData("bad?name")]
     [InlineData("folder/file")]
     [InlineData("folder\\file")]
     [InlineData("C:\\outside")]
+    [InlineData("\\\\server\\share")]
     public void Resolve_InvalidDocumentIdentifier_RejectsBeforeAccess(string identifier)
     {
         var service = new MoveDatasetPersistence(_root, CreateStore());
@@ -109,9 +118,11 @@ public sealed class MoveDatasetPersistenceTests : IDisposable
 
     [Theory]
     [InlineData((int)MovePersistenceFaultPoint.AfterSerialize)]
+    [InlineData((int)MovePersistenceFaultPoint.BeforeInitialIdentityRead)]
     [InlineData((int)MovePersistenceFaultPoint.BeforeStageFlush)]
     [InlineData((int)MovePersistenceFaultPoint.AfterStage)]
     [InlineData((int)MovePersistenceFaultPoint.AfterStagedValidation)]
+    [InlineData((int)MovePersistenceFaultPoint.BeforeCoordinatedCommit)]
     [InlineData((int)MovePersistenceFaultPoint.BeforeContainmentRecheck)]
     [InlineData((int)MovePersistenceFaultPoint.BeforeReplace)]
     public void Save_EveryPreCommitFault_PreservesBytesAndDataset(int faultPointValue)
@@ -130,7 +141,9 @@ public sealed class MoveDatasetPersistenceTests : IDisposable
 
         Assert.Equal(MoveSaveStatus.Failed, result.Status);
         Assert.Equal(Encoding.UTF8.GetBytes(Original), File.ReadAllBytes(path));
+        Assert.Single(MoveDataLoader.LoadFromJson(File.ReadAllText(path)));
         Assert.Equal(10, store.GetMove("5A")!.Damage);
+        Assert.Equal(0UL, store.MoveDatasetVersion);
         Assert.Empty(Directory.GetFiles(_root, "*.tmp"));
     }
 
@@ -156,36 +169,191 @@ public sealed class MoveDatasetPersistenceTests : IDisposable
     }
 
     [Fact]
-    public void Save_DestinationBecomesSymlinkBeforeReplacement_RejectsWithoutTouchingTarget()
+    public void Save_DestinationBecomesReparsePointBeforeReplacement_RejectsWithoutMutation()
     {
-        if (!OperatingSystem.IsWindows()) return;
         string path = WriteDocument("moves", Original);
-        string outside = Path.Combine(Path.GetTempPath(), $"ftg-outside-{Guid.NewGuid():N}.json");
-        File.WriteAllText(outside, Original.Replace("\"damage\":10", "\"damage\":99"), new UTF8Encoding(false));
-        byte[] outsideBytes = File.ReadAllBytes(outside);
-        try
+        bool destinationIsReparsePoint = false;
+        var store = CreateStore();
+        var service = new MoveDatasetPersistence(_root, store, point =>
         {
-            var store = CreateStore();
-            var service = new MoveDatasetPersistence(_root, store, point =>
+            if (point == MovePersistenceFaultPoint.BeforeContainmentRecheck)
+                destinationIsReparsePoint = true;
+        }, isReparsePoint: candidatePath =>
+        {
+            if (destinationIsReparsePoint && string.Equals(candidatePath, path, StringComparison.Ordinal))
+                return true;
+            return (File.GetAttributes(candidatePath) & FileAttributes.ReparsePoint) != 0;
+        });
+        var candidate = MoveAuthoringCandidate.FromDocument(service.Load("moves"))
+            .EditMove("5A", move => move with { Damage = 11 });
+
+        MoveSaveResult result = service.Save("moves", candidate);
+
+        Assert.Equal(MoveSaveStatus.Failed, result.Status);
+        Assert.Equal(Encoding.UTF8.GetBytes(Original), File.ReadAllBytes(path));
+        Assert.Equal(10, store.GetMove("5A")!.Damage);
+    }
+
+    [Fact]
+    public void Save_StagingFileBecomesReparsePointBeforeValidation_RejectsBeforeRead()
+    {
+        string path = WriteDocument("moves", Original);
+        string? stagedBoundary = null;
+        var store = CreateStore();
+        var service = new MoveDatasetPersistence(_root, store, point =>
+        {
+            if (point == MovePersistenceFaultPoint.AfterStage)
+                stagedBoundary = Assert.Single(Directory.GetFiles(_root, "*.tmp"));
+        }, isReparsePoint: candidatePath =>
+        {
+            if (stagedBoundary is not null && string.Equals(candidatePath, stagedBoundary, StringComparison.Ordinal))
+                return true;
+            return (File.GetAttributes(candidatePath) & FileAttributes.ReparsePoint) != 0;
+        });
+        var candidate = MoveAuthoringCandidate.FromDocument(service.Load("moves"))
+            .EditMove("5A", move => move with { Damage = 11 });
+
+        MoveSaveResult result = service.Save("moves", candidate);
+
+        Assert.Equal(MoveSaveStatus.Failed, result.Status);
+        Assert.Contains("reparse", result.Diagnostic!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(Encoding.UTF8.GetBytes(Original), File.ReadAllBytes(path));
+        Assert.Equal(10, store.GetMove("5A")!.Damage);
+        Assert.Equal(0UL, store.MoveDatasetVersion);
+    }
+
+    [Fact]
+    public void Save_DestinationBecomesReparsePointBeforeInitialIdentityRead_RejectsBeforeRead()
+    {
+        string path = WriteDocument("moves", Original);
+        bool destinationIsReparsePoint = false;
+        var store = CreateStore();
+        var service = new MoveDatasetPersistence(_root, store, point =>
+        {
+            if (point == MovePersistenceFaultPoint.BeforeInitialIdentityRead)
+                destinationIsReparsePoint = true;
+        }, isReparsePoint: candidatePath =>
+        {
+            if (destinationIsReparsePoint && string.Equals(candidatePath, path, StringComparison.Ordinal))
+                return true;
+            return (File.GetAttributes(candidatePath) & FileAttributes.ReparsePoint) != 0;
+        });
+        var candidate = MoveAuthoringCandidate.FromDocument(MoveDatasetCodec.Parse(Original))
+            .EditMove("5A", move => move with { Damage = 11 });
+
+        MoveSaveResult result = service.Save("moves", candidate);
+
+        Assert.Equal(MoveSaveStatus.Failed, result.Status);
+        Assert.Null(result.CurrentIdentity);
+        Assert.Equal(Encoding.UTF8.GetBytes(Original), File.ReadAllBytes(path));
+        Assert.Equal(10, store.GetMove("5A")!.Damage);
+        Assert.Equal(0UL, store.MoveDatasetVersion);
+    }
+
+    [Fact]
+    public void Save_CoordinationLossAndDestinationReparseSwap_RejectsBeforeRead()
+    {
+        string path = WriteDocument("moves", Original);
+        bool destinationIsReparsePoint = false;
+        var store = CreateStore();
+        var service = new MoveDatasetPersistence(_root, store, point =>
+        {
+            if (point == MovePersistenceFaultPoint.BeforeCoordinatedCommit)
             {
-                if (point != MovePersistenceFaultPoint.BeforeContainmentRecheck) return;
-                File.Delete(path);
-                File.CreateSymbolicLink(path, outside);
-            });
-            var candidate = MoveAuthoringCandidate.FromDocument(service.Load("moves"))
-                .EditMove("5A", move => move with { Damage = 11 });
-
-            var result = service.Save("moves", candidate);
-
-            Assert.Equal(MoveSaveStatus.Failed, result.Status);
-            Assert.Equal(outsideBytes, File.ReadAllBytes(outside));
-            Assert.Equal(10, store.GetMove("5A")!.Damage);
-        }
-        finally
+                Assert.True(store.TryCommitMoveDataset(
+                    store.GetAllMoves().ToArray(), store.MoveDatasetVersion, () => true));
+                destinationIsReparsePoint = true;
+            }
+        }, isReparsePoint: candidatePath =>
         {
-            if (File.Exists(path)) File.Delete(path);
-            File.Delete(outside);
-        }
+            if (destinationIsReparsePoint && string.Equals(candidatePath, path, StringComparison.Ordinal))
+                return true;
+            return (File.GetAttributes(candidatePath) & FileAttributes.ReparsePoint) != 0;
+        });
+        var candidate = MoveAuthoringCandidate.FromDocument(service.Load("moves"))
+            .EditMove("5A", move => move with { Damage = 11 });
+
+        MoveSaveResult result = service.Save("moves", candidate);
+
+        Assert.Equal(MoveSaveStatus.Failed, result.Status);
+        Assert.Equal(Encoding.UTF8.GetBytes(Original), File.ReadAllBytes(path));
+        Assert.Equal(10, store.GetMove("5A")!.Damage);
+        Assert.Equal(1UL, store.MoveDatasetVersion);
+    }
+
+    [Fact]
+    public void Save_DestinationChangesAtFinalReplaceBoundary_ReturnsConflictWithoutOverwrite()
+    {
+        string path = WriteDocument("moves", Original);
+        byte[] external = new UTF8Encoding(false).GetBytes(
+            Original.Replace("\"damage\":10", "\"damage\":99", StringComparison.Ordinal));
+        var store = CreateStore();
+        var service = new MoveDatasetPersistence(_root, store, point =>
+        {
+            if (point == MovePersistenceFaultPoint.BeforeReplace)
+                File.WriteAllBytes(path, external);
+        });
+        var candidate = MoveAuthoringCandidate.FromDocument(service.Load("moves"))
+            .EditMove("5A", move => move with { Damage = 11 });
+
+        MoveSaveResult result = service.Save("moves", candidate);
+
+        Assert.Equal(MoveSaveStatus.Conflict, result.Status);
+        Assert.Equal(external, File.ReadAllBytes(path));
+        Assert.Equal(10, store.GetMove("5A")!.Damage);
+        Assert.Equal(0UL, store.MoveDatasetVersion);
+    }
+
+    [Fact]
+    public void Save_StagedBytesChangeAtFinalReplaceBoundary_FailsWithoutDivergingStoreAndFile()
+    {
+        string path = WriteDocument("moves", Original);
+        var store = CreateStore();
+        var service = new MoveDatasetPersistence(_root, store, point =>
+        {
+            if (point != MovePersistenceFaultPoint.BeforeReplace) return;
+            string staged = Assert.Single(Directory.GetFiles(_root, "*.tmp"));
+            File.WriteAllText(staged,
+                Original.Replace("\"damage\":10", "\"damage\":99", StringComparison.Ordinal),
+                new UTF8Encoding(false));
+        });
+        var candidate = MoveAuthoringCandidate.FromDocument(service.Load("moves"))
+            .EditMove("5A", move => move with { Damage = 11 });
+
+        MoveSaveResult result = service.Save("moves", candidate);
+
+        Assert.Equal(MoveSaveStatus.Failed, result.Status);
+        Assert.Contains("changed after validation", result.Diagnostic!, StringComparison.Ordinal);
+        Assert.Equal(Encoding.UTF8.GetBytes(Original), File.ReadAllBytes(path));
+        Assert.Equal(10, store.GetMove("5A")!.Damage);
+        Assert.Equal(0UL, store.MoveDatasetVersion);
+    }
+
+    [Fact]
+    public void Save_ConfiguredRootBecomesReparsePointBeforeCommit_RejectsWithoutMutation()
+    {
+        string path = WriteDocument("moves", Original);
+        bool rootIsReparsePoint = false;
+        var store = CreateStore();
+        var service = new MoveDatasetPersistence(_root, store, point =>
+        {
+            if (point == MovePersistenceFaultPoint.BeforeContainmentRecheck)
+                rootIsReparsePoint = true;
+        }, isReparsePoint: candidatePath =>
+        {
+            if (rootIsReparsePoint && string.Equals(candidatePath, _root, StringComparison.Ordinal))
+                return true;
+            return (File.GetAttributes(candidatePath) & FileAttributes.ReparsePoint) != 0;
+        });
+        var candidate = MoveAuthoringCandidate.FromDocument(service.Load("moves"))
+            .EditMove("5A", move => move with { Damage = 11 });
+
+        MoveSaveResult result = service.Save("moves", candidate);
+
+        Assert.Equal(MoveSaveStatus.Failed, result.Status);
+        Assert.Equal(Encoding.UTF8.GetBytes(Original), File.ReadAllBytes(path));
+        Assert.Equal(10, store.GetMove("5A")!.Damage);
+        Assert.Equal(0UL, store.MoveDatasetVersion);
     }
 
     [Fact]
@@ -217,7 +385,11 @@ public sealed class MoveDatasetPersistenceTests : IDisposable
 
         Assert.Equal(MoveSaveStatus.Succeeded, result.Status);
         Assert.Equal(11, store.GetMove("5A")!.Damage);
-        Assert.Equal(11, Assert.Single(MoveDataLoader.LoadFromJson(File.ReadAllText(Path.Combine(_root, "moves.json")))).Damage);
+        Assert.Equal(1UL, store.MoveDatasetVersion);
+        byte[] committedBytes = File.ReadAllBytes(Path.Combine(_root, "moves.json"));
+        Assert.False(committedBytes.AsSpan().StartsWith(Encoding.UTF8.GetPreamble()));
+        Assert.Equal(result.CurrentIdentity, MoveContentIdentity.FromBytes(committedBytes));
+        Assert.Equal(11, Assert.Single(MoveDataLoader.LoadFromJson(Encoding.UTF8.GetString(committedBytes))).Damage);
     }
 
     [Fact]

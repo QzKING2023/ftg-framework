@@ -14,6 +14,7 @@
     <Compile Remove="Tests\**" />
     <Compile Remove="Scaffold\**" />
     <Compile Remove="addons\**" />
+    <Compile Include="addons\ftg-framework\FTGEditorPluginEntry.cs" />
     <None Remove="Tests\**" />
   </ItemGroup>
 </Project>

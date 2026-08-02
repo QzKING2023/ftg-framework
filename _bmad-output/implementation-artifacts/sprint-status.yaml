@@ -1,5 +1,5 @@
 # generated: 2026-07-27
-# last_updated: 2026-08-01
+# last_updated: 2026-08-02
 # project: ftg-framework
 # project_key: NOKEY
 # tracking_system: file-system
@@ -43,7 +43,7 @@
 # V2 entries use v2- prefix to avoid key collision with V1 epics (V1 epics 1-3 are done).
 
 generated: 2026-07-27
-last_updated: 2026-08-01
+last_updated: 2026-08-02
 # Note: Story 3.0 (Replay Spike) is intentionally started before Epic 1 per Implementation Readiness Advisory #1.
 # The spike's go/no-go decision may affect event design across all epics.
 
@@ -235,8 +235,8 @@ development_status:
   v2-prep-2-4-epic-2-planning-and-evidence-review: done
 
   # Epic 2: Move Authoring & Training Suite (FR-23~27)
-  v2-epic-2: backlog
-  v2-2-1-editorplugin-move-authoring: backlog
+  v2-epic-2: in-progress
+  v2-2-1-editorplugin-move-authoring: done
   v2-2-1-a-load-edit-validation-conflicts: backlog
   v2-2-1-b-path-confined-atomic-persistence: backlog
   v2-2-1-c-godot-editor-flow: backlog

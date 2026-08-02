@@ -23,6 +23,8 @@ public sealed class EditorContextSpikeTests
 
         public event Action<IReadOnlyList<string>>? SelectionChanged;
 
+        public void Dispose() => SelectionChanged = null;
+
         public void SetSelectedPaths(params string[] paths)
         {
             _selectedPaths.Clear();
@@ -30,10 +32,10 @@ public sealed class EditorContextSpikeTests
             SelectionChanged?.Invoke(_selectedPaths);
         }
 
-        public void CreateUndoAction(string actionName, Action doAction, Action undoAction)
+        public void CreateUndoAction(string actionName, Action doAction, Action undoAction, bool executeDo = true)
         {
             _undoLog.Add($"do:{actionName}");
-            doAction();
+            if (executeDo) doAction();
             _undoLog.Add($"register-undo:{actionName}");
             // Production stores undo for later; stub records it was registered.
             // Callers can invoke the stored undo separately to verify correctness.

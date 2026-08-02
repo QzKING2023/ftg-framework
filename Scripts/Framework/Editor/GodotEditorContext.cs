@@ -5,64 +5,77 @@ using Godot;
 
 namespace FTG_Framework.Editor;
 
-/// <summary>
-/// Production adapter wrapping Godot EditorPlugin APIs.
-/// All Godot dependencies are confined to this class — the rest of the editor tooling
-/// logic works against <see cref="IEditorContext"/> and is pure-C# testable.
-///
-/// SPIKE NOTE (2026-07-29): The UndoRedo API signature in Godot 4.5.1 differs from
-/// earlier 4.x versions. The CreateUndoAction implementation requires in-editor
-/// verification of the exact EditorUndoRedoManager method signatures. The thin-adapter
-/// pattern is validated (see EditorContextSpikeTests) — the Godot type wiring is a
-/// mechanical step to be completed when the editor tooling is implemented in Epic 4.
-/// </summary>
-public sealed class GodotEditorContext : IEditorContext
+public sealed partial class GodotEditorContext : IEditorContext
 {
-    private readonly EditorInterface _editorInterface;
     private readonly EditorSelection _editorSelection;
+    private readonly EditorUndoRedoManager _undoRedo;
+    private readonly Action _selectionHandler;
+    private bool _disposed;
 
-    public bool IsEditorActive => true;
+    public bool IsEditorActive => !_disposed;
 
     public IReadOnlyList<string> SelectedNodePaths
     {
         get
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             var paths = new List<string>();
             foreach (var node in _editorSelection.GetSelectedNodes())
-            {
                 if (node is Node godotNode)
                     paths.Add(godotNode.GetPath().ToString());
-            }
             return paths;
         }
     }
 
     public event Action<IReadOnlyList<string>>? SelectionChanged;
 
-    public GodotEditorContext(EditorInterface editorInterface)
+    public GodotEditorContext(EditorInterface editorInterface, EditorUndoRedoManager undoRedo)
     {
-        _editorInterface = editorInterface;
+        ArgumentNullException.ThrowIfNull(editorInterface);
+        _undoRedo = undoRedo ?? throw new ArgumentNullException(nameof(undoRedo));
         _editorSelection = editorInterface.GetSelection();
-
-        _editorSelection.SelectionChanged += () =>
-        {
-            SelectionChanged?.Invoke(SelectedNodePaths);
-        };
+        _selectionHandler = OnSelectionChanged;
+        _editorSelection.SelectionChanged += _selectionHandler;
     }
 
-    // EditorUndoRedoManager API in Godot 4.5.1 requires in-editor verification.
-    // The IEditorContext abstraction isolates this dependency — all consuming code
-    // tests against the interface, not this implementation.
-    public void CreateUndoAction(string actionName, Action doAction, Action undoAction)
+    public void CreateUndoAction(string actionName, Action doAction, Action undoAction, bool executeDo = true)
     {
-        var undoRedo = _editorInterface.GetEditorUndoRedo();
-        if (undoRedo is null) return;
-
-        // Godot 4.5 EditorUndoRedoManager.CreateAction signature TBD in-editor.
-        undoRedo.CreateAction(actionName);
-        doAction();
-        // undoRedo.AddDoMethod(...) — exact params verified in Godot editor.
-        // undoRedo.AddUndoMethod(...) — exact params verified in Godot editor.
-        undoRedo.CommitAction();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentException.ThrowIfNullOrWhiteSpace(actionName);
+        ArgumentNullException.ThrowIfNull(doAction);
+        ArgumentNullException.ThrowIfNull(undoAction);
+        _undoRedo.CreateAction(actionName);
+        var undoRelay = new EditorUndoRelay(doAction, undoAction, () => !_disposed);
+        _undoRedo.AddDoMethod(undoRelay, EditorUndoRelay.MethodName.InvokeDo);
+        _undoRedo.AddUndoMethod(undoRelay, EditorUndoRelay.MethodName.InvokeUndo);
+        _undoRedo.CommitAction(executeDo);
     }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _editorSelection.SelectionChanged -= _selectionHandler;
+        SelectionChanged = null;
+    }
+
+    private void OnSelectionChanged()
+    {
+        if (!_disposed)
+            SelectionChanged?.Invoke(SelectedNodePaths);
+    }
+
+}
+
+internal sealed partial class EditorUndoRelay : RefCounted
+{
+    private readonly Action _do;
+    private readonly Action _undo;
+    private readonly Func<bool> _active;
+
+    internal EditorUndoRelay(Action doAction, Action undoAction, Func<bool> active) =>
+        (_do, _undo, _active) = (doAction, undoAction, active);
+
+    public void InvokeDo() { if (_active()) _do(); }
+    public void InvokeUndo() { if (_active()) _undo(); }
 }

@@ -13,7 +13,7 @@ public sealed class CollisionDataTests
     public void MoveLoader_ParsesPerFrameHitboxesAndHurtboxes()
     {
         const string json = """
-        {"moves":[{"move_id":"5A","startup":1,"active":1,"recovery":1,"damage":10,
+        {"schema_version":1,"moves":[{"move_id":"5A","startup":1,"active":1,"recovery":1,"hit_advantage":0,"block_advantage":0,"damage":10,"chain_repeatable":false,"knockback_profile_id":"light","cancel_windows":[],
         "collision_frames":[{"frame":2,
           "hitboxes":[{"box_id":"hit-1","x":10,"y":0,"width":20,"height":10}],
           "hurtboxes":[{"box_id":"body","x":0,"y":0,"width":16,"height":40}]}]}]}
@@ -28,10 +28,11 @@ public sealed class CollisionDataTests
     }
 
     [Fact]
-    public void MoveLoader_OmittedCollisionFrames_DefaultsEmpty()
+    public void MoveLoader_OmittedCollisionFrames_IsRejected()
     {
-        const string json = """{"moves":[{"move_id":"5A","startup":1,"active":1,"recovery":1,"damage":10}]}""";
-        Assert.Empty(MoveDataLoader.LoadFromJson(json).Single().CollisionFrames);
+        const string json = """{"schema_version":1,"moves":[{"move_id":"5A","startup":1,"active":1,"recovery":1,"hit_advantage":0,"block_advantage":0,"damage":10,"chain_repeatable":false,"knockback_profile_id":"light","cancel_windows":[]}]}""";
+        var ex = Assert.ThrowsAny<FormatException>(() => MoveDataLoader.LoadFromJson(json));
+        Assert.Contains("collision_frames", ex.Message);
     }
 
     [Theory]
@@ -40,7 +41,7 @@ public sealed class CollisionDataTests
     [InlineData("""{"frame":1,"hitboxes":[{"box_id":"x","x":0,"y":0,"width":"NaN","height":1}],"hurtboxes":[]}""")]
     public void MoveLoader_InvalidCollisionData_FailsFast(string frameJson)
     {
-        var json = $$"""{"moves":[{"move_id":"5A","startup":1,"active":1,"recovery":1,"damage":10,"collision_frames":[{{frameJson}}]}]}""";
+        var json = $$"""{"schema_version":1,"moves":[{"move_id":"5A","startup":1,"active":1,"recovery":1,"hit_advantage":0,"block_advantage":0,"damage":10,"chain_repeatable":false,"knockback_profile_id":"light","cancel_windows":[],"collision_frames":[{{frameJson}}]}]}""";
         var ex = Assert.ThrowsAny<Exception>(() => MoveDataLoader.LoadFromJson(json));
         Assert.Contains("[Data]", ex.Message);
     }
@@ -66,12 +67,12 @@ public sealed class CollisionDataTests
     }
 
     [Theory]
-    [InlineData("""{"moves":[null]}""")]
-    [InlineData("""{"moves":[{"move_id":"5A","startup":1,"active":1,"recovery":1,"collision_frames":[null]}]}""")]
-    [InlineData("""{"moves":[{"move_id":"5A","startup":1,"active":1,"recovery":1,"collision_frames":[{"frame":1,"hitboxes":[null],"hurtboxes":[]}]}]}""")]
+    [InlineData("""{"schema_version":1,"moves":[null]}""")]
+    [InlineData("""{"schema_version":1,"moves":[{"move_id":"5A","startup":1,"active":1,"recovery":1,"hit_advantage":0,"block_advantage":0,"damage":0,"chain_repeatable":false,"knockback_profile_id":"light","cancel_windows":[],"collision_frames":[null]}]}""")]
+    [InlineData("""{"schema_version":1,"moves":[{"move_id":"5A","startup":1,"active":1,"recovery":1,"hit_advantage":0,"block_advantage":0,"damage":0,"chain_repeatable":false,"knockback_profile_id":"light","cancel_windows":[],"collision_frames":[{"frame":1,"hitboxes":[null],"hurtboxes":[]}]}]}""")]
     public void MoveLoader_NullCollisionElements_FailWithDataError(string json)
     {
-        var ex = Assert.Throws<FormatException>(() => MoveDataLoader.LoadFromJson(json));
+        var ex = Assert.ThrowsAny<FormatException>(() => MoveDataLoader.LoadFromJson(json));
         Assert.StartsWith("[Data]", ex.Message);
     }
 
@@ -79,10 +80,10 @@ public sealed class CollisionDataTests
     public void MoveLoader_DurationOverflow_FailsWithDataError()
     {
         const string json = """
-        {"moves":[{"move_id":"huge","startup":2147483647,"active":2147483647,
-        "recovery":2147483647,"collision_frames":[{"frame":1,"hitboxes":[],"hurtboxes":[]}]}]}
+        {"schema_version":1,"moves":[{"move_id":"huge","startup":2147483647,"active":2147483647,
+        "recovery":2147483647,"hit_advantage":0,"block_advantage":0,"damage":0,"chain_repeatable":false,"knockback_profile_id":"light","cancel_windows":[],"collision_frames":[{"frame":1,"hitboxes":[],"hurtboxes":[]}]}]}
         """;
-        var ex = Assert.Throws<FormatException>(() => MoveDataLoader.LoadFromJson(json));
+        var ex = Assert.ThrowsAny<FormatException>(() => MoveDataLoader.LoadFromJson(json));
         Assert.StartsWith("[Data]", ex.Message);
     }
 

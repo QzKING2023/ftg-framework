@@ -104,6 +104,11 @@ public static class ProjectScaffolder
         AddFile(root, target, Path.Combine(root, "Scripts", "FrameRateManager.cs"),
             Path.Combine(target, "Scripts", "FrameRateManager.cs"), projectName, files);
         AddTree(root, target, Path.Combine(root, "Characters"), Path.Combine(target, "Characters"), projectName, directories, files);
+        directories.Add(Path.Combine(target, "addons", "ftg-framework"));
+        AddFile(root, target, Path.Combine(root, "addons", "ftg-framework", "plugin.cfg"),
+            Path.Combine(target, "addons", "ftg-framework", "plugin.cfg"), projectName, files);
+        AddFile(root, target, Path.Combine(root, "addons", "ftg-framework", "FTGEditorPluginEntry.cs"),
+            Path.Combine(target, "addons", "ftg-framework", "FTGEditorPluginEntry.cs"), projectName, files);
 
         var duplicate = files.GroupBy(entry => entry.Destination, PathComparer)
             .FirstOrDefault(group => group.Count() > 1);

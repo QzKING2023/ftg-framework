@@ -46,11 +46,12 @@ foreach ($dir in $sourceDirs) {
     $rel = ($dir -replace '^Scripts/Framework/?', '') -replace '/', '\'
     $dstPath = Join-Path $srcDir $rel
 
-    Get-ChildItem -Path $srcPath -Recurse -File | ForEach-Object {
+    Get-ChildItem -Path $srcPath -Recurse -File |
+        Where-Object { $_.Name -notlike '*.uid' } |
+        ForEach-Object {
         $relFile = $_.FullName.Substring($srcPath.Length).TrimStart('\')
         $parts = $relFile -split '\\'
         if ($parts | Where-Object { $_ -in @('bin', 'obj', '.godot') }) { return }
-        if ($_.Name -like '*.uid') { return }
         # Top-level GameLoop.cs ships separately as GameLoop.cs.template
         if ($parts.Count -eq 1 -and $_.Name -eq 'GameLoop.cs') { return }
 
@@ -83,11 +84,23 @@ if (Test-Path $licenseSrc) {
     Write-Host "  WARN no LICENSE at repo root — Asset Library submission requires one"
 }
 
-# Create zip with a top-level ftg-framework/ folder.
-# Note: Compress-Archive uses OS-native path separators; consumers and tests
-# normalize entries on read (cross-platform zip tools handle both forms).
-if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-Compress-Archive -Path $addonDir -DestinationPath $zipPath -Force
+# Stage outside the Godot-watched addon tree. Godot may create .uid sidecars
+# concurrently while the solution tests run; a private staging tree makes the
+# final inventory deterministic and lets us remove every generated sidecar.
+$packageRoot = Join-Path $outputDir ".ftg-package-$PID"
+$packageAddon = Join-Path $packageRoot "ftg-framework"
+try {
+    New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
+    Copy-Item -Path $addonDir -Destination $packageAddon -Recurse -Force
+    Get-ChildItem -Path $packageAddon -Recurse -File -Filter '*.uid' | Remove-Item -Force
+    $packageCfg = Join-Path $packageAddon "plugin.cfg"
+    $packageCfgContent = (Get-Content -Raw $packageCfg) -replace 'script="[^"]+"', 'script="src/Editor/FTGEditorPlugin.cs"'
+    Set-Content -Path $packageCfg -Value $packageCfgContent -NoNewline -Encoding utf8
+    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+    Compress-Archive -Path $packageAddon -DestinationPath $zipPath -Force
+} finally {
+    if (Test-Path $packageRoot) { Remove-Item -Path $packageRoot -Recurse -Force }
+}
 
 Write-Host ""
 Write-Host "Addon packaged: $zipPath"

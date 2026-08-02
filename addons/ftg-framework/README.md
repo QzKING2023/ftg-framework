@@ -25,8 +25,10 @@ below.
 1. Download the latest release zip from GitHub
 2. Extract the zip into your project's `addons/` directory — the archive contains a top-level `ftg-framework/` folder, so the files land in `addons/ftg-framework/`
 
-> The addon ships no EditorPlugin, so there is nothing to enable in
-> Project → Project Settings → Plugins. Setup is the autoload step below.
+The addon ships a C# EditorPlugin. Build the C# project first, then enable
+**FTG Framework** under Project → Project Settings → Plugins. Disabling the
+plugin removes and frees its dock; enabling it again reconstructs the dock from
+authoritative framework data. Runtime setup still uses the autoload steps below.
 
 ### Autoload Setup
 

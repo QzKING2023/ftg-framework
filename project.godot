@@ -26,4 +26,4 @@ project/assembly_name="FTG_Framework"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/rider-plugin/plugin.cfg")
+enabled=PackedStringArray("res://addons/ftg-framework/plugin.cfg", "res://addons/rider-plugin/plugin.cfg")

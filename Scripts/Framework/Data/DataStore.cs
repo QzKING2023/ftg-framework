@@ -8,14 +8,20 @@ namespace FTG_Framework.Data;
 
 internal sealed class DataStore : IDataStore
 {
-    private readonly Dictionary<string, MoveDefinition> _moves;
+    private MoveDatasetState _moveDataset;
     private readonly Dictionary<string, GatlingTable> _gatlingTables;
     private readonly Dictionary<string, CharacterDefinition> _characters;
     private Dictionary<string, KnockbackProfile> _knockbackProfiles;
     private Dictionary<string, PhysicsResponseProfile> _physicsResponseProfiles;
-    private readonly HashSet<string> _knownCategories;
     private readonly object _physicsDatasetSync = new();
     private ulong _physicsDatasetVersion;
+    private readonly object _moveDatasetSync = new();
+    private ulong _moveDatasetVersion;
+
+    internal ulong MoveDatasetVersion
+    {
+        get { lock (_moveDatasetSync) return _moveDatasetVersion; }
+    }
 
     internal ulong PhysicsDatasetVersion
     {
@@ -29,19 +35,7 @@ internal sealed class DataStore : IDataStore
         PhysicsResponseProfile[]? physicsResponseProfiles = null)
     {
         ArgumentNullException.ThrowIfNull(moves);
-        _moves = new Dictionary<string, MoveDefinition>();
-        foreach (var move in moves)
-            _moves[move.MoveId] = move;
-
-        _knownCategories = new HashSet<string>();
-        foreach (var move in moves)
-        {
-            foreach (var cw in move.CancelWindows)
-            {
-                if (!string.IsNullOrEmpty(cw.TargetCategory))
-                    _knownCategories.Add(cw.TargetCategory);
-            }
-        }
+        _moveDataset = BuildMoveCandidate(moves);
 
         _gatlingTables = new Dictionary<string, GatlingTable>();
         if (gatlingTables is not null)
@@ -70,6 +64,9 @@ internal sealed class DataStore : IDataStore
 
     private GatlingTable ValidateTable(GatlingTable table)
     {
+        MoveDatasetState moveDataset;
+        lock (_moveDatasetSync)
+            moveDataset = _moveDataset;
         if (table.Entries is null)
             throw new FormatException($"[Data] Gatling table '{table.CharacterId}': entries is null.");
 
@@ -79,13 +76,13 @@ internal sealed class DataStore : IDataStore
             if (entry.TargetMoves is null)
                 throw new FormatException($"[Data] Gatling table '{table.CharacterId}': entry for source_move '{entry.SourceMove}' has null target_moves.");
 
-            if (!_moves.ContainsKey(entry.SourceMove))
+            if (!moveDataset.Moves.ContainsKey(entry.SourceMove))
             {
                 FrameworkLog.Error?.Invoke($"[Data] Gatling table '{table.CharacterId}': source_move '{entry.SourceMove}' not found in registered moves. Entry ignored.");
                 continue;
             }
 
-            if (!_knownCategories.Contains(entry.CancelCategory))
+            if (!moveDataset.KnownCategories.Contains(entry.CancelCategory))
             {
                 FrameworkLog.Error?.Invoke($"[Data] Gatling table '{table.CharacterId}': cancel_category '{entry.CancelCategory}' in entry for '{entry.SourceMove}' not found in any registered move's cancel windows. Entry ignored.");
                 continue;
@@ -93,7 +90,7 @@ internal sealed class DataStore : IDataStore
 
             if (entry.TargetMoves.Contains(entry.SourceMove))
             {
-                if (!_moves.TryGetValue(entry.SourceMove, out var moveDef) || !moveDef.ChainRepeatable)
+                if (!moveDataset.Moves.TryGetValue(entry.SourceMove, out var moveDef) || !moveDef.ChainRepeatable)
                     throw new FormatException($"[Data] Gatling table '{table.CharacterId}': self-cancel entry for source_move '{entry.SourceMove}' requires chain_repeatable=true on the move definition.");
             }
 
@@ -103,7 +100,7 @@ internal sealed class DataStore : IDataStore
                 if (string.IsNullOrEmpty(target))
                     continue;
 
-                if (!_moves.ContainsKey(target))
+                if (!moveDataset.Moves.ContainsKey(target))
                 {
                     FrameworkLog.Error?.Invoke($"[Data] Gatling table '{table.CharacterId}': target_move '{target}' in entry for '{entry.SourceMove}' not found in registered moves. Target ignored.");
                     continue;
@@ -133,14 +130,57 @@ internal sealed class DataStore : IDataStore
     {
         if (moveId is null)
             return null;
-        _moves.TryGetValue(moveId, out var move);
-        return move;
+        lock (_moveDatasetSync)
+        {
+            _moveDataset.Moves.TryGetValue(moveId, out var move);
+            return move;
+        }
     }
 
     public IReadOnlyList<MoveDefinition> GetAllMoves()
     {
-        return _moves.Values.ToList();
+        lock (_moveDatasetSync)
+            return _moveDataset.Moves.Values.ToList();
     }
+
+    internal bool TryCommitMoveDataset(
+        MoveDefinition[] moves, ulong expectedVersion, Func<bool> commitFile)
+    {
+        ArgumentNullException.ThrowIfNull(moves);
+        ArgumentNullException.ThrowIfNull(commitFile);
+        var candidate = BuildMoveCandidate(moves);
+        lock (_moveDatasetSync)
+        {
+            if (_moveDatasetVersion != expectedVersion)
+                return false;
+            ulong nextVersion = checked(_moveDatasetVersion + 1);
+            if (!commitFile())
+                return false;
+            _moveDataset = candidate;
+            _moveDatasetVersion = nextVersion;
+            return true;
+        }
+    }
+
+    private static MoveDatasetState BuildMoveCandidate(IEnumerable<MoveDefinition> moves)
+    {
+        var candidateMoves = new Dictionary<string, MoveDefinition>(StringComparer.Ordinal);
+        var candidateCategories = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var move in moves)
+        {
+            ArgumentNullException.ThrowIfNull(move);
+            if (!candidateMoves.TryAdd(move.MoveId, move))
+                throw new FormatException($"[Data] Duplicate move_id: '{move.MoveId}'.");
+            foreach (var window in move.CancelWindows)
+                if (!string.IsNullOrEmpty(window.TargetCategory))
+                    candidateCategories.Add(window.TargetCategory);
+        }
+        return new MoveDatasetState(candidateMoves, candidateCategories);
+    }
+
+    private sealed record MoveDatasetState(
+        IReadOnlyDictionary<string, MoveDefinition> Moves,
+        IReadOnlySet<string> KnownCategories);
 
     public GatlingTable? GetGatlingTable(string characterId)
     {

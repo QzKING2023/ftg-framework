@@ -856,6 +856,9 @@ public class FtgCliTests
             Assert.DoesNotContain(names, n => n.EndsWith(".uid", StringComparison.OrdinalIgnoreCase));
             Assert.Contains(names, n => n.Contains("src/UI/Training/ViewModels/"));
             Assert.Contains(names, n => n.EndsWith("src/FrameRateManager.cs"));
+            Assert.Contains(names, n => n.EndsWith("src/Data/example_moves.json"));
+            Assert.Contains(names, n => n.EndsWith("src/Data/example_knockback_profiles.json"));
+            Assert.Contains(names, n => n.EndsWith("src/Editor/FTGEditorPlugin.cs"));
         }
         finally
         {

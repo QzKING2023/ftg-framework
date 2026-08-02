@@ -1,23 +1,14 @@
 [gd_scene load_steps=12 format=3 uid="uid://blgpk5wxbajnk"]
 
-[ext_resource type="Script" path="res://Scripts/Framework/Characters/CharacterController.cs" id="1_char_script"]
+[ext_resource type="Script" uid="uid://b813j0fj0bxi8" path="res://Scripts/Framework/Characters/CharacterController.cs" id="1_char_script"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_fuf0h"]
-size = Vector2(20, 20)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_85wrw"]
 size = Vector2(24, 28)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_vpuha"]
 size = Vector2(20, 24)
-
-[sub_resource type="Animation" id="Animation_idle"]
-resource_name = "idle"
-length = 0.1
-
-[sub_resource type="Animation" id="Animation_attack_startup"]
-resource_name = "attack_startup"
-length = 0.1
 
 [sub_resource type="Animation" id="Animation_attack_active"]
 resource_name = "attack_active"
@@ -27,12 +18,20 @@ length = 0.1
 resource_name = "attack_recovery"
 length = 0.1
 
-[sub_resource type="Animation" id="Animation_hitstun"]
-resource_name = "hitstun"
+[sub_resource type="Animation" id="Animation_attack_startup"]
+resource_name = "attack_startup"
 length = 0.1
 
 [sub_resource type="Animation" id="Animation_blockstun"]
 resource_name = "blockstun"
+length = 0.1
+
+[sub_resource type="Animation" id="Animation_hitstun"]
+resource_name = "hitstun"
+length = 0.1
+
+[sub_resource type="Animation" id="Animation_idle"]
+resource_name = "idle"
 length = 0.1
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_template"]
@@ -91,3 +90,4 @@ offset_right = 50.0
 offset_bottom = -40.0
 text = "[P1] Idle"
 horizontal_alignment = 1
+metadata/_edit_use_anchors_ = true

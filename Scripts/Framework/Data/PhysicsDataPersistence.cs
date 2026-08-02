@@ -15,30 +15,53 @@ internal static class PhysicsDataPersistence
         string directory = Path.GetDirectoryName(fullPath)
             ?? throw new ArgumentException("[Data] Destination has no parent directory.", nameof(path));
         Directory.CreateDirectory(directory);
-        string temporary = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+        string temporary = string.Empty;
         try
         {
             byte[] bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(content);
-            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                stream.Write(bytes);
-                stream.Flush(flushToDisk: true);
-            }
+            temporary = StageSameDirectory(fullPath, bytes);
             beforeCommit?.Invoke();
-            if (File.Exists(fullPath))
-                // File.Replace is the existing-file commit point: same-volume atomic
-                // replacement. No backup is retained; destination ACL/metadata handling
-                // follows the platform File.Replace contract. All failures occur before
-                // this call or are reported without changing the DataStore.
-                File.Replace(temporary, fullPath, destinationBackupFileName: null, ignoreMetadataErrors: true);
-            else
-                // Same-directory rename is the new-file commit point.
-                File.Move(temporary, fullPath);
+            ReplaceStaged(temporary, fullPath);
         }
         finally
         {
-            if (File.Exists(temporary))
-                File.Delete(temporary);
+            CleanupOwnedStaging(temporary);
         }
+    }
+
+    internal static string StageSameDirectory(
+        string destination, ReadOnlySpan<byte> bytes, Action? beforeFlush = null)
+    {
+        string fullPath = Path.GetFullPath(destination);
+        string directory = Path.GetDirectoryName(fullPath)
+            ?? throw new ArgumentException("[Data] Destination has no parent directory.", nameof(destination));
+        string temporary = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            using var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            stream.Write(bytes);
+            beforeFlush?.Invoke();
+            stream.Flush(flushToDisk: true);
+            return temporary;
+        }
+        catch
+        {
+            CleanupOwnedStaging(temporary);
+            throw;
+        }
+    }
+
+    internal static void ReplaceStaged(string staged, string destination)
+    {
+        if (File.Exists(destination))
+            File.Replace(staged, destination, destinationBackupFileName: null, ignoreMetadataErrors: true);
+        else
+            File.Move(staged, destination);
+    }
+
+    internal static void CleanupOwnedStaging(string staged)
+    {
+        if (!string.IsNullOrEmpty(staged) && File.Exists(staged))
+            File.Delete(staged);
     }
 }

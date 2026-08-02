@@ -83,9 +83,16 @@ else
     echo "  WARN no LICENSE at repo root — Asset Library submission requires one"
 fi
 
-# Create zip with a top-level ftg-framework/ folder
-rm -f "$ZIP_PATH"
+# Create zip with a top-level ftg-framework/ folder. Rewrite the repository/CLI
+# script path only for the package-local src/Editor layout, then restore it.
+PLUGIN_CFG_BACKUP="$PLUGIN_CFG.ftg-package-backup"
+cp "$PLUGIN_CFG" "$PLUGIN_CFG_BACKUP"
+trap 'mv -f "$PLUGIN_CFG_BACKUP" "$PLUGIN_CFG"' EXIT
+sed -i.bak 's#^script="[^"]*"#script="src/Editor/FTGEditorPlugin.cs"#' "$PLUGIN_CFG"
+rm -f "$PLUGIN_CFG.bak" "$ZIP_PATH"
 (cd "$ADDON_DIR/.." && zip -r "$ZIP_PATH" "ftg-framework/") > /dev/null
+mv -f "$PLUGIN_CFG_BACKUP" "$PLUGIN_CFG"
+trap - EXIT
 
 echo ""
 echo "Addon packaged: $ZIP_PATH"

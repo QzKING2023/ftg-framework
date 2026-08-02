@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "moves": [
     {
       "move_id": "5LP",
@@ -47,6 +48,8 @@
       "hit_advantage": 1,
       "block_advantage": -8,
       "damage": 80,
+      "knockback_profile_id": "light_hit",
+      "collision_frames": [],
       "cancel_windows": [],
       "chain_repeatable": false
     },
@@ -58,6 +61,8 @@
       "hit_advantage": 1,
       "block_advantage": -7,
       "damage": 70,
+      "knockback_profile_id": "light_hit",
+      "collision_frames": [],
       "cancel_windows": [
         {
           "start_frame": 6,
@@ -75,6 +80,8 @@
       "hit_advantage": -20,
       "block_advantage": -28,
       "damage": 100,
+      "knockback_profile_id": "light_hit",
+      "collision_frames": [],
       "cancel_windows": [],
       "chain_repeatable": false
     },
@@ -86,6 +93,8 @@
       "hit_advantage": -20,
       "block_advantage": -28,
       "damage": 100,
+      "knockback_profile_id": "light_hit",
+      "collision_frames": [],
       "cancel_windows": [],
       "chain_repeatable": false
     },
@@ -97,6 +106,8 @@
       "hit_advantage": 2,
       "block_advantage": -4,
       "damage": 60,
+      "knockback_profile_id": "light_hit",
+      "collision_frames": [],
       "cancel_windows": [],
       "chain_repeatable": false
     }

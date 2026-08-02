@@ -18,3 +18,7 @@ GameLoop="*res://Scripts/Framework/Core/GameLoop.cs"
 [dotnet]
 
 project/assembly_name="{{FTG_PROJECT_NAME}}"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/ftg-framework/plugin.cfg")

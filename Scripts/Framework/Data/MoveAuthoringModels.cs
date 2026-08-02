@@ -23,6 +23,79 @@ public sealed record MoveValidationResult(IReadOnlyList<MoveValidationError> Err
     public static MoveValidationResult Valid { get; } = new(Array.Empty<MoveValidationError>());
 }
 
+public sealed record MoveValidationPresentation(
+    int ErrorCount,
+    string Summary,
+    string? FirstFieldKey,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> ErrorsByFieldKey)
+{
+    public static MoveValidationPresentation From(MoveValidationResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        var grouped = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (MoveValidationError error in result.Errors)
+        {
+            string key = error.FieldPath;
+            if (!grouped.TryGetValue(key, out List<string>? messages))
+                grouped.Add(key, messages = new List<string>());
+            messages.Add($"{error.Message} Rejected: {error.RejectedValue}. Recovery: {error.RecoveryAction}");
+        }
+
+        var frozen = grouped.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<string>)new ReadOnlyCollection<string>(pair.Value),
+            StringComparer.Ordinal);
+        return new MoveValidationPresentation(
+            result.Errors.Count,
+            result.Success ? "Ready to save" : $"{result.Errors.Count} validation error(s)",
+            result.FirstInvalidField,
+            new ReadOnlyDictionary<string, IReadOnlyList<string>>(frozen));
+    }
+}
+
+public sealed record MoveAuthoringScalarValues(
+    int Startup, int Active, int Recovery, int HitAdvantage, int BlockAdvantage, int Damage, bool ChainRepeatable);
+
+public sealed record MoveAuthoringScalarParseResult(
+    MoveAuthoringScalarValues? Values, MoveValidationResult Validation);
+
+public static class MoveAuthoringScalarParser
+{
+    private static readonly string[] IntegerFields =
+        ["startup", "active", "recovery", "hit_advantage", "block_advantage", "damage"];
+
+    public static MoveAuthoringScalarParseResult Parse(IReadOnlyDictionary<string, string> fields, int moveIndex)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        var parsed = new Dictionary<string, int>(StringComparer.Ordinal);
+        var errors = new List<MoveValidationError>();
+        foreach (string field in IntegerFields)
+        {
+            string value = fields.TryGetValue(field, out string? text) ? text : string.Empty;
+            if (int.TryParse(value, out int number)) parsed.Add(field, number);
+            else errors.Add(new MoveValidationError(
+                $"moves[{moveIndex}].{field}", value, "expected an Int32 value",
+                "Enter an integral number in the Int32 range."));
+        }
+
+        string boolean = fields.TryGetValue("chain_repeatable", out string? boolText) ? boolText : string.Empty;
+        bool parsedBoolean = bool.TryParse(boolean, out bool boolValue);
+        if (!parsedBoolean)
+            errors.Add(new MoveValidationError(
+                $"moves[{moveIndex}].chain_repeatable", boolean, "expected true or false",
+                "Enter true or false."));
+
+        if (errors.Count > 0)
+            return new MoveAuthoringScalarParseResult(null,
+                new MoveValidationResult(new ReadOnlyCollection<MoveValidationError>(errors)));
+        return new MoveAuthoringScalarParseResult(
+            new MoveAuthoringScalarValues(
+                parsed["startup"], parsed["active"], parsed["recovery"], parsed["hit_advantage"],
+                parsed["block_advantage"], parsed["damage"], boolValue),
+            MoveValidationResult.Valid);
+    }
+}
+
 public sealed class MoveDatasetFormatException : FormatException
 {
     public string FieldPath { get; }

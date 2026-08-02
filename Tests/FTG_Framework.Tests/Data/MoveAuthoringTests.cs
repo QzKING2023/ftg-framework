@@ -170,4 +170,116 @@ public sealed class MoveAuthoringTests
         Assert.False(vm.LastResult.Success);
         Assert.Contains(vm.LastResult.Errors, error => error.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void Validate_MultipleIndependentErrors_ReturnsCompleteStableFieldPaths()
+    {
+        var vm = new MoveAuthoringViewModel(MoveDatasetCodec.Parse(ValidJson));
+        vm.Edit("5A", move => move with
+        {
+            MoveId = "",
+            Startup = -1,
+            Active = -2,
+            Damage = -3,
+            KnockbackProfileId = "",
+            CancelWindows =
+            [
+                new CancelWindow { StartFrame = -1, EndFrame = -2, TargetCategory = "" },
+                null!,
+            ],
+            CollisionFrames =
+            [
+                new CollisionFrameDefinition
+                {
+                    Frame = 0,
+                    Hitboxes =
+                    [
+                        new CollisionBoxDefinition { BoxId = "", X = float.NaN, Width = -1, Height = -2 },
+                        null!,
+                    ],
+                    Hurtboxes = [],
+                },
+                null!,
+            ],
+        });
+
+        MoveValidationResult result = vm.Validate();
+
+        Assert.False(result.Success);
+        Assert.Equal("moves[0].move_id", result.FirstInvalidField);
+        Assert.Equal(result.Errors.Select(error => error.FieldPath).Distinct().Count(), result.Errors.Count);
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].startup");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].active");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].damage");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].knockback_profile_id");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].cancel_windows[0].target_category");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].cancel_windows[0]");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].cancel_windows[1]");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].collision_frames[0].frame");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].collision_frames[0].hitboxes[0].box_id");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].collision_frames[0].hitboxes[0].x");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].collision_frames[0].hitboxes[0].width");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].collision_frames[0].hitboxes[0].height");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].collision_frames[0].hitboxes[1]");
+        Assert.Contains(result.Errors, error => error.FieldPath == "moves[0].collision_frames[1]");
+        Assert.Same(result, vm.LastResult);
+        Assert.Equal(-1, vm.CurrentCandidate.Moves[0].Startup);
+    }
+
+    [Fact]
+    public void ValidationPresentation_MapsScalarAndNestedErrorsWithoutGodot()
+    {
+        var errors = new[]
+        {
+            new MoveValidationError("moves[0].startup", "-1", "must be non-negative", "Enter a non-negative frame count."),
+            new MoveValidationError("moves[0].cancel_windows[2].target_category", "", "identifier must be non-empty", "Enter a category."),
+            new MoveValidationError("moves[0].collision_frames[1].hitboxes[3].width", "-2", "must be non-negative", "Enter a non-negative width."),
+        };
+
+        MoveValidationPresentation presentation = MoveValidationPresentation.From(new MoveValidationResult(errors));
+
+        Assert.Equal("moves[0].startup", presentation.FirstFieldKey);
+        Assert.Equal(3, presentation.ErrorCount);
+        Assert.Contains("3 validation error(s)", presentation.Summary, StringComparison.Ordinal);
+        Assert.Single(presentation.ErrorsByFieldKey["moves[0].startup"]);
+        Assert.Single(presentation.ErrorsByFieldKey["moves[0].cancel_windows[2].target_category"]);
+        Assert.Single(presentation.ErrorsByFieldKey["moves[0].collision_frames[1].hitboxes[3].width"]);
+        Assert.All(presentation.ErrorsByFieldKey.SelectMany(pair => pair.Value), line => Assert.Contains("Recovery:", line, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidationPresentation_PreservesMoveIndexesInsteadOfMergingFields()
+    {
+        var errors = new[]
+        {
+            new MoveValidationError("moves[0].startup", "-1", "invalid", "Fix move zero."),
+            new MoveValidationError("moves[1].startup", "-2", "invalid", "Fix move one."),
+        };
+
+        MoveValidationPresentation presentation = MoveValidationPresentation.From(new MoveValidationResult(errors));
+
+        Assert.Equal(2, presentation.ErrorsByFieldKey.Count);
+        Assert.Contains("moves[0].startup", presentation.ErrorsByFieldKey.Keys);
+        Assert.Contains("moves[1].startup", presentation.ErrorsByFieldKey.Keys);
+    }
+
+    [Fact]
+    public void ScalarParser_MultipleMalformedValues_ReturnsCompleteOrderedErrors()
+    {
+        var fields = new Dictionary<string, string>
+        {
+            ["startup"] = "abc", ["active"] = "1.5", ["recovery"] = "3",
+            ["hit_advantage"] = "4", ["block_advantage"] = "-1", ["damage"] = "lots",
+            ["chain_repeatable"] = "sometimes",
+        };
+
+        MoveAuthoringScalarParseResult result = MoveAuthoringScalarParser.Parse(fields, 2);
+
+        Assert.Null(result.Values);
+        Assert.Collection(result.Validation.Errors,
+            error => Assert.Equal("moves[2].startup", error.FieldPath),
+            error => Assert.Equal("moves[2].active", error.FieldPath),
+            error => Assert.Equal("moves[2].damage", error.FieldPath),
+            error => Assert.Equal("moves[2].chain_repeatable", error.FieldPath));
+    }
 }

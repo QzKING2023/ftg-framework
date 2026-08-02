@@ -237,7 +237,7 @@ development_status:
   # Epic 2: Move Authoring & Training Suite (FR-23~27)
   v2-epic-2: in-progress
   v2-2-1-editorplugin-move-authoring: done
-  v2-2-1-a-load-edit-validation-conflicts: backlog
+  v2-2-1-a-load-edit-validation-conflicts: done
   v2-2-1-b-path-confined-atomic-persistence: backlog
   v2-2-1-c-godot-editor-flow: backlog
   v2-2-2-runtime-tuning-writeback: backlog

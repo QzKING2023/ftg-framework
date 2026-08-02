@@ -69,13 +69,16 @@ internal sealed class MoveDatasetPersistence
         if (!validation.Success)
             return new MoveSaveResult(MoveSaveStatus.ValidationFailed, candidate.SourceIdentity, Errors: validation.Errors);
 
-        var missingProfile = candidate.Moves.FirstOrDefault(move =>
-            _store.GetKnockbackProfile(move.KnockbackProfileId) is null);
-        if (missingProfile is not null)
+        MoveValidationError[] missingProfiles = candidate.Moves
+            .Select((move, index) => (move, index))
+            .Where(item => _store.GetKnockbackProfile(item.move.KnockbackProfileId) is null)
+            .Select(item => new MoveValidationError(
+                $"moves[{item.index}].knockback_profile_id", item.move.KnockbackProfileId,
+                "Referenced KnockbackProfile does not exist.", "Select an existing knockback profile."))
+            .ToArray();
+        if (missingProfiles.Length > 0)
         {
-            var error = new MoveValidationError("knockback_profile_id", missingProfile.KnockbackProfileId,
-                "Referenced KnockbackProfile does not exist.", "Select an existing knockback profile.");
-            return new MoveSaveResult(MoveSaveStatus.ValidationFailed, candidate.SourceIdentity, Errors: new[] { error });
+            return new MoveSaveResult(MoveSaveStatus.ValidationFailed, candidate.SourceIdentity, Errors: missingProfiles);
         }
 
         byte[] currentBytes = File.ReadAllBytes(destination);

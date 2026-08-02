@@ -70,18 +70,134 @@ internal static class MoveDatasetCodec
 
     internal static MoveValidationResult Validate(MoveAuthoringCandidate candidate)
     {
-        try
+        ArgumentNullException.ThrowIfNull(candidate);
+        var errors = new List<MoveValidationError>();
+        if (candidate.SchemaVersion != CurrentSchemaVersion)
+            Add(errors, "schema_version", candidate.SchemaVersion.ToString(), "unsupported schema version",
+                $"Use schema_version {CurrentSchemaVersion}.");
+        if (candidate.Moves is null)
         {
-            var document = candidate.ToDocument();
-            byte[] bytes = Serialize(document);
-            _ = Parse(Encoding.UTF8.GetString(bytes));
-            return MoveValidationResult.Valid;
+            Add(errors, "moves", "null", "moves collection is required", "Provide a non-null moves collection.");
+            return new MoveValidationResult(new ReadOnlyCollection<MoveValidationError>(errors));
         }
-        catch (MoveDatasetFormatException ex)
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        for (int i = 0; i < candidate.Moves.Count; i++)
         {
-            return new MoveValidationResult(new[] { ex.ToError() });
+            MoveAuthoringMove? move = candidate.Moves[i];
+            string root = $"moves[{i}]";
+            if (move is null)
+            {
+                Add(errors, root, "null", "null move entry", "Remove or replace the null entry.");
+                continue;
+            }
+            ValidateCandidateMove(move, root, ids, errors);
+        }
+        return errors.Count == 0
+            ? MoveValidationResult.Valid
+            : new MoveValidationResult(new ReadOnlyCollection<MoveValidationError>(errors));
+    }
+
+    private static void ValidateCandidateMove(
+        MoveAuthoringMove move, string root, HashSet<string> ids, List<MoveValidationError> errors)
+    {
+        if (string.IsNullOrEmpty(move.MoveId))
+            Add(errors, $"{root}.move_id", move.MoveId ?? "null", "identifier must be non-empty", "Enter a non-empty ordinal move_id.");
+        else if (!ids.Add(move.MoveId))
+            Add(errors, $"{root}.move_id", move.MoveId, "duplicate move identifier", "Use a unique ordinal move_id.");
+        if (move.Startup < 0) Add(errors, $"{root}.startup", move.Startup.ToString(), "must be non-negative", "Enter a non-negative frame count.");
+        if (move.Active < 0) Add(errors, $"{root}.active", move.Active.ToString(), "must be non-negative", "Enter a non-negative frame count.");
+        if (move.Recovery < 0) Add(errors, $"{root}.recovery", move.Recovery.ToString(), "must be non-negative", "Enter a non-negative frame count.");
+        if (move.Damage < 0) Add(errors, $"{root}.damage", move.Damage.ToString(), "must be non-negative", "Enter non-negative damage.");
+        if (string.IsNullOrEmpty(move.KnockbackProfileId))
+            Add(errors, $"{root}.knockback_profile_id", move.KnockbackProfileId ?? "null", "identifier must be non-empty", "Select a non-empty ordinal knockback_profile_id.");
+
+        int total = 0;
+        bool validTotal = true;
+        try { total = checked(move.Startup + move.Active + move.Recovery); }
+        catch (OverflowException)
+        {
+            validTotal = false;
+            Add(errors, root, "duration overflow", "total frames exceed Int32", "Reduce timing fields.");
+        }
+
+        if (move.CancelWindows is null)
+            Add(errors, $"{root}.cancel_windows", "null", "collection is required", "Provide a non-null cancel_windows collection.");
+        else
+            for (int i = 0; i < move.CancelWindows.Count; i++)
+            {
+                CancelWindow? window = move.CancelWindows[i];
+                string path = $"{root}.cancel_windows[{i}]";
+                if (window is null)
+                {
+                    Add(errors, path, "null", "null entry", "Remove or replace the null entry.");
+                    continue;
+                }
+                if (string.IsNullOrEmpty(window.TargetCategory))
+                    Add(errors, $"{path}.target_category", window.TargetCategory ?? "null", "identifier must be non-empty", "Enter a non-empty ordinal target_category.");
+                if (window.StartFrame < 0 || window.EndFrame < window.StartFrame || (validTotal && window.EndFrame > total))
+                    Add(errors, path, $"{window.StartFrame}..{window.EndFrame}", "invalid range",
+                        validTotal ? $"Use 0 <= start_frame <= end_frame <= {total}." : "Correct move timing before validating this range.");
+            }
+
+        if (move.CollisionFrames is null)
+        {
+            Add(errors, $"{root}.collision_frames", "null", "collection is required", "Provide a non-null collision_frames collection.");
+            return;
+        }
+        var frames = new HashSet<int>();
+        for (int i = 0; i < move.CollisionFrames.Count; i++)
+        {
+            CollisionFrameDefinition? frame = move.CollisionFrames[i];
+            string path = $"{root}.collision_frames[{i}]";
+            if (frame is null)
+            {
+                Add(errors, path, "null", "null entry", "Remove or replace the null entry.");
+                continue;
+            }
+            if (frame.Frame < 1 || (validTotal && frame.Frame > total))
+                Add(errors, $"{path}.frame", frame.Frame.ToString(), "outside move duration",
+                    validTotal ? $"Use a frame in 1..{total}." : "Correct move timing before validating this frame.");
+            if (!frames.Add(frame.Frame))
+                Add(errors, $"{path}.frame", frame.Frame.ToString(), "duplicate frame", "Use each collision frame once.");
+            ValidateCandidateBoxes(frame.Hitboxes, $"{path}.hitboxes", errors);
+            ValidateCandidateBoxes(frame.Hurtboxes, $"{path}.hurtboxes", errors);
         }
     }
+
+    private static void ValidateCandidateBoxes(
+        IReadOnlyList<CollisionBoxDefinition>? boxes, string path, List<MoveValidationError> errors)
+    {
+        if (boxes is null)
+        {
+            Add(errors, path, "null", "collection is required", "Provide a non-null box collection.");
+            return;
+        }
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        for (int i = 0; i < boxes.Count; i++)
+        {
+            CollisionBoxDefinition? box = boxes[i];
+            string itemPath = $"{path}[{i}]";
+            if (box is null)
+            {
+                Add(errors, itemPath, "null", "null entry", "Remove or replace the null entry.");
+                continue;
+            }
+            if (string.IsNullOrEmpty(box.BoxId))
+                Add(errors, $"{itemPath}.box_id", box.BoxId ?? "null", "identifier must be non-empty", "Enter a non-empty ordinal box_id.");
+            else if (!ids.Add(box.BoxId))
+                Add(errors, $"{itemPath}.box_id", box.BoxId, "duplicate box identifier", "Use a unique box_id in this list.");
+            if (!float.IsFinite(box.X)) Add(errors, $"{itemPath}.x", box.X.ToString(), "must be finite", "Enter a finite x coordinate.");
+            if (!float.IsFinite(box.Y)) Add(errors, $"{itemPath}.y", box.Y.ToString(), "must be finite", "Enter a finite y coordinate.");
+            if (!float.IsFinite(box.Width)) Add(errors, $"{itemPath}.width", box.Width.ToString(), "must be finite", "Enter a finite width.");
+            else if (box.Width < 0) Add(errors, $"{itemPath}.width", box.Width.ToString(), "must be non-negative", "Enter a non-negative width.");
+            if (!float.IsFinite(box.Height)) Add(errors, $"{itemPath}.height", box.Height.ToString(), "must be finite", "Enter a finite height.");
+            else if (box.Height < 0) Add(errors, $"{itemPath}.height", box.Height.ToString(), "must be non-negative", "Enter a non-negative height.");
+        }
+    }
+
+    private static void Add(List<MoveValidationError> errors, string path, string rejected, string message, string recovery) =>
+        errors.Add(new MoveValidationError(path, rejected, message, recovery));
 
     private static MoveDefinition ReadMove(JsonElement element, int index)
     {

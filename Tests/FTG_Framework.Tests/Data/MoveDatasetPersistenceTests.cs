@@ -59,6 +59,35 @@ public sealed class MoveDatasetPersistenceTests : IDisposable
     }
 
     [Fact]
+    public void Save_MultipleMissingProfiles_ReturnsCompleteIndexedErrorsWithoutMutation()
+    {
+        string path = WriteDocument("moves", Original);
+        var store = CreateStore();
+        var service = new MoveDatasetPersistence(_root, store);
+        var candidate = MoveAuthoringCandidate.FromDocument(service.Load("moves"))
+            .EditMove("5A", move => move with { KnockbackProfileId = "missing-a" });
+        candidate = candidate with
+        {
+            Moves = candidate.Moves.Append(candidate.Moves[0] with
+            {
+                MoveId = "6A",
+                KnockbackProfileId = "missing-b",
+            }).ToArray(),
+        };
+        byte[] before = File.ReadAllBytes(path);
+
+        MoveSaveResult result = service.Save("moves", candidate);
+
+        Assert.Equal(MoveSaveStatus.ValidationFailed, result.Status);
+        Assert.Collection(result.Errors!,
+            error => Assert.Equal("moves[0].knockback_profile_id", error.FieldPath),
+            error => Assert.Equal("moves[1].knockback_profile_id", error.FieldPath));
+        Assert.Equal(before, File.ReadAllBytes(path));
+        Assert.Equal(10, store.GetMove("5A")!.Damage);
+        Assert.Null(store.GetMove("6A"));
+    }
+
+    [Fact]
     public void Save_PreCommitFault_PreservesBytesAndCommittedDataset()
     {
         string path = WriteDocument("moves", Original);

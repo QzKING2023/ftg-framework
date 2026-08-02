@@ -1,7 +1,6 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
-using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -22,7 +21,7 @@ internal enum MovePersistenceFaultPoint
     DuringPostCommitCleanup,
 }
 
-internal enum MoveSaveStatus { Succeeded, Conflict, ValidationFailed, Failed }
+internal enum MoveSaveStatus { Succeeded, Conflict, ValidationFailed, Cancelled, Failed }
 
 internal sealed record MoveSaveResult(
     MoveSaveStatus Status,
@@ -40,8 +39,6 @@ internal sealed class MoveDatasetPersistence
     private readonly Func<string, bool> _isReparsePoint;
     private readonly Dictionary<string, string> _destinationIdentities = new(PathComparer);
     private readonly object _destinationIdentitySync = new();
-    private static readonly ConcurrentDictionary<string, object> DestinationCommitLocks =
-        new(PathComparer);
 
     internal MoveDatasetPersistence(
         string root, DataStore store,
@@ -67,7 +64,8 @@ internal sealed class MoveDatasetPersistence
         return MoveDatasetCodec.Parse(System.Text.Encoding.UTF8.GetString(bytes));
     }
 
-    internal MoveSaveResult Save(string documentIdentifier, MoveAuthoringCandidate candidate, CancellationToken cancellationToken = default)
+    internal MoveSaveResult Save(string documentIdentifier, MoveAuthoringCandidate candidate,
+        CancellationToken cancellationToken = default, Func<bool>? finalCommitGuard = null)
     {
         ArgumentNullException.ThrowIfNull(candidate);
         string destination = Resolve(documentIdentifier);
@@ -136,11 +134,12 @@ internal sealed class MoveDatasetPersistence
             _fault?.Invoke(MovePersistenceFaultPoint.AfterStagedValidation);
             ulong expectedDatasetVersion = _store.MoveDatasetVersion;
             _fault?.Invoke(MovePersistenceFaultPoint.BeforeCoordinatedCommit);
+            MoveContentIdentity committedIdentity = MoveContentIdentity.FromBytes(bytes);
             bool won = _store.TryCommitMoveDataset(stagedDocument.Moves.ToArray(), expectedDatasetVersion, () =>
             {
                 if (cancellationToken.IsCancellationRequested)
                     return false;
-                lock (DestinationCommitLocks.GetOrAdd(destination, static _ => new object()))
+                return CanonicalDestinationCoordinator.Execute(destination, () =>
                 {
                     _fault?.Invoke(MovePersistenceFaultPoint.BeforeContainmentRecheck);
                     var accessIdentity = ReadConfinedIdentity(destination);
@@ -154,13 +153,18 @@ internal sealed class MoveDatasetPersistence
                     var finalDestinationIdentity = ReadConfinedIdentity(destination);
                     if (finalDestinationIdentity != candidate.SourceIdentity)
                         return false;
+                    if (finalCommitGuard is not null && !finalCommitGuard())
+                        return false;
                     PhysicsDataPersistence.ReplaceStaged(staged, destination);
                     committed = true;
                     return true;
-                }
-            });
+                });
+            }, committedIdentity);
             if (!won)
             {
+                if (finalCommitGuard is not null && !finalCommitGuard())
+                    return new MoveSaveResult(MoveSaveStatus.Cancelled, candidate.SourceIdentity, currentIdentity,
+                        Diagnostic: "[Data] Save cancelled because its tuning session is obsolete.");
                 try
                 {
                     currentIdentity = ReadConfinedIdentity(destination);
@@ -212,7 +216,7 @@ internal sealed class MoveDatasetPersistence
             }
         }
         return new MoveSaveResult(MoveSaveStatus.Succeeded, candidate.SourceIdentity,
-            MoveContentIdentity.FromBytes(bytes), Diagnostic: diagnostic);
+            ObserveCommitted(destination, bytes), Diagnostic: diagnostic);
     }
 
     internal MoveSaveResult Restore(
@@ -289,4 +293,11 @@ internal sealed class MoveDatasetPersistence
         ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     private static StringComparer PathComparer => OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    private static MoveContentIdentity ObserveCommitted(string destination, byte[] bytes)
+    {
+        MoveContentIdentity identity = MoveContentIdentity.FromBytes(bytes);
+        CommittedDocumentRegistry.Observe(destination, new DataContentIdentity(identity.Sha256));
+        return identity;
+    }
 }

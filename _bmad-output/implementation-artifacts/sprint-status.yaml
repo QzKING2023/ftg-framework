@@ -240,7 +240,10 @@ development_status:
   v2-2-1-a-load-edit-validation-conflicts: done
   v2-2-1-b-path-confined-atomic-persistence: done
   v2-2-1-c-godot-editor-flow: done
-  v2-2-2-runtime-tuning-writeback: backlog
+  v2-2-2-runtime-tuning-writeback: done
+  v2-2-2-a-stage-runtime-edits: done
+  v2-2-2-b-atomic-writeback-concurrency: done
+  v2-2-2-c-runtime-reload-restart-proof: done
   v2-2-3-combo-counter-damage-display: backlog
   v2-2-4-input-recording-playback: backlog
   v2-2-5-training-state-save-load: backlog

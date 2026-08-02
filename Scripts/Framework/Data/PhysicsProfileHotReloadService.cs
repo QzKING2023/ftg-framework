@@ -76,14 +76,18 @@ internal sealed class PhysicsProfileHotReloadService : IModule
             ulong expectedVersion = _dataStore is DataStore concrete
                 ? concrete.PhysicsDatasetVersion
                 : 0;
-            string json = File.ReadAllText(path);
+            byte[] bytes = File.ReadAllBytes(path);
+            var contentIdentity = DataContentIdentity.FromBytes(bytes);
+            if (CommittedDocumentRegistry.IsObserved(path, contentIdentity))
+                return;
+            string json = System.Text.Encoding.UTF8.GetString(bytes);
             if (knockback)
             {
                 var candidates = PhysicsDataLoader.LoadKnockbackProfilesFromJson(json);
                 PhysicsProfileReferenceValidator.ValidateKnockbackProfiles(_dataStore, candidates);
                 if (_dataStore is DataStore store)
                 {
-                    if (!store.TryCommitKnockbackProfiles(candidates, expectedVersion))
+                    if (!store.TryCommitKnockbackProfiles(candidates, expectedVersion, contentIdentity))
                         throw new FormatException("[Data] Stale knockback-profile reload candidate.");
                 }
                 else
@@ -96,12 +100,13 @@ internal sealed class PhysicsProfileHotReloadService : IModule
                     candidates, _requiredResponseProfileIds());
                 if (_dataStore is DataStore store)
                 {
-                    if (!store.TryCommitPhysicsResponseProfiles(candidates, expectedVersion))
+                    if (!store.TryCommitPhysicsResponseProfiles(candidates, expectedVersion, contentIdentity))
                         throw new FormatException("[Data] Stale physics-response reload candidate.");
                 }
                 else
                     _dataStore.SetPhysicsResponseProfiles(candidates);
             }
+            CommittedDocumentRegistry.Observe(path, contentIdentity);
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {

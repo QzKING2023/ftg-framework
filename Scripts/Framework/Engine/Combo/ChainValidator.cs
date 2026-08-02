@@ -8,7 +8,8 @@ namespace FTG_Framework.Engine.Combo;
 internal sealed class ChainValidator
 {
     private readonly IDataStore _dataStore;
-    private readonly Dictionary<int, List<string>> _playerChains = new();
+    private readonly Dictionary<int, List<ChainEntry>> _playerChains = new();
+    private readonly record struct ChainEntry(string MoveId, bool Repeatable);
 
     public ChainValidator(IDataStore dataStore)
     {
@@ -19,15 +20,14 @@ internal sealed class ChainValidator
     {
         ArgumentNullException.ThrowIfNull(moveId);
 
-        var moveDef = _dataStore.GetMove(moveId);
-        if (moveDef is null)
-            return true;
-
-        if (moveDef.ChainRepeatable)
-            return true;
-
-        if (_playerChains.TryGetValue(playerId, out var chain) && chain.Contains(moveId))
-            return false;
+        if (_playerChains.TryGetValue(playerId, out var chain))
+        {
+            for (int i = chain.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(chain[i].MoveId, moveId, StringComparison.Ordinal))
+                    return chain[i].Repeatable;
+            }
+        }
 
         return true;
     }
@@ -36,17 +36,13 @@ internal sealed class ChainValidator
     {
         ArgumentNullException.ThrowIfNull(moveId);
 
-        var moveDef = _dataStore.GetMove(moveId);
-        if (moveDef is { ChainRepeatable: true })
-            return;
-
         if (!_playerChains.TryGetValue(playerId, out var chain))
         {
-            chain = new List<string>();
+            chain = new List<ChainEntry>();
             _playerChains[playerId] = chain;
         }
 
-        chain.Add(moveId);
+        chain.Add(new ChainEntry(moveId, _dataStore.GetMove(moveId)?.ChainRepeatable ?? false));
     }
 
     public void AddToChainIfEmpty(int playerId, string moveId)

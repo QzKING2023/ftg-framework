@@ -6,6 +6,7 @@ FTG_Framework.Tests.GameLoopPauseTests
 FTG_Framework.Tests.EventBusPauseTests
 FTG_Framework.Tests.Core.SceneManagerTests
 FTG_Framework.Tests.Core.StateSnapshotCoordinatorTests
+FTG_Framework.Tests.DataLayer.RuntimeTuningInitiationIntegrationTests
 FTG_Framework.Tests.PhysicsProfileHotReloadServiceTests
 FTG_Framework.Tests.Engine.StateMachine.StateMachineTests
 FTG_Framework.Tests.Input.DefaultInputPipelineTests

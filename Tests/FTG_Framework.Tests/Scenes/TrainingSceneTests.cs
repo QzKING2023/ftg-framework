@@ -88,6 +88,25 @@ public class TrainingSceneTests
     }
 
     [Fact]
+    public void RuntimeTuningPanel_FocusedControlsRequestDeferredScrollVisibility()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scripts", "Framework", "UI", "Training", "RuntimeTuningPanel.cs"));
+
+        Assert.Contains("FocusEntered += () => EnsureFocusVisible(control)", source);
+        Assert.Contains("CallDeferred(ScrollContainer.MethodName.EnsureControlVisible, control)", source);
+        Assert.Contains("RestoreFocus(_editors.Values.FirstOrDefault())", source);
+        Assert.Contains("RestoreFocus(_apply)", source);
+        Assert.Contains("RebuildFocusNavigation()", source);
+        Assert.Contains("control.FocusNeighborTop", source);
+        Assert.Contains("control.FocusNeighborBottom", source);
+        Assert.Contains("control.FocusPrevious", source);
+        Assert.Contains("control.FocusNext", source);
+        Assert.Contains("control.GetPathTo(previous)", source);
+        Assert.Contains("control.GetPathTo(next)", source);
+    }
+
+    [Fact]
     public void TrainingRecovery_HitAndBlockUseExactProcessedFrameDurations()
     {
         var state = new RecoveryStateMachine();

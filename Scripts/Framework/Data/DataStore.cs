@@ -17,6 +17,9 @@ internal sealed class DataStore : IDataStore
     private ulong _physicsDatasetVersion;
     private readonly object _moveDatasetSync = new();
     private ulong _moveDatasetVersion;
+    private MoveContentIdentity _moveContentIdentity = new(string.Empty);
+    private DataContentIdentity _knockbackContentIdentity = new(string.Empty);
+    private DataContentIdentity _responseContentIdentity = new(string.Empty);
 
     internal ulong MoveDatasetVersion
     {
@@ -26,6 +29,36 @@ internal sealed class DataStore : IDataStore
     internal ulong PhysicsDatasetVersion
     {
         get { lock (_physicsDatasetSync) return _physicsDatasetVersion; }
+    }
+
+    internal void ObserveMoveContentIdentity(MoveContentIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+        lock (_moveDatasetSync) _moveContentIdentity = identity;
+    }
+
+    internal void ObservePhysicsContentIdentity(PhysicsDocumentKind kind, DataContentIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+        lock (_physicsDatasetSync)
+        {
+            if (kind == PhysicsDocumentKind.Knockback) _knockbackContentIdentity = identity;
+            else _responseContentIdentity = identity;
+        }
+    }
+
+    internal MoveDatasetBaseline CaptureMoveBaseline()
+    {
+        lock (_moveDatasetSync)
+            return new MoveDatasetBaseline(_moveDataset.Moves.Values.ToArray(), _moveDatasetVersion, _moveContentIdentity);
+    }
+
+    internal PhysicsDatasetBaseline CapturePhysicsBaseline()
+    {
+        lock (_physicsDatasetSync)
+            return new PhysicsDatasetBaseline(_knockbackProfiles.Values.ToArray(),
+                _physicsResponseProfiles.Values.ToArray(), _physicsDatasetVersion,
+                _knockbackContentIdentity, _responseContentIdentity);
     }
 
     public DataStore(
@@ -144,7 +177,8 @@ internal sealed class DataStore : IDataStore
     }
 
     internal bool TryCommitMoveDataset(
-        MoveDefinition[] moves, ulong expectedVersion, Func<bool> commitFile)
+        MoveDefinition[] moves, ulong expectedVersion, Func<bool> commitFile,
+        MoveContentIdentity? committedIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(moves);
         ArgumentNullException.ThrowIfNull(commitFile);
@@ -158,6 +192,7 @@ internal sealed class DataStore : IDataStore
                 return false;
             _moveDataset = candidate;
             _moveDatasetVersion = nextVersion;
+            if (committedIdentity is not null) _moveContentIdentity = committedIdentity;
             return true;
         }
     }
@@ -254,13 +289,15 @@ internal sealed class DataStore : IDataStore
         }
     }
 
-    internal bool TryCommitKnockbackProfiles(KnockbackProfile[] profiles, ulong expectedVersion)
+    internal bool TryCommitKnockbackProfiles(KnockbackProfile[] profiles, ulong expectedVersion,
+        DataContentIdentity? committedIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(profiles);
         PhysicsResponseProfile[] responses;
         lock (_physicsDatasetSync)
             responses = _physicsResponseProfiles.Values.ToArray();
-        return TryCommitPhysicsDataset(profiles, responses, expectedVersion);
+        return TryCommitPhysicsDataset(profiles, responses, expectedVersion,
+            static () => true, PhysicsDocumentKind.Knockback, committedIdentity);
     }
 
     public PhysicsResponseProfile? GetPhysicsResponseProfile(string profileId)
@@ -297,22 +334,35 @@ internal sealed class DataStore : IDataStore
         }
     }
 
-    internal bool TryCommitPhysicsResponseProfiles(PhysicsResponseProfile[] profiles, ulong expectedVersion)
+    internal bool TryCommitPhysicsResponseProfiles(PhysicsResponseProfile[] profiles, ulong expectedVersion,
+        DataContentIdentity? committedIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(profiles);
         KnockbackProfile[] knockbacks;
         lock (_physicsDatasetSync)
             knockbacks = _knockbackProfiles.Values.ToArray();
-        return TryCommitPhysicsDataset(knockbacks, profiles, expectedVersion);
+        return TryCommitPhysicsDataset(knockbacks, profiles, expectedVersion,
+            static () => true, PhysicsDocumentKind.Response, committedIdentity);
     }
 
     internal bool TryCommitPhysicsDataset(
         KnockbackProfile[] knockbackProfiles,
         PhysicsResponseProfile[] responseProfiles,
         ulong expectedVersion)
+        => TryCommitPhysicsDataset(knockbackProfiles, responseProfiles, expectedVersion,
+            static () => true, null, null);
+
+    internal bool TryCommitPhysicsDataset(
+        KnockbackProfile[] knockbackProfiles,
+        PhysicsResponseProfile[] responseProfiles,
+        ulong expectedVersion,
+        Func<bool> commitFile,
+        PhysicsDocumentKind? committedKind,
+        DataContentIdentity? committedIdentity)
     {
         ArgumentNullException.ThrowIfNull(knockbackProfiles);
         ArgumentNullException.ThrowIfNull(responseProfiles);
+        ArgumentNullException.ThrowIfNull(commitFile);
         var knockbackCandidate = BuildKnockbackCandidate(knockbackProfiles);
         var responseCandidate = BuildResponseCandidate(responseProfiles);
         lock (_physicsDatasetSync)
@@ -320,9 +370,14 @@ internal sealed class DataStore : IDataStore
             if (_physicsDatasetVersion != expectedVersion)
                 return false;
             ulong nextVersion = checked(_physicsDatasetVersion + 1);
+            if (!commitFile()) return false;
             _knockbackProfiles = knockbackCandidate;
             _physicsResponseProfiles = responseCandidate;
             _physicsDatasetVersion = nextVersion;
+            if (committedIdentity is not null && committedKind == PhysicsDocumentKind.Knockback)
+                _knockbackContentIdentity = committedIdentity;
+            if (committedIdentity is not null && committedKind == PhysicsDocumentKind.Response)
+                _responseContentIdentity = committedIdentity;
             return true;
         }
     }

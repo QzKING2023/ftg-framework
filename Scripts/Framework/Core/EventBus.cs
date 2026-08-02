@@ -226,6 +226,7 @@ public sealed class EventBus
             // Phase 0: Hot-Reload — drain DataReloadedEvent from FileWatcher
             while (_pendingReloads.TryDequeue(out var reloadEnvelope))
                 _currentQueue.Add(reloadEnvelope);
+            CoalesceDataReloads();
             DispatchType<Events.DataReloadedEvent>();
 
             // Phase 1: Frame tick
@@ -427,6 +428,28 @@ public sealed class EventBus
                 DispatchEnvelope(envelope, evt);
             }
         }
+    }
+
+    private void CoalesceDataReloads()
+    {
+        var latestByPath = new Dictionary<string, Envelope>(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        for (int i = 0; i < _currentQueue.Count; i++)
+        {
+            if (_currentQueue[i].Payload is not Events.DataReloadedEvent reload ||
+                _currentQueue[i].Epoch != _lifecycleEpoch) continue;
+            string path;
+            try { path = System.IO.Path.GetFullPath(reload.FilePath); }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+            { path = reload.FilePath; }
+            latestByPath[path] = _currentQueue[i] with { Payload = new Events.DataReloadedEvent(path) };
+        }
+        _currentQueue.RemoveAll(static envelope => envelope.Payload is Events.DataReloadedEvent);
+        // DispatchType is LIFO; reverse insertion yields deterministic canonical ascending dispatch.
+        foreach (Envelope envelope in latestByPath.OrderByDescending(pair => pair.Key,
+                     OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+                 .Select(pair => pair.Value))
+            _currentQueue.Add(envelope);
     }
 
     private static bool IsLifecycle<T>(T evt) =>

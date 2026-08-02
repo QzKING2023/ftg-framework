@@ -151,6 +151,57 @@ public sealed class PhysicsProfileHotReloadServiceTests : IDisposable
         Assert.Same(initial, store.GetKnockbackProfile("light"));
     }
 
+    [Fact]
+    public void DuplicateNotificationsForSameContent_CreateOneLogicalTransition()
+    {
+        var initial = Knockback("light", horizontal: 8);
+        var store = Store(knockback: [initial]);
+        string path = Write("knockback.json", KnockbackJson("light", 12));
+        Initialize(store, path, Write("response.json", ResponseJson("default", 1)));
+        ulong before = store.PhysicsDatasetVersion;
+
+        EventBus.Instance.Publish(new DataReloadedEvent(path));
+        EventBus.Instance.Publish(new DataReloadedEvent(path));
+        EventBus.Instance.ProcessFrame();
+
+        Assert.Equal(before + 1, store.PhysicsDatasetVersion);
+        Assert.Equal(12, store.GetKnockbackProfile("light")!.Horizontal);
+    }
+
+    [Fact]
+    public void Reload_PublishesProfilesVersionAndIdentityAsOneBaseline()
+    {
+        var store = Store(knockback: [Knockback("light", horizontal: 8)]);
+        string path = Write("knockback.json", KnockbackJson("light", 12));
+        Initialize(store, path, Write("response.json", ResponseJson("default", 1)));
+        DataContentIdentity expected = DataContentIdentity.FromBytes(File.ReadAllBytes(path));
+
+        Reload(path);
+
+        PhysicsDatasetBaseline baseline = store.CapturePhysicsBaseline();
+        Assert.Equal(12, Assert.Single(baseline.KnockbackProfiles).Horizontal);
+        Assert.Equal(expected, baseline.KnockbackIdentity);
+        Assert.Equal(store.PhysicsDatasetVersion, baseline.DatasetVersion);
+    }
+
+    [Fact]
+    public void AuthoredIdentityNotification_DoesNotCommitSecondVersion()
+    {
+        var initial = Knockback("light", horizontal: 8);
+        var store = Store(knockback: [initial]);
+        string path = Write("knockback.json", KnockbackJson("light", 12));
+        string response = Write("response.json", ResponseJson("default", 1));
+        Initialize(store, path, response);
+        byte[] bytes = File.ReadAllBytes(path);
+        CommittedDocumentRegistry.Observe(path, DataContentIdentity.FromBytes(bytes));
+        ulong before = store.PhysicsDatasetVersion;
+
+        Reload(path);
+
+        Assert.Equal(before, store.PhysicsDatasetVersion);
+        Assert.Same(initial, store.GetKnockbackProfile("light"));
+    }
+
     private void Initialize(
         DataStore store,
         string knockbackPath,

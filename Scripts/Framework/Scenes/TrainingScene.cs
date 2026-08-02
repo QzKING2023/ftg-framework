@@ -15,6 +15,8 @@ public partial class TrainingScene : Node, IScene
     public IInputHistory? InputHistory { get; set; }
     public IFrameDataEngine? FrameDataEngine { get; set; }
     public IStateMachine? StateMachine { get; set; }
+    public IRuntimeTuningService? RuntimeTuningService { get; set; }
+    public RuntimeTuningSessionAuthority? RuntimeTuningSessions { get; set; }
     public string P1CharacterId { get; set; } = string.Empty;
     public string P2CharacterId { get; set; } = string.Empty;
 
@@ -23,6 +25,7 @@ public partial class TrainingScene : Node, IScene
     private InputLog? _inputLog;
     private bool _overlayEnabled;
     private readonly TrainingStateRecovery _stateRecovery = new();
+    private RuntimeTuningPanel? _runtimeTuningPanel;
 
     public void Enter(ISceneManager manager)
     {
@@ -60,6 +63,17 @@ public partial class TrainingScene : Node, IScene
 
         var debugPanel = new EventBusDebugPanel();
         AddChild(debugPanel);
+
+        if (RuntimeTuningService is not null && RuntimeTuningSessions is not null)
+        {
+            _runtimeTuningPanel = new RuntimeTuningPanel
+            {
+                Service = RuntimeTuningService,
+                DataStore = DataStore,
+                Sessions = RuntimeTuningSessions
+            };
+            AddChild(_runtimeTuningPanel);
+        }
 
         SubscribeDebugEvents();
     }
@@ -155,6 +169,8 @@ public partial class TrainingScene : Node, IScene
 
     public void Exit()
     {
+        _runtimeTuningPanel?.Shutdown();
+        _runtimeTuningPanel = null;
         if (StateMachine is not null)
             _stateRecovery.RestoreIfOwned(StateMachine);
         UnsubscribeDebugEvents();

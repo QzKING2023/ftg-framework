@@ -34,6 +34,8 @@ public partial class GameLoop : Node
     private Action<MatchInitializedEvent>? _matchInitializedHandler;
     private string _p1CharacterId = string.Empty;
     private string _p2CharacterId = string.Empty;
+    private RuntimeTuningService? _runtimeTuningService;
+    private RuntimeTuningSessionAuthority? _runtimeTuningSessions;
 
     public IStateMachine? StateMachine => _stateMachine;
     public IInputHistory? InputHistory => _inputHistory;
@@ -115,6 +117,15 @@ public partial class GameLoop : Node
             stateMachine.InitializePlayer(1);
             stateMachine.InitializePlayer(2);
 
+            _runtimeTuningSessions = new RuntimeTuningSessionAuthority();
+            _runtimeTuningService = new RuntimeTuningService(
+                ProjectSettings.GlobalizePath("res://Scripts/Framework/Data/"),
+                (DataStore)_dataStore,
+                ProjectSettings.GlobalizePath(knockbackPath),
+                ProjectSettings.GlobalizePath(responsePath),
+                stateMachine.GetRegisteredPhysicsProfileIds,
+                isSessionCurrent: _runtimeTuningSessions.IsCurrent);
+
             var profileReload = new PhysicsProfileHotReloadService(
                 ProjectSettings.GlobalizePath(knockbackPath),
                 ProjectSettings.GlobalizePath(responsePath),
@@ -191,6 +202,8 @@ public partial class GameLoop : Node
                 InputHistory = _inputHistory,
                 FrameDataEngine = _frameDataEngine,
                 StateMachine = _stateMachine,
+                RuntimeTuningService = _runtimeTuningService,
+                RuntimeTuningSessions = _runtimeTuningSessions,
                 P1CharacterId = _p1CharacterId,
                 P2CharacterId = _p2CharacterId
             };
@@ -206,6 +219,8 @@ public partial class GameLoop : Node
                 InputHistory = _inputHistory,
                 FrameDataEngine = _frameDataEngine,
                 StateMachine = _stateMachine,
+                RuntimeTuningService = _runtimeTuningService,
+                RuntimeTuningSessions = _runtimeTuningSessions,
                 P1CharacterId = _p1CharacterId,
                 P2CharacterId = _p2CharacterId
             });

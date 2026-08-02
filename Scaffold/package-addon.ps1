@@ -93,6 +93,8 @@ try {
     New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
     Copy-Item -Path $addonDir -Destination $packageAddon -Recurse -Force
     Get-ChildItem -Path $packageAddon -Recurse -File -Filter '*.uid' | Remove-Item -Force
+    $scaffoldEntry = Join-Path $packageAddon "FTGEditorPluginEntry.cs"
+    if (Test-Path $scaffoldEntry) { Remove-Item -Path $scaffoldEntry -Force }
     $packageCfg = Join-Path $packageAddon "plugin.cfg"
     $packageCfgContent = (Get-Content -Raw $packageCfg) -replace 'script="[^"]+"', 'script="src/Editor/FTGEditorPlugin.cs"'
     Set-Content -Path $packageCfg -Value $packageCfgContent -NoNewline -Encoding utf8

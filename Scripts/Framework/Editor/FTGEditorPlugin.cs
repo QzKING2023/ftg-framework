@@ -1,5 +1,6 @@
 #if TOOLS
 #nullable enable
+using System;
 using System.IO;
 using FTG_Framework.Data;
 using Godot;
@@ -11,6 +12,7 @@ public partial class FTGEditorPlugin : EditorPlugin
 {
     private MoveAuthoringDock? _dock;
     private GodotEditorContext? _context;
+    private bool _dockRegistrationAttempted;
 
     public override void _EnterTree()
     {
@@ -27,7 +29,9 @@ public partial class FTGEditorPlugin : EditorPlugin
             var undo = new MoveAuthoringUndoService(_context, persistence, "example_moves");
             _dock = new MoveAuthoringDock();
             _dock.Bind(viewModel, undo);
+            _dockRegistrationAttempted = true;
             AddControlToDock(DockSlot.LeftBr, _dock);
+            GD.Print("[FTG Editor] Move authoring dock registered.");
         }
         catch { Cleanup(); throw; }
     }
@@ -51,11 +55,43 @@ public partial class FTGEditorPlugin : EditorPlugin
 
     private void Cleanup()
     {
-        _context?.Dispose();
+        GodotEditorContext? context = _context;
         _context = null;
-        if (_dock is null) return;
-        if (IsInstanceValid(_dock)) { RemoveControlFromDocks(_dock); _dock.QueueFree(); }
+        MoveAuthoringDock? dock = _dock;
         _dock = null;
+        bool removeDock = _dockRegistrationAttempted;
+        _dockRegistrationAttempted = false;
+
+        try
+        {
+            context?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            GD.PushError($"[FTG Editor] Context cleanup failed: {ex.Message}");
+        }
+
+        if (dock is null || !IsInstanceValid(dock)) return;
+        if (removeDock)
+        {
+            try
+            {
+                RemoveControlFromDocks(dock);
+                GD.Print("[FTG Editor] Move authoring dock removed.");
+            }
+            catch (Exception ex)
+            {
+                GD.PushError($"[FTG Editor] Dock removal failed: {ex.Message}");
+            }
+        }
+        try
+        {
+            dock.QueueFree();
+        }
+        catch (Exception ex)
+        {
+            GD.PushError($"[FTG Editor] Dock release failed: {ex.Message}");
+        }
     }
 }
 #endif

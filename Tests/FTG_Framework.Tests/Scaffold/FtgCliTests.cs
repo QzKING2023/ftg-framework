@@ -292,8 +292,26 @@ public class FtgCliTests
             // UI — ViewModels
             Assert.True(Directory.Exists(Path.Combine(scriptsDir, "UI", "Training", "ViewModels")));
 
+            // EditorPlugin authoring flow and enablement
+            var editorDir = Path.Combine(scriptsDir, "Editor");
+            Assert.True(File.Exists(Path.Combine(editorDir, "FTGEditorPlugin.cs")));
+            Assert.True(File.Exists(Path.Combine(editorDir, "GodotEditorContext.cs")));
+            Assert.True(File.Exists(Path.Combine(editorDir, "IEditorContext.cs")));
+            Assert.True(File.Exists(Path.Combine(editorDir, "MoveAuthoringDock.cs")));
+            Assert.True(File.Exists(Path.Combine(editorDir, "MoveAuthoringUndoService.cs")));
+
+            var projectDir = Path.Combine(tmpDir, "FullModules");
+            var pluginConfig = Path.Combine(projectDir, "addons", "ftg-framework", "plugin.cfg");
+            var pluginEntry = Path.Combine(projectDir, "addons", "ftg-framework", "FTGEditorPluginEntry.cs");
+            Assert.True(File.Exists(pluginConfig));
+            Assert.True(File.Exists(pluginEntry));
+            Assert.Contains("script=\"FTGEditorPluginEntry.cs\"", File.ReadAllText(pluginConfig), StringComparison.Ordinal);
+            Assert.Contains("FTGEditorPlugin", File.ReadAllText(pluginEntry), StringComparison.Ordinal);
+            Assert.Contains("res://addons/ftg-framework/plugin.cfg",
+                File.ReadAllText(Path.Combine(projectDir, "project.godot")), StringComparison.Ordinal);
+
             // FrameRateManager
-            Assert.True(File.Exists(Path.Combine(tmpDir, "FullModules", "Scripts", "FrameRateManager.cs")));
+            Assert.True(File.Exists(Path.Combine(projectDir, "Scripts", "FrameRateManager.cs")));
         }
         finally
         {
@@ -859,6 +877,14 @@ public class FtgCliTests
             Assert.Contains(names, n => n.EndsWith("src/Data/example_moves.json"));
             Assert.Contains(names, n => n.EndsWith("src/Data/example_knockback_profiles.json"));
             Assert.Contains(names, n => n.EndsWith("src/Editor/FTGEditorPlugin.cs"));
+            Assert.DoesNotContain(names, n => n.EndsWith("FTGEditorPluginEntry.cs", StringComparison.Ordinal));
+            var packagedPluginConfig = Assert.Single(zip.Entries, entry =>
+                string.Equals(entry.FullName.Replace('\\', '/'), "ftg-framework/plugin.cfg",
+                    StringComparison.Ordinal));
+            using var pluginReader = new StreamReader(packagedPluginConfig.Open());
+            var packagedPluginText = pluginReader.ReadToEnd();
+            Assert.Contains("script=\"src/Editor/FTGEditorPlugin.cs\"", packagedPluginText, StringComparison.Ordinal);
+            Assert.DoesNotContain("FTGEditorPluginEntry.cs", packagedPluginText, StringComparison.Ordinal);
         }
         finally
         {

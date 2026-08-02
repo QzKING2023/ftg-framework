@@ -90,7 +90,8 @@ cp "$PLUGIN_CFG" "$PLUGIN_CFG_BACKUP"
 trap 'mv -f "$PLUGIN_CFG_BACKUP" "$PLUGIN_CFG"' EXIT
 sed -i.bak 's#^script="[^"]*"#script="src/Editor/FTGEditorPlugin.cs"#' "$PLUGIN_CFG"
 rm -f "$PLUGIN_CFG.bak" "$ZIP_PATH"
-(cd "$ADDON_DIR/.." && zip -r "$ZIP_PATH" "ftg-framework/") > /dev/null
+(cd "$ADDON_DIR/.." && zip -r "$ZIP_PATH" "ftg-framework/" \
+    -x "ftg-framework/FTGEditorPluginEntry.cs") > /dev/null
 mv -f "$PLUGIN_CFG_BACKUP" "$PLUGIN_CFG"
 trap - EXIT
 

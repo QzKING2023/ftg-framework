@@ -13,3 +13,7 @@
 ## Deferred from: code review of v2-prep-2-4-epic-2-planning-and-evidence-review (2026-08-01)
 
 - PREP-2.3’s `backlog -> done` sprint transition appears in the PREP-2.4 baseline diff but predates PREP-2.4 and belongs to the active PREP-2.3 workstream. Verify it against PREP-2.3 closure evidence rather than reverting it from PREP-2.4. [_bmad-output/implementation-artifacts/sprint-status.yaml:223]
+
+## Deferred from: code review of v2-2-1-c-godot-editor-flow (2026-08-02)
+
+- `Tests/FTG_Framework.Tests/Scaffold/FtgCliTests.cs:863-893`: `PackageAddon_ProducesValidZip` uses the first matching archive and deletes all `ftg-framework-*.zip` files. This is a real isolation/cleanup risk, but the behavior predates the reviewed slice-C diff and belongs in separate test-infrastructure work.

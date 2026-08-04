@@ -20,6 +20,14 @@ This is the canonical PREP-2.4 readiness artifact. A story cannot enter `ready-f
 4. Story 2.5 consumes the accepted Story 2.4 recording codec and PREP-2.3 snapshot coordinator. Its recording round-trip slice runs only after the codec exists; Story 2.4 never depends on unfinished Story 2.5.
 5. Epic numbering is product grouping, not executable order. Completed Epic 3 capabilities remain dependencies where named.
 
+### Joint Godot Acceptance Dependency — JGA-2.3-CORR-1
+
+- Story 2.3 automated implementation is frozen before CORR-1 changes shared training-scene files. Story 2.3-C interactive acceptance is not a prerequisite for starting CORR-1.
+- After CORR-1 implementation and both automated gates pass, one immutable combined inventory enters the joint Godot session at `_bmad-output/implementation-artifacts/evidence/joint-2-3-corr-1/acceptance-plan.md`.
+- Shared raw evidence is stored once. Story 2.3 and CORR-1 retain separate AC mappings, SHA-256 references, approval records, failure disposition, and completion status.
+- Story 2.3 E2.3-G/E cannot pass from CORR-1 evidence alone; CORR-1 GODOT/SCAFFOLD evidence cannot pass from ComboDisplay observation alone.
+- Story 2.4 remains blocked only by CORR-1 completion under the approved 2026-08-03 correction.
+
 ## Blocking Decision Inventory
 
 | ID | Owner | Affected story | Binding resolution | Evidence | Status |

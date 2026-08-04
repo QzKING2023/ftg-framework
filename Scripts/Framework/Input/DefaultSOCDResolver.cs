@@ -4,25 +4,24 @@ using FTG_Framework.Core;
 namespace FTG_Framework.Input;
 
 /// <summary>
-/// Default SOCD resolver implementing tournament-standard rules:
+/// Default modern SOCD-N resolver:
 /// L+R → Neutral (both horizontal directions cleared)
-/// U+D → Up (down cleared, up preserved)
-/// All four → Up (U+D resolves first to Up, L+R clears horizontal → Up survives)
+/// U+D → Neutral (both vertical directions cleared)
+/// All four → Neutral
 /// </summary>
 internal sealed class DefaultSOCDResolver : ISOCDResolver
 {
     public DirectionValue Resolve(bool left, bool right, bool down, bool up)
     {
-        // Step 1: Vertical SOCD — U+D → Up (clear down, keep up)
+        // SOCD-N: each opposing pair returns its axis to Neutral.
         bool cleanedUp = up;
         bool cleanedDown = down;
         if (down && up)
         {
             cleanedDown = false;
-            // cleanedUp stays true — U+D → Up
+            cleanedUp = false;
         }
 
-        // Step 2: Horizontal SOCD — L+R → Neutral (clear both)
         bool cleanedLeft = left;
         bool cleanedRight = right;
         if (left && right)

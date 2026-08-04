@@ -80,19 +80,17 @@ public class DefaultSOCDResolverTests
     }
 
     [Fact]
-    public void Socd_UpDown_ReturnsUp()
+    public void Socd_UpDown_ReturnsNeutral()
     {
         var result = _resolver.Resolve(left: false, right: false, down: true, up: true);
-        Assert.Equal(DirectionValue.Up, result);
+        Assert.Equal(DirectionValue.Neutral, result);
     }
 
     [Fact]
-    public void Socd_AllFour_ReturnsUp()
+    public void Socd_AllFour_ReturnsNeutral()
     {
-        // Resolution order: (1) U+D → Up, (2) L+R → Neutral (horizontal only)
-        // Vertical Up survives; horizontal cleared. Final: Up.
         var result = _resolver.Resolve(left: true, right: true, down: true, up: true);
-        Assert.Equal(DirectionValue.Up, result);
+        Assert.Equal(DirectionValue.Neutral, result);
     }
 
     [Fact]
@@ -112,19 +110,17 @@ public class DefaultSOCDResolverTests
     }
 
     [Fact]
-    public void Socd_UpDown_WithLeft_ReturnsUpBack()
+    public void Socd_UpDown_WithLeft_ReturnsBack()
     {
-        // U+D → Up, Left passes through → UpBack
         var result = _resolver.Resolve(left: true, right: false, down: true, up: true);
-        Assert.Equal(DirectionValue.UpBack, result);
+        Assert.Equal(DirectionValue.Back, result);
     }
 
     [Fact]
-    public void Socd_UpDown_WithRight_ReturnsUpForward()
+    public void Socd_UpDown_WithRight_ReturnsForward()
     {
-        // U+D → Up, Right passes through → UpForward
         var result = _resolver.Resolve(left: false, right: true, down: true, up: true);
-        Assert.Equal(DirectionValue.UpForward, result);
+        Assert.Equal(DirectionValue.Forward, result);
     }
 
     [Fact]

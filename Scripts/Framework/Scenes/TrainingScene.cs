@@ -24,12 +24,37 @@ public partial class TrainingScene : Node, IScene
     private HitboxOverlay? _hitboxOverlay;
     private InputLog? _inputLog;
     private bool _overlayEnabled;
-    private readonly TrainingStateRecovery _stateRecovery = new();
     private RuntimeTuningPanel? _runtimeTuningPanel;
+    private ComboDisplay? _comboDisplay;
+    private CharacterController? _p1Character;
+    private CharacterController? _p2Character;
+    private DiagnosticsTestHarness? _diagnostics;
+    private Label? _diagnosticsLabel;
 
     public void Enter(ISceneManager manager)
     {
         InstantiateCharacters();
+
+        var presentation = new TestMatchPresentation();
+        if (_p1Character is not null && _p2Character is not null)
+            presentation.Bind(_p1Character, _p2Character);
+        AddChild(presentation);
+
+        AddChild(new ControlsLegend());
+
+        bool settingEnabled = ProjectSettings.GetSetting(
+            "ftg/test_harness/enabled", false).AsBool();
+        _diagnostics = new DiagnosticsTestHarness(
+            new DiagnosticsPolicy(settingEnabled, OS.IsDebugBuild()));
+        _diagnosticsLabel = new Label
+        {
+            Text = settingEnabled && OS.IsDebugBuild()
+                ? DiagnosticsTestHarness.TestModeText
+                : "DIAGNOSTICS DISABLED — gameplay evidence only",
+            Position = new Vector2(10, 180),
+            AutowrapMode = TextServer.AutowrapMode.WordSmart
+        };
+        AddChild(_diagnosticsLabel);
 
         var frameDataPanel = new FrameDataPanel
         {
@@ -44,9 +69,15 @@ public partial class TrainingScene : Node, IScene
         };
         AddChild(advantageDisplay);
 
+        _comboDisplay = new ComboDisplay
+        {
+            PanelPosition = new Vector2(10, 110)
+        };
+        AddChild(_comboDisplay);
+
         _inputLog = new InputLog
         {
-            PanelPosition = new Vector2(10, 110),
+            PanelPosition = new Vector2(10, 145),
             InputHistory = InputHistory
         };
         AddChild(_inputLog);
@@ -114,6 +145,7 @@ public partial class TrainingScene : Node, IScene
         p1.PlayerId = 1;
         p1.CharacterId = P1CharacterId;
         p1.Position = p1Position;
+        _p1Character = p1;
 
         var p2Node = scene.Instantiate();
         if (p2Node is not CharacterController p2)
@@ -127,6 +159,7 @@ public partial class TrainingScene : Node, IScene
         p2.PlayerId = 2;
         p2.CharacterId = P2CharacterId;
         p2.Position = p2Position;
+        _p2Character = p2;
 
         AddChild(p1);
         AddChild(p2);
@@ -169,18 +202,22 @@ public partial class TrainingScene : Node, IScene
 
     public void Exit()
     {
+        _comboDisplay?.Shutdown();
+        _comboDisplay = null;
         _runtimeTuningPanel?.Shutdown();
         _runtimeTuningPanel = null;
         if (StateMachine is not null)
-            _stateRecovery.RestoreIfOwned(StateMachine);
+            _diagnostics?.Reset(StateMachine);
+        _diagnostics = null;
+        _diagnosticsLabel = null;
         UnsubscribeDebugEvents();
     }
 
     public override void _Process(double delta)
     {
         bool pauseKey = Godot.Input.IsKeyPressed(Key.P);
-        bool stepFwd = Godot.Input.IsKeyPressed(Key.Right);
-        bool stepBack = Godot.Input.IsKeyPressed(Key.Left);
+        bool stepFwd = Godot.Input.IsKeyPressed(Key.Bracketright);
+        bool stepBack = Godot.Input.IsKeyPressed(Key.Bracketleft);
         bool hitKey = Godot.Input.IsKeyPressed(Key.H);
         bool blockKey = Godot.Input.IsKeyPressed(Key.B);
         bool overlayKey = Godot.Input.IsKeyPressed(Key.O);
@@ -211,8 +248,10 @@ public partial class TrainingScene : Node, IScene
         if (stepBack && !_prevStepBackKey)
             _playbackControls?.StepBackward();
 
-        // H/B event injection was removed with FrameDataEngine's legacy hit
-        // publisher. Use configured collision geometry to exercise hit/block paths.
+        if (hitKey && !_prevHitKey)
+            RunDiagnosticInjection(CharacterState.Hitstun);
+        if (blockKey && !_prevBlockKey)
+            RunDiagnosticInjection(CharacterState.Blockstun);
 
         if (overlayKey && !_prevOverlayKey)
         {
@@ -235,6 +274,14 @@ public partial class TrainingScene : Node, IScene
         }
     }
 
+    private void RunDiagnosticInjection(CharacterState state)
+    {
+        if (_diagnostics is null || StateMachine is null) return;
+        var result = _diagnostics.TryInjectP2(StateMachine, state);
+        if (_diagnosticsLabel is not null) _diagnosticsLabel.Text = result.Message;
+        if (result.Accepted) GD.Print(result.Message); else GD.PrintErr(result.Message);
+    }
+
     // ── Debug event subscriptions ──
 
     private bool _prevPauseKey, _prevStepFwdKey, _prevStepBackKey;
@@ -249,7 +296,6 @@ public partial class TrainingScene : Node, IScene
     private Action<InputReceivedEvent>? _dbgInput;
     private Action<ReplayStartedEvent>? _dbgReplayStart;
     private Action<ReplayEndedEvent>? _dbgReplayEnd;
-    private Action<FrameAdvancedEvent>? _trainingFrameAdvanced;
 
     private void SubscribeDebugEvents()
     {
@@ -262,14 +308,10 @@ public partial class TrainingScene : Node, IScene
         _dbgHit ??= e =>
         {
             GD.Print($"[DEBUG] HitConnected: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.HitAdvantage} dmg={e.Damage}");
-            if (e.DefenderId == 2)
-                _stateRecovery.Start(CharacterState.Hitstun);
         };
         _dbgBlock ??= e =>
         {
             GD.Print($"[DEBUG] MoveBlocked: {e.AttackerId}->{e.DefenderId} {e.MoveId} adv={e.BlockAdvantage} dmg={e.Damage}");
-            if (e.DefenderId == 2)
-                _stateRecovery.Start(CharacterState.Blockstun);
         };
         _dbgInput ??= e =>
             GD.Print($"[DEBUG] InputRecv: P{e.PlayerId} frame={e.Frame} type={e.InputType} val={e.InputValue}");
@@ -277,11 +319,6 @@ public partial class TrainingScene : Node, IScene
             GD.Print($"[DEBUG] ReplayStarted: {e.TotalFrames} frames, dataVersion={e.DataVersion}");
         _dbgReplayEnd ??= e =>
             GD.Print($"[DEBUG] ReplayEnded: {e.TotalFramesPlayed} frames played");
-        _trainingFrameAdvanced ??= _ =>
-        {
-            if (StateMachine is not null)
-                _stateRecovery.AdvanceProcessedFrame(StateMachine);
-        };
 
         EventBus.Instance.Subscribe(_dbgMoveFrame);
         EventBus.Instance.Subscribe(_dbgCancelEnter);
@@ -291,7 +328,6 @@ public partial class TrainingScene : Node, IScene
         EventBus.Instance.Subscribe(_dbgInput);
         EventBus.Instance.Subscribe(_dbgReplayStart!);
         EventBus.Instance.Subscribe(_dbgReplayEnd!);
-        EventBus.Instance.Subscribe(_trainingFrameAdvanced);
     }
 
     private void UnsubscribeDebugEvents()
@@ -304,7 +340,6 @@ public partial class TrainingScene : Node, IScene
         if (_dbgInput is not null) EventBus.Instance.Unsubscribe(_dbgInput);
         if (_dbgReplayStart is not null) EventBus.Instance.Unsubscribe(_dbgReplayStart);
         if (_dbgReplayEnd is not null) EventBus.Instance.Unsubscribe(_dbgReplayEnd);
-        if (_trainingFrameAdvanced is not null) EventBus.Instance.Unsubscribe(_trainingFrameAdvanced);
     }
 }
 

@@ -49,6 +49,8 @@ script = ExtResource("1_char_script")
 SpriteContainer = NodePath("SpriteContainer")
 HurtboxContainer = NodePath("HurtboxContainer")
 AnimationPlayer = NodePath("AnimationPlayer")
+PlayerId = null
+CharacterId = null
 StateDebugLabel = NodePath("StateDebugLabel")
 
 [node name="SpriteContainer" type="Node2D" parent="."]

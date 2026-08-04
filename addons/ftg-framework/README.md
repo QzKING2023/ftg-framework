@@ -2,6 +2,10 @@
 
 Modular fighting game framework for Godot 4.x C#.
 
+## Minimal playable controls
+
+P1 uses `A`/`D`/`S`/`Space`/`U`; P2 uses `Left`/`Right`/`Down`/`Up`/`N`. Hold facing-relative Back before the real `5LP` contact to block. Test diagnostics (`P`, `]`, `[`, `O`, `1`, `2`, `H`, `B`) are visibly non-production; H/B require the project test-harness setting plus a debug build and are not gameplay evidence.
+
 ## Requirements
 
 - Godot 4.5+ (4.7+ recommended)

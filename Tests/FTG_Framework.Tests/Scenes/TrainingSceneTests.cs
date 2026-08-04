@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using FTG_Framework.Core;
 using FTG_Framework.Scenes;
+using FTG_Framework.UI.Training;
 using Godot;
 using Xunit;
 
@@ -104,6 +105,58 @@ public class TrainingSceneTests
         Assert.Contains("control.FocusNext", source);
         Assert.Contains("control.GetPathTo(previous)", source);
         Assert.Contains("control.GetPathTo(next)", source);
+    }
+
+    [Fact]
+    public void TrainingScene_ComposesAndExplicitlyShutsDownComboDisplay()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scripts", "Framework", "Scenes", "TrainingScene.cs"));
+
+        Assert.Contains("_comboDisplay = new ComboDisplay", source);
+        Assert.Contains("AddChild(_comboDisplay)", source);
+        Assert.Contains("_comboDisplay?.Shutdown()", source);
+        Assert.Contains("_comboDisplay = null", source);
+    }
+
+    [Fact]
+    public void TrainingScene_ComposesObserverOnlyTestPresentationAndLegend()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scripts", "Framework", "Scenes", "TrainingScene.cs"));
+        Assert.Contains("new TestMatchPresentation", source);
+        Assert.Contains("new ControlsLegend", source);
+        Assert.Contains("Key.Bracketright", source);
+        Assert.Contains("Key.Bracketleft", source);
+        Assert.DoesNotContain("Key.Right);\n        bool stepBack", source);
+    }
+
+    [Fact]
+    public void EventBusDebugPanel_DoesNotConsumeP2ArrowKeys()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scripts", "Framework", "UI", "Training", "EventBusDebugPanel.cs"));
+        Assert.DoesNotContain("Key.Down", source);
+        Assert.DoesNotContain("Key.Up", source);
+        Assert.Contains("Key.Pagedown", source);
+        Assert.Contains("Key.Pageup", source);
+    }
+
+    [Fact]
+    public void ComboDisplay_IsThinReadableAdapterWithDeterministicText()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scripts", "Framework", "UI", "Training", "ComboDisplay.cs"));
+
+        Assert.Contains("new ComboDisplayViewModel", source);
+        Assert.Contains("new ComboDisplayController", source);
+        Assert.Contains("CustomMinimumSize", source);
+        Assert.Contains("AutowrapMode", source);
+        Assert.DoesNotContain("DataStore", source);
+        Assert.Equal("P1 Combo: 2 Hits | Damage: 110", ComboDisplay.FormatDisplayText(
+            1, new FTG_Framework.UI.Training.ViewModels.ComboDisplayState(2, 110)));
+        Assert.Equal("P2 Combo: 0 Hits | Damage: 0", ComboDisplay.FormatDisplayText(
+            2, FTG_Framework.UI.Training.ViewModels.ComboDisplayState.Empty));
     }
 
     [Fact]

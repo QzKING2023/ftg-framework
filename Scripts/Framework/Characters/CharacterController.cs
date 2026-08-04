@@ -129,12 +129,19 @@ public partial class CharacterController : Node2D, IPhysicsParticipant, IRestora
         return _motion;
     }
 
-    void IRestorablePhysicsParticipant.RestoreRuntimeSnapshot(
-        PhysicsParticipantSnapshot participant, PhysicsMotionSnapshot motion)
+    public void ApplyPhysicsState(PhysicsParticipantSnapshot participant, PhysicsMotionSnapshot motion)
     {
         GlobalPosition = new Vector2(participant.WorldX, participant.WorldY);
         _facingRight = participant.FacingRight;
         _motion = motion;
+        if (SpriteContainer is not null)
+            SpriteContainer.Scale = SpriteContainer.Scale with { X = _facingRight ? 1.0f : -1.0f };
+    }
+
+    void IRestorablePhysicsParticipant.RestoreRuntimeSnapshot(
+        PhysicsParticipantSnapshot participant, PhysicsMotionSnapshot motion)
+    {
+        ApplyPhysicsState(participant, motion);
         ResetKnockbackEventOrder();
     }
 
@@ -199,14 +206,13 @@ public partial class CharacterController : Node2D, IPhysicsParticipant, IRestora
             : fallbackEvent is { } e
                 ? e.NewSnapshot.TopOrIdle
                 : CharacterState.Idle;
-        UpdateFacing();
-
         if (_displayedState == top)
             return;
 
         _displayedState = top;
         var animName = _viewModel.GetAnimationName(top);
-        AnimationPlayer?.Play(animName);
+        if (AnimationPlayer?.HasAnimation(animName) == true)
+            AnimationPlayer.Play(animName);
 
         if (StateDebugLabel is not null)
             StateDebugLabel.Text = $"[P{PlayerId}] {top}";
@@ -216,29 +222,6 @@ public partial class CharacterController : Node2D, IPhysicsParticipant, IRestora
     {
         ArgumentNullException.ThrowIfNull(stateMachine);
         return $"[P{playerId}] {stateMachine.GetCurrentState(playerId)}";
-    }
-
-    private void UpdateFacing()
-    {
-        if (_gameLoop is null)
-            return;
-
-        var history = _gameLoop.InputHistory?.GetDirectionalHistory(PlayerId);
-        if (history is not { Count: > 0 })
-            return;
-
-        var raw = history[^1].Value;
-
-        var dir = raw is >= 1 and <= 9
-            ? (DirectionValue)raw
-            : DirectionValue.Neutral;
-
-        var facing = _viewModel.ShouldFaceRight(dir);
-        if (facing.HasValue)
-            _facingRight = facing.Value;
-
-        if (SpriteContainer is not null)
-            SpriteContainer.Scale = SpriteContainer.Scale with { X = _facingRight ? 1.0f : -1.0f };
     }
 
     private void CollectHurtboxes()

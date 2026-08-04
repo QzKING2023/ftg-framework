@@ -264,6 +264,7 @@ public class FtgCliTests
             // Input
             Assert.True(File.Exists(Path.Combine(scriptsDir, "Input", "InputHistory.cs")));
             Assert.True(File.Exists(Path.Combine(scriptsDir, "Input", "DefaultSOCDResolver.cs")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "Input", "WorldInputMapper.cs")));
 
             // Data
             Assert.True(File.Exists(Path.Combine(scriptsDir, "Data", "DataStore.cs")));
@@ -288,6 +289,9 @@ public class FtgCliTests
             Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "PlaybackControls.cs")));
             Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "EventBusDebugPanel.cs")));
             Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "CharacterSelect.cs")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "ControlsLegend.cs")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "TestMatchPresentation.cs")));
+            Assert.True(File.Exists(Path.Combine(scriptsDir, "UI", "Training", "DiagnosticsTestHarness.cs")));
 
             // UI — ViewModels
             Assert.True(Directory.Exists(Path.Combine(scriptsDir, "UI", "Training", "ViewModels")));
@@ -826,6 +830,11 @@ public class FtgCliTests
         Assert.Contains("InitializationTimeoutFrames", harness, StringComparison.Ordinal);
         Assert.Contains("character.PlayerId == 1", harness, StringComparison.Ordinal);
         Assert.Contains("visible P1 InputLog missing", harness, StringComparison.Ordinal);
+        Assert.DoesNotContain("GlobalPosition =", harness, StringComparison.Ordinal);
+        Assert.Contains("DriveScenario(characters, gameLoop!)", harness, StringComparison.Ordinal);
+        Assert.Contains("if (gap <= 28f)", harness, StringComparison.Ordinal);
+        Assert.Contains("_p2BackKey = p2.GlobalPosition.X > p1.GlobalPosition.X ? Key.Right : Key.Left", harness, StringComparison.Ordinal);
+        Assert.Contains("real P2 Back block", harness, StringComparison.Ordinal);
     }
 
     [Fact]

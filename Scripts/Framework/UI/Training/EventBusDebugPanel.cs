@@ -49,7 +49,7 @@ public partial class EventBusDebugPanel : Control
         };
         AddChild(_container);
 
-        _titleLabel = new Label { Text = "EventBus Debug Panel" };
+        _titleLabel = new Label { Text = "EventBus Debug Panel (PageUp/PageDown navigate)" };
         _titleLabel.AddThemeColorOverride("font_color", Colors.Yellow);
         _titleLabel.AddThemeFontSizeOverride("font_size", FontSize + 2);
         _container.AddChild(_titleLabel);
@@ -138,15 +138,15 @@ public partial class EventBusDebugPanel : Control
         _entryListLabel.Text = entryLines.ToString();
 
         // Handle navigation input
-        if (Godot.Input.IsKeyPressed(Key.Down) && !_prevDown)
+        if (Godot.Input.IsKeyPressed(Key.Pagedown) && !_prevDown)
             _vm.SelectedIndex = _vm.SelectedIndex + 1 < entries.Count ? _vm.SelectedIndex + 1 : _vm.SelectedIndex;
-        if (Godot.Input.IsKeyPressed(Key.Up) && !_prevUp)
+        if (Godot.Input.IsKeyPressed(Key.Pageup) && !_prevUp)
             _vm.SelectedIndex = _vm.SelectedIndex - 1 >= -1 ? _vm.SelectedIndex - 1 : _vm.SelectedIndex;
 
         _detailLabel.Text = _vm.SelectedDetailText;
 
-        _prevDown = Godot.Input.IsKeyPressed(Key.Down);
-        _prevUp = Godot.Input.IsKeyPressed(Key.Up);
+        _prevDown = Godot.Input.IsKeyPressed(Key.Pagedown);
+        _prevUp = Godot.Input.IsKeyPressed(Key.Pageup);
     }
 
     private bool _prevDown;

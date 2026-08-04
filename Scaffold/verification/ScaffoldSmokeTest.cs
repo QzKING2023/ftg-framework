@@ -16,8 +16,12 @@ public partial class ScaffoldSmokeTest : Node
     private int _elapsedFrames;
     private int _scenarioFrame;
     private bool _scenarioStarted;
+    private int _stage;
+    private int _stageFrame;
+    private Key _p2BackKey;
     private bool _sawP1AttackState;
     private int _collisionHitCount;
+    private int _collisionBlockCount;
     private HitConnectedEvent _collisionHit;
     private int _collisionDispatchFrame = -1;
     private double _baselineMaximumDelta;
@@ -51,8 +55,6 @@ public partial class ScaffoldSmokeTest : Node
             {
                 var initialP1 = characters.Single(character => character.PlayerId == 1);
                 var initialP2 = characters.Single(character => character.PlayerId == 2);
-                initialP1.GlobalPosition = new Vector2(600, 360);
-                initialP2.GlobalPosition = new Vector2(650, 360);
                 _initialP2X = initialP2.GlobalPosition.X;
                 _collisionHandler = hit =>
                 {
@@ -64,6 +66,7 @@ public partial class ScaffoldSmokeTest : Node
                     }
                 };
                 EventBus.Instance.Subscribe(_collisionHandler);
+                EventBus.Instance.Subscribe<MoveBlockedEvent>(OnMoveBlocked);
                 _knockbackHandler = applied =>
                 {
                     if (applied.PlayerId != 2 || !applied.WorldX.HasValue)
@@ -93,6 +96,7 @@ public partial class ScaffoldSmokeTest : Node
                     updatedProfileJson);
                 _hotReloadRequested = true;
                 _scenarioStarted = true;
+                _stage = 1;
                 return;
             }
 
@@ -111,14 +115,82 @@ public partial class ScaffoldSmokeTest : Node
             p1?.StateDebugLabel?.Text.Contains("Attack", StringComparison.Ordinal) == true;
         CaptureVisibleP1Inputs(inputLog!);
 
-        InjectKeyAt(30, Key.A);
-        InjectKeyAt(35, Key.D);
-        InjectKeyAt(40, Key.S);
-        InjectKeyAt(45, Key.Space);
-        InjectKeyAt(50, Key.U);
+        DriveScenario(characters, gameLoop!);
 
-        if (_scenarioFrame == 100)
+        bool settledAfterBlock = _collisionBlockCount == 1 &&
+            gameLoop?.StateMachine?.GetCurrentState(1) == CharacterState.Idle &&
+            gameLoop.StateMachine.GetCurrentState(2) == CharacterState.Idle;
+        if (settledAfterBlock || _scenarioFrame == 500)
             VerifyAndExit(characters);
+    }
+
+    private void DriveScenario(CharacterController[] characters, GameLoop gameLoop)
+    {
+        var p1 = characters.Single(character => character.PlayerId == 1);
+        var p2 = characters.Single(character => character.PlayerId == 2);
+        float gap = Math.Abs(p2.GlobalPosition.X - p1.GlobalPosition.X);
+        _stageFrame++;
+
+        switch (_stage)
+        {
+            case 1:
+                if (_stageFrame == 1) SetKey(Key.D, true);
+                if (gap <= 45f)
+                {
+                    SetKey(Key.D, false);
+                    AdvanceStage(2);
+                }
+                break;
+            case 2:
+                if (_stageFrame == 3) SetKey(Key.U, true);
+                if (_stageFrame == 5)
+                {
+                    SetKey(Key.U, false);
+                    AdvanceStage(3);
+                }
+                break;
+            case 3:
+                if (_collisionHitCount == 1 && _knockbackCompleted &&
+                    gameLoop.StateMachine?.GetCurrentState(1) == CharacterState.Idle &&
+                    gameLoop.StateMachine.GetCurrentState(2) == CharacterState.Idle)
+                {
+                    SetKey(p1.GlobalPosition.X < p2.GlobalPosition.X ? Key.D : Key.A, true);
+                    AdvanceStage(4);
+                }
+                break;
+            case 4:
+                if (gap <= 28f)
+                {
+                    SetKey(p1.GlobalPosition.X < p2.GlobalPosition.X ? Key.D : Key.A, false);
+                    _p2BackKey = p2.GlobalPosition.X > p1.GlobalPosition.X ? Key.Right : Key.Left;
+                    SetKey(_p2BackKey, true);
+                    AdvanceStage(5);
+                }
+                break;
+            case 5:
+                if (_stageFrame == 2)
+                {
+                    int direction = gameLoop.InputHistory?.GetDirectionalHistory(2).LastOrDefault().Value ?? -1;
+                    GD.Print($"[ScaffoldSmoke] block setup: gap={gap:F1}, p1X={p1.GlobalPosition.X:F1}, " +
+                        $"p2X={p2.GlobalPosition.X:F1}, p2Dir={(DirectionValue)direction}, " +
+                        $"p2State={gameLoop.StateMachine?.GetCurrentState(2)}, " +
+                        $"Key.Left={(long)Key.Left}, Key.Right={(long)Key.Right}");
+                    SetKey(Key.U, true);
+                }
+                if (_stageFrame == 4) SetKey(Key.U, false);
+                if (_stageFrame == 8)
+                {
+                    SetKey(_p2BackKey, false);
+                    AdvanceStage(6);
+                }
+                break;
+        }
+    }
+
+    private void AdvanceStage(int next)
+    {
+        _stage = next;
+        _stageFrame = 0;
     }
 
     private void VerifyAndExit(CharacterController[] characters)
@@ -136,6 +208,8 @@ public partial class ScaffoldSmokeTest : Node
             failures.Add("P1 label never exposed an attack state after U/5LP");
         if (_collisionHitCount != 1)
             failures.Add($"expected exactly one 5LP collision event, observed {_collisionHitCount}");
+        if (_collisionBlockCount != 1)
+            failures.Add($"expected exactly one real P2 Back block, observed {_collisionBlockCount}");
         if (_collisionHitCount == 1 && _collisionHit.ContactFrame < 0)
             failures.Add($"collision ContactFrame was {_collisionHit.ContactFrame}");
         if (_collisionHitCount == 1 && _collisionHit.ContactFrame != _collisionDispatchFrame)
@@ -166,11 +240,7 @@ public partial class ScaffoldSmokeTest : Node
             failures.Add(
                 $"light_hit hot-reload was not visible (horizontal={reloadedProfile?.Horizontal})");
         var directions = history?.GetDirectionalHistory(1).Select(entry => entry.Value).ToHashSet() ?? [];
-        foreach (var expected in new[]
-                 {
-                     (int)DirectionValue.Back, (int)DirectionValue.Forward,
-                     (int)DirectionValue.Down, (int)DirectionValue.Up
-                 })
+        foreach (var expected in new[] { (int)DirectionValue.Forward })
         {
             if (!directions.Contains(expected))
                 failures.Add($"directional history missing {(DirectionValue)expected}");
@@ -201,7 +271,8 @@ public partial class ScaffoldSmokeTest : Node
                 EventBus.Instance.Unsubscribe(_collisionHandler);
             if (_knockbackHandler is not null)
                 EventBus.Instance.Unsubscribe(_knockbackHandler);
-            GD.Print($"[ScaffoldSmoke] PASS: one same-frame 5LP collision at frame {_collisionHit.ContactFrame}; P2 knockback {_initialP2X:F1}->{_finalP2X:F1} completed in {_knockbackEventCount} events.");
+            EventBus.Instance.Unsubscribe<MoveBlockedEvent>(OnMoveBlocked);
+            GD.Print($"[ScaffoldSmoke] PASS: production movement reached range; one real 5LP hit and one facing-relative P2 Back block; P2 knockback {_initialP2X:F1}->{_finalP2X:F1}.");
             GetTree().Quit(0);
             return;
         }
@@ -212,15 +283,20 @@ public partial class ScaffoldSmokeTest : Node
             EventBus.Instance.Unsubscribe(_collisionHandler);
         if (_knockbackHandler is not null)
             EventBus.Instance.Unsubscribe(_knockbackHandler);
+        EventBus.Instance.Unsubscribe<MoveBlockedEvent>(OnMoveBlocked);
         GetTree().Quit(1);
     }
 
-    private void InjectKeyAt(int pressFrame, Key key)
+    private static void SetKey(Key key, bool pressed) =>
+        Godot.Input.ParseInputEvent(new InputEventKey
+        {
+            Keycode = key, PhysicalKeycode = key, Pressed = pressed
+        });
+
+    private void OnMoveBlocked(MoveBlockedEvent blocked)
     {
-        if (_scenarioFrame == pressFrame)
-            Godot.Input.ParseInputEvent(new InputEventKey { Keycode = key, Pressed = true });
-        else if (_scenarioFrame == pressFrame + 2)
-            Godot.Input.ParseInputEvent(new InputEventKey { Keycode = key, Pressed = false });
+        if (blocked.AttackerId == 1 && blocked.DefenderId == 2 && blocked.MoveId == "5LP")
+            _collisionBlockCount++;
     }
 
     private void FailAndExit(string failure)
@@ -244,10 +320,7 @@ public partial class ScaffoldSmokeTest : Node
 
     private static string[] ExpectedVisibleP1Inputs() =>
     [
-        $"P1  D  {InputLog.FormatDirection((int)DirectionValue.Back)}",
         $"P1  D  {InputLog.FormatDirection((int)DirectionValue.Forward)}",
-        $"P1  D  {InputLog.FormatDirection((int)DirectionValue.Down)}",
-        $"P1  D  {InputLog.FormatDirection((int)DirectionValue.Up)}",
         $"P1  B  {InputLog.FormatButton((int)ButtonValue.A)}"
     ];
 

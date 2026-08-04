@@ -2,8 +2,9 @@
 
 This harness verifies the scaffolded project's automatic character-select flow,
 P1/P2 state labels, visible P1 input history, and the P1 `U`/`5LP` attack path.
-It is staged into a generated project because its `res://` paths must resolve
-inside that project.
+It is staged into a generated project because its `res://` paths must resolve inside that project.
+
+The smoke workflow uses production P1 movement to enter range, a real `5LP` hit, and real P2 facing-relative Back input for a block. It must not assign `CharacterController.GlobalPosition` to manufacture range.
 
 From the repository root:
 

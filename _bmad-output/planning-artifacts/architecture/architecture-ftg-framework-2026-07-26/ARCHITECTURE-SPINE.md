@@ -200,6 +200,14 @@ V1 AD-1 through AD-8 remain binding. Their `.archive` location records chronolog
 
 AD-21 is a forward planning contract. It has no retroactive Adoption Gate evidence and does not reopen completed stories.
 
+### AD-22 — Minimal Playable Verification Boundary
+
+- **Binds:** live input adapters, StateMachine locomotion intent, Physics-owned position/facing/collision, training presentation, diagnostics, repository scenes, and generated scaffolds
+- **Prevents:** direct-node gameplay movement, input-driven facing, fake hit/block evidence, hidden mutation shortcuts, and repository/scaffold drift
+- **Rule:** Godot host adapters sample named actions for both players and emit world-axis/button values only. Pure C# canonicalizes directions from the tick-start authoritative facing snapshot. Physics alone advances position, jump motion, facing, collision outcomes, and their snapshot state. Diagnostic mutation requires both the serialized `ftg/test_harness/enabled` setting and a debug build, is visibly marked TEST ONLY, and cannot satisfy gameplay evidence. Repository and scaffold share or parity-test controls, settings, presentation, and verification paths.
+
+AD-22 is corrective work and does not reopen the historical completion of V2 Epic 1.
+
 ## Adoption Gate
 
 AD-9 through AD-20 describe the V2 foundation, but the table below identifies contracts that were partial or amended and therefore required explicit evidence. The 2026-07-31 correction is the accepted target contract required before V2 Epic 2 starts:
@@ -340,7 +348,7 @@ Scripts/Framework/Editor/  # EditorPlugin thin adapter; FTG_Framework.Editor; Go
 | FR-19 | Physics parameter hot-reload | `Data/` + `Core/` | AD-15, AD-9, AD-19 |
 | FR-20 | Stack-based state machine | `Engine/StateMachine/` | AD-11, AD-18 |
 | FR-21 | Per-state PhysicsResponseProfile association | `Engine/StateMachine/` | AD-16, AD-3 |
-| FR-22 | Godot character scene template | `Scripts/Framework/Editor/` | EditorPlugin thinness convention, AD-21 |
+| FR-22 | Character template + minimal verification composition | `Characters/` + `Scenes/` + `Engine/Physics/` | AD-10, AD-21, AD-22 |
 | FR-23 | EditorPlugin move authoring | `Data/` + `Scripts/Framework/Editor/` | AD-6, AD-15, AD-21 |
 | FR-24 | Runtime tuning with JSON writeback | `Data/` + `UI/Training/` | AD-15, AD-9, AD-19, AD-21 |
 | FR-25 | Combo counter + damage display | `UI/Training/` | AD-3 (subscribe only), AD-21 |
@@ -350,7 +358,7 @@ Scripts/Framework/Editor/  # EditorPlugin thin adapter; FTG_Framework.Editor; Go
 | FR-29 | Object pool | `Core/` | AD-14, AD-17 |
 | FR-30 | SOCD cleaning | `Input/` | AD-1 (Input layer) |
 | FR-31 | Character select system | `Data/` + `UI/` | AD-3, AD-6, AD-21 |
-| FR-32 | Project template / one-click install | `Scripts/Framework/Editor/` | EditorPlugin thinness convention, AD-21 |
+| FR-32 | Project template / one-click install | `Scripts/Framework/Editor/` + scaffold manifests | EditorPlugin thinness convention, AD-21, AD-22 |
 | FR-33 | EventBus debug panel | `Scripts/Framework/Editor/` | AD-3, AD-21 |
 | FR-34 | Runtime tuning × Replay × Input recording | Cross-cutting | AD-9, AD-13, AD-15, AD-18, AD-19 |
 | FR-35 | State stack × Save/Load × Replay | Cross-cutting | AD-11, AD-13, AD-16, AD-18, AD-20 |

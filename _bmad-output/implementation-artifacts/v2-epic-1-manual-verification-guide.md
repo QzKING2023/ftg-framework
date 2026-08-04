@@ -1,6 +1,10 @@
 # Epic 1 手动验证操作文档
 
 > **Status**: Complete
+
+## CORR-1 superseding verification note
+
+Historical limitations below remain historical evidence only. CORR-1 now provides production-path two-player movement and an art-free diagnostic presentation. Canonical controls are P1 `A`/`D`/`S`/`Space`/`U` and P2 `Left`/`Right`/`Down`/`Up`/`N`; block is facing-relative Back. `H`/`B` are gated TEST ONLY lifecycle diagnostics and cannot prove gameplay hit/block behavior. Use the joint Story 2.3 + CORR-1 acceptance plan for current manual verification.
 > **状态**: 已完成并由 Q1625 于 2026-07-31 验收
 > **创建日期**: 2026-07-30
 > **最后更新**: 2026-08-01 (PREP-2.4 对齐已完成验证与验收证据)

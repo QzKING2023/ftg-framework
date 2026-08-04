@@ -2,6 +2,12 @@
 
 The project template enables developers to scaffold a working Godot project with FTG Framework integrated in a single command.
 
+## Minimal playable verification
+
+The repository and generated project use the same controls: P1 `A`/`D`/`S`/`Space`/`U`; P2 `Left`/`Right`/`Down`/`Up`/`N`. Movement is Physics-owned. Block by holding the world direction opposite the opponent-facing direction before a real `5LP` contact.
+
+Diagnostics are separate: `P` pause, `]` step, `[` restore, `O` collision overlay, `1`/`2` input logs, and `H`/`B` TEST ONLY state injection. Mutating diagnostics require both `ftg/test_harness/enabled=true` and a debug build and never count as movement, hit, or block evidence.
+
 ## Prerequisites and Scope
 
 - Use the .NET-enabled Godot 4.5.1 editor (or a compatible newer 4.x release).

@@ -19,6 +19,53 @@ GameLoop="*res://Scripts/Framework/Core/GameLoop.cs"
 
 project/assembly_name="{{FTG_PROJECT_NAME}}"
 
+[ftg]
+
+test_harness/enabled=true
+
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/ftg-framework/plugin.cfg")
+
+[input]
+
+p1_world_left={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":65)]
+}
+p1_world_right={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":68)]
+}
+p1_crouch={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":83)]
+}
+p1_jump={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":32)]
+}
+p1_light={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":85)]
+}
+p2_world_left={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194319)]
+}
+p2_world_right={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194321)]
+}
+p2_crouch={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194322)]
+}
+p2_jump={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194320)]
+}
+p2_light={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":78)]
+}

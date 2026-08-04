@@ -16,6 +16,11 @@ namespace FTG_Framework.Core;
 
 public partial class GameLoop : Node
 {
+    internal static readonly string[] GameplayActions =
+    [
+        "p1_world_left", "p1_world_right", "p1_crouch", "p1_jump", "p1_light",
+        "p2_world_left", "p2_world_right", "p2_crouch", "p2_jump", "p2_light"
+    ];
     private IDataStore? _dataStore;
     private IInputHistory? _inputHistory;
     private IInputLeniency? _leniencyMatcher;
@@ -249,14 +254,19 @@ public partial class GameLoop : Node
         bool processFrame = ShouldProcessFrame(EventBus.Instance.Paused, EventBus.Instance.StepRequested);
         EventBus.Instance.StepRequested = false;
 
-        bool back = Godot.Input.IsKeyPressed(Key.A);
-        bool forward = Godot.Input.IsKeyPressed(Key.D);
-        bool down = Godot.Input.IsKeyPressed(Key.S);
-        bool up = Godot.Input.IsKeyPressed(Key.Space);
-        bool btnA = Godot.Input.IsKeyPressed(Key.U);
-        bool btnB = Godot.Input.IsKeyPressed(Key.I);
-        bool btnC = Godot.Input.IsKeyPressed(Key.K);
-        bool btnD = Godot.Input.IsKeyPressed(Key.J);
+        bool back = Godot.Input.IsActionPressed("p1_world_left");
+        bool forward = Godot.Input.IsActionPressed("p1_world_right");
+        bool down = Godot.Input.IsActionPressed("p1_crouch");
+        bool up = Godot.Input.IsActionPressed("p1_jump");
+        bool btnA = Godot.Input.IsActionPressed("p1_light");
+        bool btnB = false;
+        bool btnC = false;
+        bool btnD = false;
+        bool p2Left = Godot.Input.IsActionPressed("p2_world_left");
+        bool p2Right = Godot.Input.IsActionPressed("p2_world_right");
+        bool p2Down = Godot.Input.IsActionPressed("p2_crouch");
+        bool p2Up = Godot.Input.IsActionPressed("p2_jump");
+        bool p2Light = Godot.Input.IsActionPressed("p2_light");
 
         if (!processFrame)
         {
@@ -264,6 +274,9 @@ public partial class GameLoop : Node
             _prevBtnB = btnB;
             _prevBtnC = btnC;
             _prevBtnD = btnD;
+            _prevP2Light = p2Light;
+            _previousJump[1] = up;
+            _previousJump[2] = p2Up;
             return;
         }
 
@@ -280,14 +293,28 @@ public partial class GameLoop : Node
             _prevBtnB = btnB;
             _prevBtnC = btnC;
             _prevBtnD = btnD;
+            _prevP2Light = p2Light;
+            _previousJump[1] = up;
+            _previousJump[2] = p2Up;
             return;
         }
 
         // SOCD cleaning + direction combine
-        var dir = _socdResolver is not null
+        var facingSnapshot = _physicsEngine?.CaptureFacingSnapshot() ??
+            new PhysicsFacingSnapshot(true, false, false);
+        var worldDir = _socdResolver is not null
             ? SafeResolve(_socdResolver, back, forward, down, up)
             : FallbackDirection(back, forward, down, up);
+        int p1Axis = HasBack(worldDir) ? -1 : HasForward(worldDir) ? 1 : 0;
+        bool p1Crouch = HasDown(worldDir);
+        bool p1Jump = HasUp(worldDir);
+        var dir = WorldInputMapper.Map(
+            new WorldInputSample(p1Axis, p1Crouch, p1Jump),
+            facingSnapshot.P1FacingRight ? AuthoritativeFacing.Right : AuthoritativeFacing.Left).Direction;
         _inputHistory?.RecordInput(1, InputType.Directional, (int)dir);
+        _physicsEngine?.SetLocomotionCommand(BuildLocomotionCommand(
+            1, p1Axis, worldDir, _previousJump[1]));
+        _previousJump[1] = p1Jump;
 
         // Button inputs — record once on the rising edge of each press
         if (btnA && !_prevBtnA) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.A);
@@ -313,6 +340,34 @@ public partial class GameLoop : Node
             {
                 // Cancel executed — MoveCanceled published, FrameDataEngine handles interrupt
             }
+        }
+
+        var p2World = _socdResolver is not null
+            ? SafeResolve(_socdResolver, p2Left, p2Right, p2Down, p2Up)
+            : FallbackDirection(p2Left, p2Right, p2Down, p2Up);
+        int p2Axis = HasBack(p2World) ? -1 : HasForward(p2World) ? 1 : 0;
+        bool p2Crouch = HasDown(p2World);
+        bool p2Jump = HasUp(p2World);
+        var p2Canonical = WorldInputMapper.Map(
+            new WorldInputSample(p2Axis, p2Crouch, p2Jump),
+            facingSnapshot.P2FacingRight ? AuthoritativeFacing.Right : AuthoritativeFacing.Left);
+        _inputHistory?.RecordInput(2, InputType.Directional, (int)p2Canonical.Direction);
+        _physicsEngine?.SetLocomotionCommand(BuildLocomotionCommand(
+            2, p2Axis, p2World, _previousJump[2]));
+        _previousJump[2] = p2Jump;
+        if (p2Light && !_prevP2Light)
+            _inputHistory?.RecordInput(2, InputType.Button, (int)ButtonValue.A);
+        _prevP2Light = p2Light;
+        _chargeTracker?.Update(2, EventBus.Instance.CurrentFrame);
+        var p2Matches = _inputBuffer?.TryMatch(2);
+        var p2Resolved = _priorityResolver?.Resolve(
+            p2Matches ?? Array.Empty<MatchResult>(), 2, EventBus.Instance.CurrentFrame);
+        if (p2Resolved is not null && _frameDataEngine is not null)
+        {
+            if (_frameDataEngine.GetPhase(2) == MovePhase.Idle)
+                _frameDataEngine.StartMove(2, p2Resolved.Value.MoveId);
+            else
+                _comboExecutor?.TryCancel(2, p2Resolved.Value.MoveId);
         }
 
         _frameDataEngine?.Update();
@@ -353,6 +408,14 @@ public partial class GameLoop : Node
     }
 
     internal static bool ShouldProcessFrame(bool paused, bool stepRequested) => !paused || stepRequested;
+
+    internal static LocomotionCommand BuildLocomotionCommand(
+        int playerId, int worldAxis, DirectionValue cleanedDirection, bool previousJump)
+    {
+        bool jump = HasUp(cleanedDirection);
+        return new LocomotionCommand(
+            playerId, worldAxis, HasDown(cleanedDirection), jump && !previousJump);
+    }
     internal static bool ShouldRunPhysics(bool replayPlaying) => !replayPlaying;
 
     internal static void ValidateMoveKnockbackProfiles(IDataStore dataStore)
@@ -447,6 +510,11 @@ public partial class GameLoop : Node
         return ComputeDirection(left, right, down, up);
     }
 
+    private static bool HasBack(DirectionValue value) => (int)value is 1 or 4 or 7;
+    private static bool HasForward(DirectionValue value) => (int)value is 3 or 6 or 9;
+    private static bool HasDown(DirectionValue value) => (int)value is 1 or 2 or 3;
+    private static bool HasUp(DirectionValue value) => (int)value is 7 or 8 or 9;
+
     private static readonly DirectionValue[,] s_dirLookup = new DirectionValue[3, 3]
     {
         { DirectionValue.Neutral, DirectionValue.Back, DirectionValue.Forward },
@@ -454,5 +522,6 @@ public partial class GameLoop : Node
         { DirectionValue.Down, DirectionValue.DownBack, DirectionValue.DownForward }
     };
 
-    private bool _prevBtnA, _prevBtnB, _prevBtnC, _prevBtnD;
+    private bool _prevBtnA, _prevBtnB, _prevBtnC, _prevBtnD, _prevP2Light;
+    private readonly bool[] _previousJump = new bool[3];
 }

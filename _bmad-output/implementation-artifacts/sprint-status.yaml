@@ -1,5 +1,5 @@
 # generated: 2026-07-27
-# last_updated: 2026-08-02
+# last_updated: 2026-08-04
 # project: ftg-framework
 # project_key: NOKEY
 # tracking_system: file-system
@@ -43,7 +43,7 @@
 # V2 entries use v2- prefix to avoid key collision with V1 epics (V1 epics 1-3 are done).
 
 generated: 2026-07-27
-last_updated: 2026-08-02
+last_updated: 2026-08-04
 # Note: Story 3.0 (Replay Spike) is intentionally started before Epic 1 per Implementation Readiness Advisory #1.
 # The spike's go/no-go decision may affect event design across all epics.
 
@@ -174,6 +174,14 @@ action_items:
     action: "Apply the approved 2026-08-01 sprint change proposal across PRD, Architecture, UX, Epics, and project knowledge; then rerun Implementation Readiness before Epic 2 kickoff"
     owner: "Product Owner / Architect / Developer"
     status: done
+  - epic: "v2-corrective"
+    action: "Implement CORR-1 Minimal Playable Test Character and accept repository plus generated-scaffold Godot E2E evidence before Story 2.4 starts"
+    owner: "Amelia (Developer) + Q1625 (Godot acceptance)"
+    status: done
+  - epic: "v2-2/v2-corrective"
+    action: "Freeze the combined Story 2.3 + CORR-1 inventory and execute JGA-2.3-CORR-1 once both implementations and automated gates pass; map shared evidence and approvals separately to each Story"
+    owner: "Amelia (Developer) + QA + Q1625 (Godot acceptance)"
+    status: done
 
 development_status:
   # ============ V1 Epics (complete) ============
@@ -244,8 +252,25 @@ development_status:
   v2-2-2-a-stage-runtime-edits: done
   v2-2-2-b-atomic-writeback-concurrency: done
   v2-2-2-c-runtime-reload-restart-proof: done
-  v2-2-3-combo-counter-damage-display: backlog
-  v2-2-4-input-recording-playback: backlog
+  v2-2-3-combo-counter-damage-display: done
+  v2-2-3-a-authoritative-aggregation: done
+  v2-2-3-b-deterministic-lifecycle-observer: done
+  # Story 2.3 automated implementation, headless evidence, and joint interactive
+  # acceptance are complete under JGA-2.3-CORR-1.
+  v2-2-3-c-godot-display-evidence: done
+  # Approved 2026-08-03 course correction: CORR-1 is explicit corrective work
+  # and does not reopen completed V2 Epic 1. CORR-1 may start against the frozen
+  # Story 2.3 automated baseline; its interactive evidence shares JGA-2.3-CORR-1
+  # while retaining separate mappings and approvals. CORR-1 is accepted; Story
+  # 2.4 was explicitly started through create-story on 2026-08-04.
+  v2-corr-1-minimal-playable-test-character: done
+  v2-2-4-input-recording-playback: ready-for-dev
+  # Execute S2.4-A first; B and C consume its immutable codec/authority contract,
+  # and D completes only after A-C plus the parent E2E acceptance pass.
+  v2-2-4-a-recording-codec-viewmodel: ready-for-dev
+  v2-2-4-b-relative-frame-playback: ready-for-dev
+  v2-2-4-c-ownership-lifecycle: ready-for-dev
+  v2-2-4-d-godot-determinism-evidence: ready-for-dev
   v2-2-5-training-state-save-load: backlog
   v2-epic-2-retrospective: optional
 

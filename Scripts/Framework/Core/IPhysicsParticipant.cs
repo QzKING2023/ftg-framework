@@ -6,6 +6,7 @@ public interface IPhysicsParticipant
 {
     int PlayerId { get; }
     PhysicsParticipantSnapshot CapturePhysicsSnapshot();
+    void ApplyPhysicsState(PhysicsParticipantSnapshot participant, PhysicsMotionSnapshot motion) { }
     PhysicsMotionSnapshot CaptureMotionSnapshot()
     {
         var snapshot = CapturePhysicsSnapshot();

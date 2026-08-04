@@ -350,7 +350,8 @@ public static class Program
         writer.WriteLine("  ftg new MyFighter");
         writer.WriteLine("  ftg new MyFighter --output ./projects");
         writer.WriteLine();
-        writer.WriteLine("First run: open project.godot, press Play, use A/D/S/Space for directions and U for 5LP.");
+        writer.WriteLine("First run: P1 A/D/S/Space/U; P2 Left/Right/Down/Up/N. Move into range, land a real 5LP, then hold facing-relative Back to block.");
+        writer.WriteLine("Diagnostics: P pause, ] step, [ restore, O boxes, 1/2 logs, H/B TEST ONLY injection. Mutation requires ftg/test_harness/enabled and a debug build.");
         writer.WriteLine("Standalone CLI publishing and Asset Library submission remain future release work.");
     }
 }

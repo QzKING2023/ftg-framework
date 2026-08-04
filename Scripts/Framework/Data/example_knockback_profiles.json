@@ -3,8 +3,8 @@
   "knockback_profiles": [
     {
       "profile_id": "light_hit",
-      "horizontal": 3.0,
-      "vertical": 2.0,
+      "horizontal": 0.5,
+      "vertical": 0.0,
       "gravity": 0.5,
       "friction": 0.3
     },

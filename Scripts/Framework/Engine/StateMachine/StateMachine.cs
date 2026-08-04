@@ -19,6 +19,7 @@ internal sealed class StateMachine : IModule, IStateMachine
     private Dictionary<int, KnockbackTuple> _knockbackTuples = new();
     private Dictionary<int, (ulong Epoch, ulong Generation)> _hitstunOccupancy = new();
     private Dictionary<int, GenerationEpochSnapshot> _highestKnockbackGeneration = new();
+    private Dictionary<int, ReactionRecoverySnapshot> _reactionRecovery = new();
     private bool _initialized;
 
     public StateMachine(IDataStore dataStore)
@@ -43,6 +44,7 @@ internal sealed class StateMachine : IModule, IStateMachine
         EventBus.Instance.Subscribe<ReplayStartedEvent>(OnReplayStarted);
         EventBus.Instance.Subscribe<ReplayEndedEvent>(OnReplayEnded);
         EventBus.Instance.Subscribe<MatchInitializedEvent>(OnMatchInitialized);
+        EventBus.Instance.Subscribe<FrameAdvancedEvent>(OnFrameAdvanced);
 
         FrameworkLog.Info?.Invoke("[StateMachine] StateMachine initialized.");
     }
@@ -59,6 +61,7 @@ internal sealed class StateMachine : IModule, IStateMachine
         EventBus.Instance.Unsubscribe<ReplayStartedEvent>(OnReplayStarted);
         EventBus.Instance.Unsubscribe<ReplayEndedEvent>(OnReplayEnded);
         EventBus.Instance.Unsubscribe<MatchInitializedEvent>(OnMatchInitialized);
+        EventBus.Instance.Unsubscribe<FrameAdvancedEvent>(OnFrameAdvanced);
 
         _stacks.Clear();
         _stateProfiles.Clear();
@@ -257,14 +260,16 @@ internal sealed class StateMachine : IModule, IStateMachine
         var profiles = _effectiveProfileSnapshots.ToDictionary(pair => pair.Key, pair => Snapshot.Of(pair.Value));
         var highWater = _highestKnockbackGeneration.ToDictionary(pair => pair.Key,
             pair => new GenerationEpochSnapshot(pair.Value.Epoch, pair.Value.Generation));
-        return new StateMachineRuntimeSnapshot(stacks, profiles, highWater);
+        return new StateMachineRuntimeSnapshot(stacks, profiles, highWater,
+            new Dictionary<int, ReactionRecoverySnapshot>(_reactionRecovery));
     }
 
     internal StateMachineRuntimeSnapshot PrepareRuntimeSnapshot(
         StateMachineRuntimeSnapshot snapshot, SnapshotPrepareContext context)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        if (snapshot.Stacks is null || snapshot.EffectiveProfiles is null || snapshot.GenerationHighWater is null)
+        if (snapshot.Stacks is null || snapshot.EffectiveProfiles is null || snapshot.GenerationHighWater is null ||
+            snapshot.ReactionRecovery is null)
             throw new SnapshotPrepareException(SnapshotParticipantCatalog.StateMachine, "Required state is null.");
         foreach (var pair in snapshot.Stacks)
         {
@@ -276,7 +281,8 @@ internal sealed class StateMachine : IModule, IStateMachine
             snapshot.Stacks.ToDictionary(pair => pair.Key, pair => new List<CharacterState>(pair.Value)),
             snapshot.EffectiveProfiles.ToDictionary(pair => pair.Key, pair => Snapshot.Of(pair.Value)),
             snapshot.GenerationHighWater.ToDictionary(pair => pair.Key,
-                pair => new GenerationEpochSnapshot(context.ReservedEpoch, pair.Value.Generation)));
+                pair => new GenerationEpochSnapshot(context.ReservedEpoch, pair.Value.Generation)),
+            new Dictionary<int, ReactionRecoverySnapshot>(snapshot.ReactionRecovery));
     }
 
     internal void InstallRuntimeSnapshot(StateMachineRuntimeSnapshot snapshot)
@@ -284,6 +290,7 @@ internal sealed class StateMachine : IModule, IStateMachine
         _stacks = snapshot.Stacks;
         _effectiveProfileSnapshots = snapshot.EffectiveProfiles;
         _highestKnockbackGeneration = snapshot.GenerationHighWater;
+        _reactionRecovery = snapshot.ReactionRecovery;
         _awaitingLaunches = new();
         _knockbackTuples = new();
         _hitstunOccupancy = new();
@@ -318,6 +325,7 @@ internal sealed class StateMachine : IModule, IStateMachine
     private void OnHitConnected(HitConnectedEvent e)
     {
         ReplaceState(e.DefenderId, CharacterState.Hitstun);
+        _reactionRecovery[e.DefenderId] = new ReactionRecoverySnapshot(CharacterState.Hitstun, 30);
         if (e.DefenderId is >= 1 and <= 2)
         {
             _knockbackTuples.Remove(e.DefenderId);
@@ -330,6 +338,28 @@ internal sealed class StateMachine : IModule, IStateMachine
     private void OnMoveBlocked(MoveBlockedEvent e)
     {
         ReplaceState(e.DefenderId, CharacterState.Blockstun);
+        _reactionRecovery[e.DefenderId] = new ReactionRecoverySnapshot(CharacterState.Blockstun, 20);
+    }
+
+    private void OnFrameAdvanced(FrameAdvancedEvent e)
+    {
+        foreach (int playerId in _reactionRecovery.Keys.ToArray())
+        {
+            var recovery = _reactionRecovery[playerId];
+            if (GetCurrentState(playerId) != recovery.ExpectedState)
+            {
+                _reactionRecovery.Remove(playerId);
+                continue;
+            }
+            int remaining = recovery.RemainingFrames - 1;
+            if (remaining > 0)
+            {
+                _reactionRecovery[playerId] = recovery with { RemainingFrames = remaining };
+                continue;
+            }
+            _reactionRecovery.Remove(playerId);
+            ResetToIdle(playerId);
+        }
     }
 
     private void OnMoveCanceled(MoveCanceledEvent e)
@@ -366,6 +396,7 @@ internal sealed class StateMachine : IModule, IStateMachine
             _knockbackTuples[e.PlayerId] = new KnockbackTuple(epoch, e.GenerationId, e, false);
             _hitstunOccupancy[e.PlayerId] = (epoch, e.GenerationId);
             _highestKnockbackGeneration[e.PlayerId] = new GenerationEpochSnapshot(epoch, e.GenerationId);
+            _reactionRecovery.Remove(e.PlayerId);
             return;
         }
 
@@ -397,6 +428,7 @@ internal sealed class StateMachine : IModule, IStateMachine
         _knockbackTuples.Clear();
         _hitstunOccupancy.Clear();
         _highestKnockbackGeneration.Clear();
+        _reactionRecovery.Clear();
     }
 
     private void ClearKnockbackOwnership(int playerId)

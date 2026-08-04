@@ -5,6 +5,7 @@ using System.Linq;
 using FTG_Framework.Core;
 using FTG_Framework.Core.Events;
 using FTG_Framework.Data;
+using FTG_Framework.Input;
 
 namespace FTG_Framework.Engine.Physics;
 
@@ -16,11 +17,16 @@ internal sealed class PhysicsEngine : IPhysicsEngine
     private readonly SortedDictionary<int, IPhysicsParticipant> _participants = new();
     private readonly HashSet<HitKey> _previousActive = new();
     private readonly HashSet<HitKey> _currentActive = new();
+    private HashSet<PhysicsConsumedContact> _consumedContacts = new();
+    private readonly PhysicsConsumedContact[] _consumedThisUpdate = new PhysicsConsumedContact[2];
+    private int _consumedThisUpdateCount;
     private readonly Dictionary<ContextKey, HitContext> _contexts = new();
     private readonly Dictionary<int, TrajectoryState> _trajectories = new();
     private readonly Dictionary<int, LaunchCandidate> _launchCandidates = new();
+    private readonly Dictionary<int, LocomotionCommand> _locomotionCommands = new();
     private Dictionary<int, ulong> _generationCounters = new();
     private readonly List<object> _pendingCollisionEvents = new();
+    private readonly List<PhysicsConsumedContact> _contactsToPrune = new(2);
     private bool _initialized;
 
     private readonly record struct HitKey(
@@ -48,11 +54,15 @@ internal sealed class PhysicsEngine : IPhysicsEngine
         _participants.Clear();
         _previousActive.Clear();
         _currentActive.Clear();
+        _consumedContacts.Clear();
         _contexts.Clear();
         _trajectories.Clear();
         _launchCandidates.Clear();
         _generationCounters.Clear();
         _pendingCollisionEvents.Clear();
+        _contactsToPrune.Clear();
+        _consumedThisUpdateCount = 0;
+        _locomotionCommands.Clear();
     }
 
     public void Register(IPhysicsParticipant participant)
@@ -76,6 +86,33 @@ internal sealed class PhysicsEngine : IPhysicsEngine
         _trajectories.Remove(playerId);
         _launchCandidates.Remove(playerId);
         _previousActive.RemoveWhere(k => k.AttackerId == playerId || k.DefenderId == playerId);
+        _consumedContacts.RemoveWhere(k => k.AttackerId == playerId || k.DefenderId == playerId);
+        _locomotionCommands.Remove(playerId);
+    }
+
+    public void SetLocomotionCommand(LocomotionCommand command)
+    {
+        if (command.PlayerId is < 1 or > 2)
+            throw new ArgumentOutOfRangeException(nameof(command), "[Physics] PlayerId must be 1 or 2.");
+        if (command.WorldAxis is < -1 or > 1)
+            throw new ArgumentOutOfRangeException(nameof(command), "[Physics] WorldAxis must be -1, 0, or 1.");
+        _locomotionCommands[command.PlayerId] = command;
+    }
+
+    public PhysicsFacingSnapshot CaptureFacingSnapshot()
+    {
+        if (!_participants.TryGetValue(1, out var p1) || !_participants.TryGetValue(2, out var p2))
+            return new PhysicsFacingSnapshot(true, false, false);
+        var first = p1.CapturePhysicsSnapshot();
+        var second = p2.CapturePhysicsSnapshot();
+        var facing = FacingResolver.Resolve(
+            first.WorldX, second.WorldX,
+            first.FacingRight ? AuthoritativeFacing.Right : AuthoritativeFacing.Left,
+            second.FacingRight ? AuthoritativeFacing.Right : AuthoritativeFacing.Left);
+        return new PhysicsFacingSnapshot(
+            facing.P1 == AuthoritativeFacing.Right,
+            facing.P2 == AuthoritativeFacing.Right,
+            facing.BlockEligible);
     }
 
     public bool TryGetHitContext(
@@ -87,10 +124,12 @@ internal sealed class PhysicsEngine : IPhysicsEngine
     {
         if (!_initialized)
             return;
+        _consumedThisUpdateCount = 0;
         _contexts.Clear();
         _currentActive.Clear();
         _launchCandidates.Clear();
         _pendingCollisionEvents.Clear();
+        PruneConsumedContacts();
         bool hadP1Generation = _generationCounters.TryGetValue(1, out ulong p1Generation);
         bool hadP2Generation = _generationCounters.TryGetValue(2, out ulong p2Generation);
         if (_participants.Count == 2)
@@ -103,6 +142,12 @@ internal sealed class PhysicsEngine : IPhysicsEngine
                 var second = secondParticipant.CapturePhysicsSnapshot();
                 ValidateSnapshotIdentity(firstParticipant, first);
                 ValidateSnapshotIdentity(secondParticipant, second);
+                var facing = FacingResolver.Resolve(
+                    first.WorldX, second.WorldX,
+                    first.FacingRight ? AuthoritativeFacing.Right : AuthoritativeFacing.Left,
+                    second.FacingRight ? AuthoritativeFacing.Right : AuthoritativeFacing.Left);
+                first = AdvanceLocomotion(firstParticipant, first, facing.P1);
+                second = AdvanceLocomotion(secondParticipant, second, facing.P2);
                 Detect(first, second);
                 Detect(second, first);
             }
@@ -115,6 +160,9 @@ internal sealed class PhysicsEngine : IPhysicsEngine
                 _currentActive.Clear();
                 _launchCandidates.Clear();
                 _pendingCollisionEvents.Clear();
+                for (int i = 0; i < _consumedThisUpdateCount; i++)
+                    _consumedContacts.Remove(_consumedThisUpdate[i]);
+                _consumedThisUpdateCount = 0;
                 throw;
             }
         }
@@ -133,6 +181,65 @@ internal sealed class PhysicsEngine : IPhysicsEngine
         _previousActive.Clear();
         foreach (var key in _currentActive)
             _previousActive.Add(key);
+    }
+
+    private PhysicsParticipantSnapshot AdvanceLocomotion(
+        IPhysicsParticipant participant, PhysicsParticipantSnapshot snapshot, AuthoritativeFacing facing)
+    {
+        var motion = participant.CaptureMotionSnapshot();
+        snapshot = snapshot with { FacingRight = facing == AuthoritativeFacing.Right };
+        _locomotionCommands.TryGetValue(snapshot.PlayerId, out var command);
+        CharacterState state = _stateMachine?.GetCurrentState(snapshot.PlayerId) ?? CharacterState.Idle;
+        bool actionable = state is CharacterState.Idle or CharacterState.Walk or CharacterState.Crouch or
+            CharacterState.JumpStartup or CharacterState.JumpActive or CharacterState.JumpRecovery;
+        bool trajectoryOwnsMovement = _trajectories.ContainsKey(snapshot.PlayerId);
+
+        if (!trajectoryOwnsMovement && motion.Airborne)
+        {
+            float y = snapshot.WorldY + motion.VelocityY;
+            float velocityY = motion.VelocityY + 0.5f;
+            if (velocityY >= 0 && y >= motion.GroundY)
+            {
+                y = motion.GroundY;
+                motion = new PhysicsMotionSnapshot(0, 0, false, motion.GroundY);
+                if (_stateMachine is not null)
+                    _stateMachine.ReplaceState(snapshot.PlayerId, CharacterState.JumpRecovery);
+            }
+            else
+            {
+                motion = motion with { VelocityY = velocityY };
+                if (_stateMachine is not null && state != CharacterState.JumpActive)
+                    _stateMachine.ReplaceState(snapshot.PlayerId, CharacterState.JumpActive);
+            }
+            snapshot = snapshot with { WorldY = y };
+        }
+        else if (!trajectoryOwnsMovement && actionable && command.JumpPressed && !motion.Airborne)
+        {
+            motion = new PhysicsMotionSnapshot(0, -8f, true, snapshot.WorldY);
+            snapshot = snapshot with { WorldY = snapshot.WorldY - 8f };
+            motion = motion with { VelocityY = -7.5f };
+            _stateMachine?.PushState(snapshot.PlayerId, CharacterState.JumpStartup);
+            _stateMachine?.ReplaceState(snapshot.PlayerId, CharacterState.JumpActive);
+        }
+        else if (!trajectoryOwnsMovement && actionable && !motion.Airborne)
+        {
+            if (command.CrouchHeld)
+            {
+                _stateMachine?.ReplaceState(snapshot.PlayerId, CharacterState.Crouch);
+            }
+            else if (command.WorldAxis != 0)
+            {
+                snapshot = snapshot with { WorldX = snapshot.WorldX + command.WorldAxis * 3f };
+                _stateMachine?.ReplaceState(snapshot.PlayerId, CharacterState.Walk);
+            }
+            else if (state is CharacterState.Walk or CharacterState.Crouch or CharacterState.JumpRecovery)
+            {
+                _stateMachine?.ReplaceState(snapshot.PlayerId, CharacterState.Idle);
+            }
+        }
+
+        participant.ApplyPhysicsState(snapshot, motion);
+        return snapshot;
     }
 
     private void Detect(in PhysicsParticipantSnapshot attacker, in PhysicsParticipantSnapshot defender)
@@ -177,14 +284,22 @@ internal sealed class PhysicsEngine : IPhysicsEngine
             if (!overlaps)
                 continue;
 
+            var consumed = new PhysicsConsumedContact(
+                evaluated.MoveInstanceId, attacker.PlayerId, defender.PlayerId);
+            if (_consumedContacts.Contains(consumed))
+                continue;
+
             var hitKey = new HitKey(
                 evaluated.MoveInstanceId, attacker.PlayerId, defender.PlayerId, hitbox.BoxId);
             _currentActive.Add(hitKey);
             if (_previousActive.Contains(hitKey))
                 continue;
 
-            if (IsBlocking(defender.Direction, attacker.WorldX, defender.WorldX))
+            CharacterState defenderState = _stateMachine?.GetCurrentState(defender.PlayerId) ?? CharacterState.Idle;
+            if (IsBlocking(defender.Direction, attacker.WorldX, defender.WorldX, defenderState,
+                    _participants[defender.PlayerId].CaptureMotionSnapshot().Airborne))
             {
+                ConsumeContact(consumed);
                 _pendingCollisionEvents.Add(new MoveBlockedEvent(
                     attacker.PlayerId, defender.PlayerId, move.MoveId,
                     move.BlockAdvantage, move.Damage, contactFrame));
@@ -220,6 +335,7 @@ internal sealed class PhysicsEngine : IPhysicsEngine
                     (trajectory.Airborne ? response.AirFriction : response.Friction);
                 launchCandidate = new LaunchCandidate(trajectory, effectiveFriction, response.GravityScale);
             }
+            ConsumeContact(consumed);
             _pendingCollisionEvents.Add(hitEvent);
             var context = new HitContext(hitEvent, hitbox.BoxId, profile);
             _contexts[new ContextKey(
@@ -227,6 +343,27 @@ internal sealed class PhysicsEngine : IPhysicsEngine
             if (launchCandidate.HasValue)
                 _launchCandidates[defender.PlayerId] = launchCandidate.Value;
         }
+    }
+
+    private void ConsumeContact(PhysicsConsumedContact contact)
+    {
+        if (!_consumedContacts.Add(contact)) return;
+        if (_consumedThisUpdateCount >= _consumedThisUpdate.Length)
+            throw new InvalidOperationException("[Physics] More contact outcomes were consumed than the two-player update permits.");
+        _consumedThisUpdate[_consumedThisUpdateCount++] = contact;
+    }
+
+    private void PruneConsumedContacts()
+    {
+        _contactsToPrune.Clear();
+        foreach (var contact in _consumedContacts)
+        {
+            var frame = _frameData.GetLastEvaluatedFrame(contact.AttackerId);
+            if (frame.Phase != MovePhase.Active || frame.MoveInstanceId != contact.MoveInstanceId)
+                _contactsToPrune.Add(contact);
+        }
+        for (int i = 0; i < _contactsToPrune.Count; i++)
+            _consumedContacts.Remove(_contactsToPrune[i]);
     }
 
     private void AdvanceTrajectories()
@@ -280,13 +417,17 @@ internal sealed class PhysicsEngine : IPhysicsEngine
             participants[pair.Key] = pair.Value.CapturePhysicsSnapshot();
             motions[pair.Key] = pair.Value.CaptureMotionSnapshot();
         }
-        return new PhysicsRuntimeSnapshot(new Dictionary<int, ulong>(_generationCounters), participants, motions);
+        var trajectories = _trajectories.ToDictionary(
+            pair => pair.Key, pair => ToSnapshot(pair.Value));
+        return new PhysicsRuntimeSnapshot(new Dictionary<int, ulong>(_generationCounters), participants, motions,
+            new HashSet<PhysicsConsumedContact>(_consumedContacts), trajectories);
     }
 
     internal PhysicsRuntimeSnapshot PrepareRuntimeSnapshot(PhysicsRuntimeSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        if (snapshot.GenerationHighWater is null || snapshot.Participants is null || snapshot.Motions is null)
+        if (snapshot.GenerationHighWater is null || snapshot.Participants is null || snapshot.Motions is null ||
+            snapshot.ConsumedContacts is null || snapshot.Trajectories is null)
             throw new SnapshotPrepareException(SnapshotParticipantCatalog.PhysicsMotion, "Required physics state is null.");
         foreach (var pair in snapshot.Participants)
         {
@@ -299,10 +440,24 @@ internal sealed class PhysicsEngine : IPhysicsEngine
         if (_participants.Keys.Any(id => !snapshot.Participants.ContainsKey(id)))
             throw new SnapshotPrepareException(SnapshotParticipantCatalog.PhysicsMotion,
                 "Snapshot omits a bound physics participant.");
+        var trajectories = new Dictionary<int, PhysicsTrajectorySnapshot>();
+        foreach (var pair in snapshot.Trajectories)
+        {
+            if (!snapshot.Participants.ContainsKey(pair.Key) || pair.Value.Profile is null ||
+                pair.Value.GenerationId == 0 || pair.Value.ContactFrame < 0 ||
+                !float.IsFinite(pair.Value.PositionX) || !float.IsFinite(pair.Value.PositionY) ||
+                !float.IsFinite(pair.Value.VelocityX) || !float.IsFinite(pair.Value.VelocityY) ||
+                !float.IsFinite(pair.Value.GroundY))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.PhysicsMotion,
+                    $"Trajectory for P{pair.Key} is invalid.");
+            trajectories[pair.Key] = pair.Value with { Profile = Snapshot.Of(pair.Value.Profile) };
+        }
         return new PhysicsRuntimeSnapshot(
             new Dictionary<int, ulong>(snapshot.GenerationHighWater),
             new Dictionary<int, PhysicsParticipantSnapshot>(snapshot.Participants),
-            new Dictionary<int, PhysicsMotionSnapshot>(snapshot.Motions));
+            new Dictionary<int, PhysicsMotionSnapshot>(snapshot.Motions),
+            new HashSet<PhysicsConsumedContact>(snapshot.ConsumedContacts),
+            trajectories);
     }
 
     internal void InstallRuntimeSnapshot(PhysicsRuntimeSnapshot snapshot)
@@ -311,7 +466,10 @@ internal sealed class PhysicsEngine : IPhysicsEngine
             ((IRestorablePhysicsParticipant)_participants[pair.Key]).RestoreRuntimeSnapshot(
                 pair.Value, snapshot.Motions[pair.Key]);
         _generationCounters = snapshot.GenerationHighWater;
+        _consumedContacts = snapshot.ConsumedContacts;
         _trajectories.Clear();
+        foreach (var pair in snapshot.Trajectories)
+            _trajectories[pair.Key] = FromSnapshot(pair.Value);
         _launchCandidates.Clear();
         _contexts.Clear();
         _previousActive.Clear();
@@ -345,15 +503,31 @@ internal sealed class PhysicsEngine : IPhysicsEngine
         if (snapshot.PlayerId != participant.PlayerId)
             throw new InvalidOperationException(
                 $"[Physics] Participant P{participant.PlayerId} returned snapshot for P{snapshot.PlayerId}.");
+        if (!float.IsFinite(snapshot.WorldX) || !float.IsFinite(snapshot.WorldY))
+            throw new InvalidOperationException(
+                $"[Physics] Participant P{participant.PlayerId} returned non-finite world position.");
     }
 
-    internal static bool IsBlocking(DirectionValue direction, float attackerX, float defenderX)
+    private static PhysicsTrajectorySnapshot ToSnapshot(in TrajectoryState trajectory) => new(
+        trajectory.GenerationId, trajectory.PositionX, trajectory.PositionY,
+        trajectory.VelocityX, trajectory.VelocityY, trajectory.GroundY,
+        trajectory.Airborne, Snapshot.Of(trajectory.Profile), trajectory.ContactFrame,
+        trajectory.Completed);
+
+    private static TrajectoryState FromSnapshot(in PhysicsTrajectorySnapshot trajectory) => new(
+        trajectory.GenerationId, trajectory.PositionX, trajectory.PositionY,
+        trajectory.VelocityX, trajectory.VelocityY, trajectory.GroundY,
+        trajectory.Airborne, Snapshot.Of(trajectory.Profile), trajectory.ContactFrame,
+        trajectory.Completed);
+
+    internal static bool IsBlocking(
+        DirectionValue direction, float attackerX, float defenderX,
+        CharacterState defenderState = CharacterState.Idle, bool airborne = false)
     {
-        if (defenderX == attackerX)
+        if (defenderX == attackerX || airborne ||
+            defenderState is not (CharacterState.Idle or CharacterState.Walk or CharacterState.Crouch))
             return false;
         int raw = (int)direction;
-        bool holdsLeft = raw is 1 or 4 or 7;
-        bool holdsRight = raw is 3 or 6 or 9;
-        return defenderX < attackerX ? holdsLeft : holdsRight;
+        return raw is 1 or 4 or 7;
     }
 }

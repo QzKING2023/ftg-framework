@@ -36,3 +36,4 @@ FTG_Framework.Tests.FrameDataEngineTests
 FTG_Framework.Tests.UI.CharacterSelectViewModelTests
 FTG_Framework.Tests.UI.EventBusDebugViewModelTests
 FTG_Framework.Tests.UI.Training.ViewModels.PlaybackControlsViewModelTests
+FTG_Framework.Tests.UI.Training.ComboDisplayEventBusTests

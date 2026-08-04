@@ -20,6 +20,111 @@ public sealed class PhysicsEngineTests : IDisposable
     }
 
     [Fact]
+    public void Locomotion_WalksExactlyThreeUnits_AndResolvesFacingNextTick()
+    {
+        var states = new LocomotionStateMachine();
+        var (engine, _, _) = MakeEngine(stateMachine: states);
+        var p1 = new MutableParticipant(1, 0, true);
+        var p2 = new MutableParticipant(2, 10, false);
+        engine.Register(p1);
+        engine.Register(p2);
+        engine.SetLocomotionCommand(new LocomotionCommand(1, 1, false, false));
+        engine.SetLocomotionCommand(new LocomotionCommand(2, -1, false, false));
+
+        engine.Update();
+        Assert.Equal(3, p1.Snapshot.WorldX);
+        Assert.Equal(7, p2.Snapshot.WorldX);
+        Assert.Equal(CharacterState.Walk, states.GetCurrentState(1));
+        Assert.True(p1.Snapshot.FacingRight);
+
+        engine.Update();
+        Assert.True(p1.Snapshot.FacingRight);
+        engine.Update();
+        Assert.False(p1.Snapshot.FacingRight);
+        Assert.True(p2.Snapshot.FacingRight);
+    }
+
+    [Fact]
+    public void Locomotion_JumpUsesFixedTrajectoryAndLandsOnce()
+    {
+        var states = new LocomotionStateMachine();
+        var (engine, _, _) = MakeEngine(stateMachine: states);
+        var p1 = new MutableParticipant(1, 0, true);
+        var p2 = new MutableParticipant(2, 100, false);
+        engine.Register(p1);
+        engine.Register(p2);
+        engine.SetLocomotionCommand(new LocomotionCommand(1, 0, false, true));
+
+        engine.Update();
+        Assert.Equal(-8, p1.Snapshot.WorldY);
+        Assert.Equal(-7.5f, p1.Motion.VelocityY);
+        Assert.True(p1.Motion.Airborne);
+
+        engine.SetLocomotionCommand(new LocomotionCommand(1, 0, false, false));
+        for (int i = 0; i < 40 && p1.Motion.Airborne; i++) engine.Update();
+        Assert.Equal(0, p1.Snapshot.WorldY);
+        Assert.False(p1.Motion.Airborne);
+        Assert.Equal(CharacterState.JumpRecovery, states.GetCurrentState(1));
+        engine.Update();
+        Assert.Equal(CharacterState.Idle, states.GetCurrentState(1));
+    }
+
+    [Fact]
+    public void RuntimeSnapshot_RestoresLocomotionFacingAndPosition()
+    {
+        var states = new LocomotionStateMachine();
+        var (engine, _, _) = MakeEngine(stateMachine: states);
+        var p1 = new MutableParticipant(1, 0, true);
+        var p2 = new MutableParticipant(2, 20, false);
+        engine.Register(p1);
+        engine.Register(p2);
+        engine.SetLocomotionCommand(new LocomotionCommand(1, 1, false, true));
+        engine.Update();
+        var snapshot = engine.CaptureRuntimeSnapshot();
+        engine.Update();
+        engine.InstallRuntimeSnapshot(engine.PrepareRuntimeSnapshot(snapshot));
+        Assert.Equal(snapshot.Participants[1], p1.Snapshot);
+        Assert.Equal(snapshot.Motions[1], p1.Motion);
+    }
+
+    [Fact]
+    public void RuntimeSnapshot_RestoresActiveKnockbackTrajectory()
+    {
+        var profile = new KnockbackProfile { ProfileId = "launch", Horizontal = 8, Friction = 0.3f };
+        var (engine, frames, _) = MakeEngine(profile, stateMachine: new StubStateMachine());
+        frames.P1 = new EvaluatedMoveFrame("5A", 1, 1, MovePhase.Active);
+        engine.Register(new MutableParticipant(1, -5, true));
+        engine.Register(new MutableParticipant(2, 5, false, hasHurtbox: true));
+
+        engine.Update();
+        frames.P1 = EvaluatedMoveFrame.Idle;
+        var snapshot = engine.CaptureRuntimeSnapshot();
+        engine.Update();
+        var advanced = engine.CaptureRuntimeSnapshot();
+        Assert.NotEqual(snapshot.Trajectories[2].PositionX, advanced.Trajectories[2].PositionX);
+
+        engine.InstallRuntimeSnapshot(engine.PrepareRuntimeSnapshot(snapshot));
+        Assert.Equal(snapshot.Trajectories[2], engine.CaptureRuntimeSnapshot().Trajectories[2]);
+        engine.Update();
+        Assert.Equal(advanced.Trajectories[2], engine.CaptureRuntimeSnapshot().Trajectories[2]);
+    }
+
+    [Fact]
+    public void Update_PrunesConsumedContactWhenMoveLeavesActivePhase()
+    {
+        var (engine, frames, _) = MakeEngine();
+        frames.P1 = new EvaluatedMoveFrame("5A", 1, 1, MovePhase.Active);
+        engine.Register(new StubParticipant(1, -5, DirectionValue.Neutral, true));
+        engine.Register(new StubParticipant(2, 5, DirectionValue.Neutral, false));
+
+        engine.Update();
+        Assert.Single(engine.CaptureRuntimeSnapshot().ConsumedContacts);
+        frames.P1 = EvaluatedMoveFrame.Idle;
+        engine.Update();
+        Assert.Empty(engine.CaptureRuntimeSnapshot().ConsumedContacts);
+    }
+
+    [Fact]
     public void Update_ActiveOverlap_PublishesSameContactFrameAndStoresSnapshot()
     {
         var profile = new KnockbackProfile { ProfileId = "light", Horizontal = 8 };
@@ -54,7 +159,7 @@ public sealed class PhysicsEngineTests : IDisposable
         var (engine, frames, _) = MakeEngine();
         frames.P1 = new EvaluatedMoveFrame("5A", 1, 1, MovePhase.Active);
         engine.Register(new StubParticipant(1, -5, DirectionValue.Neutral, true));
-        engine.Register(new StubParticipant(2, 5, DirectionValue.Forward, false));
+        engine.Register(new StubParticipant(2, 5, DirectionValue.Back, false));
         int hits = 0, blocks = 0;
         Action<HitConnectedEvent> hit = _ => hits++;
         Action<MoveBlockedEvent> block = _ => blocks++;
@@ -75,7 +180,7 @@ public sealed class PhysicsEngineTests : IDisposable
     }
 
     [Fact]
-    public void Update_TwoHitboxes_PublishesTwice_ButContinuousOverlapDoesNotRehit()
+    public void Update_TwoHitboxes_PublishesFirstOutcomeOnlyAcrossActiveWindow()
     {
         var (engine, frames, _) = MakeEngine(twoHitboxes: true);
         frames.P1 = new EvaluatedMoveFrame("5A", 3, 1, MovePhase.Active);
@@ -90,7 +195,7 @@ public sealed class PhysicsEngineTests : IDisposable
             EventBus.Instance.ProcessFrame();
             engine.Update();
             EventBus.Instance.ProcessFrame();
-            Assert.Equal(2, hits);
+            Assert.Equal(1, hits);
         }
         finally { EventBus.Instance.Unsubscribe(handler); }
     }
@@ -249,8 +354,19 @@ public sealed class PhysicsEngineTests : IDisposable
         Assert.Contains("[Physics]", ex.Message);
     }
 
+    [Theory]
+    [InlineData(float.NaN, 0)]
+    [InlineData(0, float.PositiveInfinity)]
+    public void Register_NonFiniteWorldPosition_FailsFast(float worldX, float worldY)
+    {
+        var (engine, _, _) = MakeEngine();
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            engine.Register(new StubParticipant(1, worldX, worldY, DirectionValue.Neutral, true)));
+        Assert.Contains("[Physics]", ex.Message);
+    }
+
     [Fact]
-    public void Update_TwoHitboxes_DispatchesHitboxIdsInLifoOrder()
+    public void Update_TwoHitboxes_PreservesFirstDeterministicHitboxId()
     {
         var (engine, frames, _) = MakeEngine(twoHitboxes: true);
         frames.P1 = new EvaluatedMoveFrame("5A", 1, 1, MovePhase.Active);
@@ -263,23 +379,23 @@ public sealed class PhysicsEngineTests : IDisposable
         {
             engine.Update();
             EventBus.Instance.ProcessFrame();
-            Assert.Equal(new[] { "hit-b", "hit-a" }, observed);
+            Assert.Equal(new[] { "hit-a" }, observed);
         }
         finally { EventBus.Instance.Unsubscribe(handler); }
     }
 
     [Theory]
-    [InlineData(DirectionValue.Forward, -5, 5, true)]
-    [InlineData(DirectionValue.Back, -5, 5, false)]
+    [InlineData(DirectionValue.Forward, -5, 5, false)]
+    [InlineData(DirectionValue.Back, -5, 5, true)]
     [InlineData(DirectionValue.Back, 5, -5, true)]
     [InlineData(DirectionValue.Forward, 5, -5, false)]
     [InlineData(DirectionValue.Back, 0, 0, false)]
-    public void Blocking_IsWorldRelativeAndSymmetric(
+    public void Blocking_IsCanonicalBackAndRejectsEqualX(
         DirectionValue direction, float attackerX, float defenderX, bool expected) =>
         Assert.Equal(expected, PhysicsEngine.IsBlocking(direction, attackerX, defenderX));
 
     [Fact]
-    public void Update_TwoHitboxes_ComboTrackerCountsTwo()
+    public void Update_TwoHitboxes_ComboTrackerCountsOne()
     {
         var (engine, frames, store) = MakeEngine(twoHitboxes: true);
         frames.P1 = new EvaluatedMoveFrame("5A", 5, 1, MovePhase.Active);
@@ -291,9 +407,36 @@ public sealed class PhysicsEngineTests : IDisposable
         {
             engine.Update();
             EventBus.Instance.ProcessFrame();
-            Assert.Equal(2, tracker.GetHitCount(1));
+            Assert.Equal(1, tracker.GetHitCount(1));
         }
         finally { tracker.Shutdown(); }
+    }
+
+    [Fact]
+    public void Update_ThreeSequentialMoveInstances_ConsumesOneOutcomePerUpdateWithoutOverflow()
+    {
+        var (engine, frames, _) = MakeEngine();
+        engine.Register(new StubParticipant(1, -5, DirectionValue.Neutral, true));
+        engine.Register(new StubParticipant(2, 5, DirectionValue.Neutral, false));
+        int hits = 0;
+        Action<HitConnectedEvent> handler = _ => hits++;
+        EventBus.Instance.Subscribe(handler);
+        try
+        {
+            for (long moveInstanceId = 1; moveInstanceId <= 3; moveInstanceId++)
+            {
+                frames.P1 = new EvaluatedMoveFrame("5A", moveInstanceId, 1, MovePhase.Active);
+                engine.Update();
+                EventBus.Instance.ProcessFrame();
+
+                frames.P1 = EvaluatedMoveFrame.Idle;
+                engine.Update();
+                EventBus.Instance.ProcessFrame();
+            }
+
+            Assert.Equal(3, hits);
+        }
+        finally { EventBus.Instance.Unsubscribe(handler); }
     }
 
     [Fact]
@@ -383,14 +526,14 @@ public sealed class PhysicsEngineTests : IDisposable
     }
 
     [Fact]
-    public void Update_LaterGenerationExhaustionRollsBackEarlierSameUpdateLaunch()
+    public void Update_GenerationExhaustionRollsBackOutcomeConsumption()
     {
         var profile = new KnockbackProfile { ProfileId = "launch", Horizontal = 8, Friction = 0.3f };
         var (engine, frames, _) = MakeEngine(profile, twoHitboxes: true, stateMachine: new StubStateMachine());
         frames.P1 = new EvaluatedMoveFrame("5A", 1, 1, MovePhase.Active);
         engine.Register(new StubParticipant(1, -5, DirectionValue.Neutral, true));
         engine.Register(new StubParticipant(2, 5, DirectionValue.Neutral, false));
-        engine.SetGenerationForTesting(2, ulong.MaxValue - 1);
+        engine.SetGenerationForTesting(2, ulong.MaxValue);
         var started = new List<KnockbackAppliedEvent>();
         int hits = 0;
         Action<KnockbackAppliedEvent> knockback = e => started.Add(e);
@@ -408,8 +551,8 @@ public sealed class PhysicsEngineTests : IDisposable
             engine.Update();
             EventBus.Instance.ProcessFrame();
             var accepted = Assert.Single(started, e => e.Phase == KnockbackPhase.Started);
-            Assert.Equal(2UL, accepted.GenerationId);
-            Assert.Equal(2, hits);
+            Assert.Equal(1UL, accepted.GenerationId);
+            Assert.Equal(1, hits);
         }
         finally
         {
@@ -524,9 +667,11 @@ public sealed class PhysicsEngineTests : IDisposable
     {
         private readonly PhysicsParticipantSnapshot _snapshot;
         public StubParticipant(int id, float x, DirectionValue direction, bool facingRight)
+            : this(id, x, 0, direction, facingRight) { }
+        public StubParticipant(int id, float x, float y, DirectionValue direction, bool facingRight)
         {
             _snapshot = new PhysicsParticipantSnapshot(
-                id, $"p{id}", x, 0, direction, facingRight,
+                id, $"p{id}", x, y, direction, facingRight,
                 new[] { new CollisionBoxDefinition { BoxId = "body", Width = 20, Height = 40 } });
         }
         public int PlayerId => _snapshot.PlayerId;
@@ -538,6 +683,44 @@ public sealed class PhysicsEngineTests : IDisposable
         public int PlayerId => 1;
         public PhysicsParticipantSnapshot CapturePhysicsSnapshot() =>
             new(2, "wrong", 0, 0, DirectionValue.Neutral, true, []);
+    }
+
+    private sealed class MutableParticipant : IPhysicsParticipant, IRestorablePhysicsParticipant
+    {
+        public MutableParticipant(int id, float x, bool facingRight, bool hasHurtbox = false)
+        {
+            Snapshot = new PhysicsParticipantSnapshot(id, $"p{id}", x, 0,
+                DirectionValue.Neutral, facingRight,
+                hasHurtbox
+                    ? [new CollisionBoxDefinition { BoxId = "body", Width = 20, Height = 40 }]
+                    : []);
+            Motion = new PhysicsMotionSnapshot(0, 0, false, 0);
+        }
+        public int PlayerId => Snapshot.PlayerId;
+        public PhysicsParticipantSnapshot Snapshot { get; private set; }
+        public PhysicsMotionSnapshot Motion { get; private set; }
+        public PhysicsParticipantSnapshot CapturePhysicsSnapshot() => Snapshot;
+        public PhysicsMotionSnapshot CaptureMotionSnapshot() => Motion;
+        public void ApplyPhysicsState(PhysicsParticipantSnapshot participant, PhysicsMotionSnapshot motion)
+        { Snapshot = participant; Motion = motion; }
+        public void RestoreRuntimeSnapshot(PhysicsParticipantSnapshot participant, PhysicsMotionSnapshot motion)
+        { Snapshot = participant; Motion = motion; }
+    }
+
+    private sealed class LocomotionStateMachine : IStateMachine
+    {
+        private readonly Dictionary<int, CharacterState> _states = new() { [1] = CharacterState.Idle, [2] = CharacterState.Idle };
+        public CharacterState GetCurrentState(int playerId) => _states[playerId];
+        public IReadOnlyList<CharacterState> GetStack(int playerId) => [_states[playerId]];
+        public int GetStackDepth(int playerId) => 1;
+        public void InitializePlayer(int playerId) => _states[playerId] = CharacterState.Idle;
+        public void PushState(int playerId, CharacterState state) => _states[playerId] = state;
+        public void PopState(int playerId) => _states[playerId] = CharacterState.Idle;
+        public void ReplaceState(int playerId, CharacterState newState) => _states[playerId] = newState;
+        public PhysicsResponseProfile GetEffectivePhysicsProfile(int playerId) => new() { ProfileId = "effective" };
+        public void RegisterStateProfile(CharacterState state, string physicsResponseProfileId) { }
+        public void Initialize(IDataStore dataStore) { }
+        public void Shutdown() { }
     }
 
     private sealed class StubStateMachine : IStateMachine

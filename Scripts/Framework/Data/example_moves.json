@@ -6,7 +6,7 @@
       "move_name": "",
       "startup": 4,
       "active": 3,
-      "recovery": 6,
+      "recovery": 2,
       "hit_advantage": 2,
       "block_advantage": -3,
       "damage": 30,

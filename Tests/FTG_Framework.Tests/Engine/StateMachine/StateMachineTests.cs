@@ -1149,4 +1149,81 @@ public class StateMachineTests : IDisposable
             Assert.Equal(CharacterState.Hitstun, sm.GetCurrentState(2));
         });
     }
+
+    [Fact]
+    public void PrepareRuntimeSnapshot_RebindsTupleEpochAndFrameNumberToCaptureDomain()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            var captured = new StateMachineRuntimeSnapshot(
+                new Dictionary<int, List<CharacterState>>
+                {
+                    [2] = new() { CharacterState.Idle, CharacterState.Hitstun }
+                },
+                new Dictionary<int, Data.PhysicsResponseProfile>(),
+                new Dictionary<int, GenerationEpochSnapshot>(),
+                new Dictionary<int, ReactionRecoverySnapshot>(),
+                new Dictionary<int, KnockbackTupleRuntimeSnapshot>
+                {
+                    [2] = new KnockbackTupleRuntimeSnapshot(1, 5,
+                        new KnockbackAppliedEvent(2, 0, 0, 0, 0, 0, 0, 5, 0, 800, KnockbackPhase.Progressed),
+                        Terminal: false)
+                },
+                new Dictionary<int, KnockbackOccupancyRuntimeSnapshot> { [2] = new(1, 5) });
+
+            var prepared = sm.PrepareRuntimeSnapshot(
+                captured, new SnapshotPrepareContext(1, 9, 40, SnapshotRestoreMode.Normal));
+
+            Assert.Equal(9UL, prepared.KnockbackTuples![2].Epoch);
+            Assert.Equal(40, prepared.KnockbackTuples[2].Last.FrameNumber);
+            Assert.Equal(9UL, prepared.HitstunOccupancy![2].Epoch);
+        });
+    }
+
+    [Fact]
+    public void PrepareRuntimeSnapshot_NonTerminalTupleWithoutOccupancy_Rejects()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            var captured = new StateMachineRuntimeSnapshot(
+                new Dictionary<int, List<CharacterState>>
+                {
+                    [2] = new() { CharacterState.Idle, CharacterState.Hitstun }
+                },
+                new Dictionary<int, Data.PhysicsResponseProfile>(),
+                new Dictionary<int, GenerationEpochSnapshot>(),
+                new Dictionary<int, ReactionRecoverySnapshot>(),
+                new Dictionary<int, KnockbackTupleRuntimeSnapshot>
+                {
+                    [2] = new KnockbackTupleRuntimeSnapshot(1, 5,
+                        new KnockbackAppliedEvent(2, 0, 0, 0, 0, 0, 0, 5, 0, 4, KnockbackPhase.Progressed),
+                        Terminal: false)
+                },
+                new Dictionary<int, KnockbackOccupancyRuntimeSnapshot>());
+
+            Assert.Throws<SnapshotPrepareException>(() => sm.PrepareRuntimeSnapshot(
+                captured, new SnapshotPrepareContext(1, 9, 40, SnapshotRestoreMode.Normal)));
+        });
+    }
+
+    [Fact]
+    public void PrepareRuntimeSnapshot_OccupancyWithoutTuple_Rejects()
+    {
+        RunWithMachine((_, sm) =>
+        {
+            var captured = new StateMachineRuntimeSnapshot(
+                new Dictionary<int, List<CharacterState>>
+                {
+                    [2] = new() { CharacterState.Idle, CharacterState.Hitstun }
+                },
+                new Dictionary<int, Data.PhysicsResponseProfile>(),
+                new Dictionary<int, GenerationEpochSnapshot>(),
+                new Dictionary<int, ReactionRecoverySnapshot>(),
+                new Dictionary<int, KnockbackTupleRuntimeSnapshot>(),
+                new Dictionary<int, KnockbackOccupancyRuntimeSnapshot> { [2] = new(1, 5) });
+
+            Assert.Throws<SnapshotPrepareException>(() => sm.PrepareRuntimeSnapshot(
+                captured, new SnapshotPrepareContext(1, 9, 40, SnapshotRestoreMode.Normal)));
+        });
+    }
 }

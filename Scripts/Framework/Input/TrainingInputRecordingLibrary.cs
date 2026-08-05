@@ -84,4 +84,35 @@ public sealed class TrainingInputRecordingLibrary
 
     public TrainingInputRecording? GetAssigned(int playerId) =>
         playerId is 1 or 2 ? _assigned[playerId] : null;
+
+    /// <summary>Installs a fully validated library replacement during a restore
+    /// commit. Assignments are resolved by name and must reference existing
+    /// recordings; any mismatch is an internal invariant violation.</summary>
+    internal void ReplaceAll(IReadOnlyList<TrainingInputRecording> recordings,
+        string? p1Assignment, string? p2Assignment)
+    {
+        ArgumentNullException.ThrowIfNull(recordings);
+        var byName = new Dictionary<string, TrainingInputRecording>(StringComparer.Ordinal);
+        foreach (TrainingInputRecording recording in recordings)
+        {
+            if (string.IsNullOrWhiteSpace(recording.Name))
+                throw new InvalidOperationException("[Input] Restored library contains an unnamed recording.");
+            if (!byName.TryAdd(recording.Name, recording))
+                throw new InvalidOperationException($"[Input] Restored library contains duplicate '{recording.Name}'.");
+        }
+        _recordings.Clear();
+        foreach (TrainingInputRecording recording in recordings)
+            _recordings[recording.Name] = recording;
+        _assigned[1] = ResolveAssignment(p1Assignment, byName, 1);
+        _assigned[2] = ResolveAssignment(p2Assignment, byName, 2);
+
+        static TrainingInputRecording? ResolveAssignment(string? name,
+            IReadOnlyDictionary<string, TrainingInputRecording> byName, int player)
+        {
+            if (name is null) return null;
+            if (!byName.TryGetValue(name, out TrainingInputRecording? recording))
+                throw new InvalidOperationException($"[Input] Restored P{player} assignment '{name}' has no library recording.");
+            return recording;
+        }
+    }
 }

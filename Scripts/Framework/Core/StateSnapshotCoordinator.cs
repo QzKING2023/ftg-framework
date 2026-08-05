@@ -47,12 +47,13 @@ public sealed class StateSnapshotCoordinator
     public static StateSnapshotCoordinator CreateRuntime(
         EventBus eventBus,
         IEnumerable<IStateSnapshotParticipant> participants,
-        Action<SnapshotFaultPoint, string>? faultInjector = null)
+        Action<SnapshotFaultPoint, string>? faultInjector = null,
+        Action<IReadOnlyDictionary<string, SnapshotComponent>, SnapshotPrepareContext>? graphValidator = null)
     {
         IStateSnapshotParticipant[] materialized = participants?.ToArray()
             ?? throw new ArgumentNullException(nameof(participants));
         SnapshotParticipantCatalog.ValidateRequired(materialized);
-        return new StateSnapshotCoordinator(eventBus, materialized, faultInjector);
+        return new StateSnapshotCoordinator(eventBus, materialized, faultInjector, graphValidator);
     }
 
     public StateSnapshot Capture(int frame, string frameworkVersion)
@@ -85,12 +86,25 @@ public sealed class StateSnapshotCoordinator
             _faultInjector?.Invoke(SnapshotFaultPoint.ReserveEpoch, "event_bus");
             ulong reservedEpoch = _eventBus.ReserveLifecycleEpoch();
             var byId = snapshot.Components.ToDictionary(c => c.Discriminator, StringComparer.Ordinal);
+            var participantByDiscriminator = _participants.ToDictionary(
+                participant => participant.Discriminator, StringComparer.Ordinal);
+            string[] unknown = byId.Keys.Where(id => !participantByDiscriminator.ContainsKey(id)).ToArray();
+            if (unknown.Length != 0)
+                throw new SnapshotPrepareException("component_catalog",
+                    $"Snapshot contains unknown components: {string.Join(", ", unknown)}.");
             var prepared = new List<IPreparedSnapshotComponent>(_participants.Length);
             foreach (IStateSnapshotParticipant participant in _participants)
             {
                 _faultInjector?.Invoke(SnapshotFaultPoint.DecodeComponent, participant.Discriminator);
                 if (!byId.TryGetValue(participant.Discriminator, out SnapshotComponent? component))
-                    throw new SnapshotPrepareException(participant.Discriminator, "Required component is missing.");
+                {
+                    // Optional participants (combo, training_input) may be absent
+                    // in snapshots recorded by older coordinators, e.g. replay
+                    // files from before their introduction.
+                    if (SnapshotParticipantCatalog.Required.Contains(participant.Discriminator))
+                        throw new SnapshotPrepareException(participant.Discriminator, "Required component is missing.");
+                    continue;
+                }
                 if (component.CodecVersion != participant.CodecVersion)
                     throw new SnapshotPrepareException(participant.Discriminator,
                         $"Unsupported codec version {component.CodecVersion}.");
@@ -98,8 +112,6 @@ public sealed class StateSnapshotCoordinator
                 prepared.Add(participant.Prepare(component,
                     new SnapshotPrepareContext(snapshot.SourceEpoch, reservedEpoch, snapshot.Frame, mode)));
             }
-            if (byId.Count != _participants.Length)
-                throw new SnapshotPrepareException("component_catalog", "Snapshot contains unknown components.");
             _faultInjector?.Invoke(SnapshotFaultPoint.ValidateGraph, "cross_component_graph");
             var prepareContext = new SnapshotPrepareContext(snapshot.SourceEpoch, reservedEpoch, snapshot.Frame, mode);
             _graphValidator?.Invoke(byId, prepareContext);

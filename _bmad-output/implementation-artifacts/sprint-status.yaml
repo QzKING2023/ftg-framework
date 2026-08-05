@@ -1,5 +1,5 @@
 # generated: 2026-07-27
-# last_updated: 2026-08-04
+# last_updated: 2026-08-05
 # project: ftg-framework
 # project_key: NOKEY
 # tracking_system: file-system
@@ -43,7 +43,7 @@
 # V2 entries use v2- prefix to avoid key collision with V1 epics (V1 epics 1-3 are done).
 
 generated: 2026-07-27
-last_updated: 2026-08-04
+last_updated: 2026-08-05
 # Note: Story 3.0 (Replay Spike) is intentionally started before Epic 1 per Implementation Readiness Advisory #1.
 # The spike's go/no-go decision may affect event design across all epics.
 
@@ -282,7 +282,7 @@ development_status:
   v2-2-4-c-ownership-lifecycle: done
   v2-2-4-d-godot-determinism-evidence: done
   v2-2-4-e-manual-acceptance-correction: done
-  v2-2-5-training-state-save-load: backlog
+  v2-2-5-training-state-save-load: done
   v2-epic-2-retrospective: optional
 
   # Epic 3: Runtime Infrastructure & Developer Experience (FR-28~31, FR-33)

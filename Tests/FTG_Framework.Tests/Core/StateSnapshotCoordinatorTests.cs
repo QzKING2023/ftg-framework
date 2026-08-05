@@ -196,6 +196,50 @@ public sealed class StateSnapshotCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public void Restore_OptionalParticipantMissing_IsSkippedAndRequiredStateRestored()
+    {
+        // Snapshots recorded before optional participants (combo, training_input)
+        // existed, e.g. older replay files, must restore with the optional
+        // participants skipped — only the required five are mandatory.
+        FakeParticipant[] participants = SnapshotParticipantCatalog.Required
+            .Select(id => new FakeParticipant(id, $"live-{id}"))
+            .Append(new FakeParticipant(SnapshotParticipantCatalog.Combo, "live-combo"))
+            .Append(new FakeParticipant(SnapshotParticipantCatalog.TrainingInput, "live-training"))
+            .ToArray();
+        var coordinator = new StateSnapshotCoordinator(EventBus.Instance, participants);
+        var captureCoordinator = new StateSnapshotCoordinator(EventBus.Instance,
+            SnapshotParticipantCatalog.Required
+                .Select(id => new FakeParticipant(id, $"captured-{id}"))
+                .ToArray());
+        StateSnapshot snapshot = captureCoordinator.Capture(frame: 3, frameworkVersion: "2.3.0");
+
+        coordinator.Restore(snapshot, SnapshotRestoreMode.Normal);
+
+        foreach (string id in SnapshotParticipantCatalog.Required)
+            Assert.Equal($"captured-{id}", participants.First(p => p.Discriminator == id).LiveValue);
+        Assert.Equal("live-combo", participants[5].LiveValue);
+        Assert.Equal("live-training", participants[6].LiveValue);
+    }
+
+    [Fact]
+    public void Restore_RequiredParticipantMissing_StillRejects()
+    {
+        FakeParticipant[] participants = SnapshotParticipantCatalog.Required
+            .Select(id => new FakeParticipant(id, $"live-{id}"))
+            .Append(new FakeParticipant(SnapshotParticipantCatalog.Combo, "live-combo"))
+            .ToArray();
+        var coordinator = new StateSnapshotCoordinator(EventBus.Instance, participants);
+        SnapshotComponent[] components = participants
+            .Where(p => p.Discriminator != SnapshotParticipantCatalog.StateMachine)
+            .Select(p => p.Capture(0, 1))
+            .ToArray();
+
+        var ex = Assert.Throws<SnapshotPrepareException>(() => coordinator.Restore(
+            new StateSnapshot(1, "2.3.0", 1, 5, components), SnapshotRestoreMode.Normal));
+        Assert.Equal(SnapshotParticipantCatalog.StateMachine, ex.FaultPoint);
+    }
+
+    [Fact]
     public void Restore_UntrustedPreparedImplementation_RejectsBeforeAnyReferenceSwap()
     {
         var safe = new FakeParticipant("a", "live-a");

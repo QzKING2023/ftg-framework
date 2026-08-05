@@ -260,8 +260,13 @@ internal sealed class StateMachine : IModule, IStateMachine
         var profiles = _effectiveProfileSnapshots.ToDictionary(pair => pair.Key, pair => Snapshot.Of(pair.Value));
         var highWater = _highestKnockbackGeneration.ToDictionary(pair => pair.Key,
             pair => new GenerationEpochSnapshot(pair.Value.Epoch, pair.Value.Generation));
+        var tuples = _knockbackTuples.ToDictionary(pair => pair.Key,
+            pair => new KnockbackTupleRuntimeSnapshot(
+                pair.Value.Epoch, pair.Value.Generation, pair.Value.Last, pair.Value.Terminal));
+        var occupancy = _hitstunOccupancy.ToDictionary(pair => pair.Key,
+            pair => new KnockbackOccupancyRuntimeSnapshot(pair.Value.Epoch, pair.Value.Generation));
         return new StateMachineRuntimeSnapshot(stacks, profiles, highWater,
-            new Dictionary<int, ReactionRecoverySnapshot>(_reactionRecovery));
+            new Dictionary<int, ReactionRecoverySnapshot>(_reactionRecovery), tuples, occupancy);
     }
 
     internal StateMachineRuntimeSnapshot PrepareRuntimeSnapshot(
@@ -277,12 +282,53 @@ internal sealed class StateMachine : IModule, IStateMachine
             if (pair.Value is null || pair.Value.Count == 0)
                 throw new SnapshotPrepareException(SnapshotParticipantCatalog.StateMachine, $"P{pair.Key} stack is empty.");
         }
+        // Knockback-ownership state must survive a mid-knockback restore or the
+        // completion event (dispatched in the new epoch) is ignored and Hitstun
+        // lingers forever. Absence of the fields (legacy payloads) means no
+        // knockback ownership was tracked — equivalent to empty, per the
+        // compatible-version policy.
+        Dictionary<int, KnockbackTupleRuntimeSnapshot> tuples = snapshot.KnockbackTuples is null
+            ? new Dictionary<int, KnockbackTupleRuntimeSnapshot>()
+            : snapshot.KnockbackTuples.ToDictionary(pair => pair.Key,
+                pair => pair.Value with
+                {
+                    Epoch = context.ReservedEpoch,
+                    // The completion guard compares event FrameNumbers against the
+                    // tuple's; after a restore the frame domain restarts at the
+                    // captured frame, so anchor the guard at the capture frame
+                    // (live completions always carry a strictly larger frame).
+                    Last = pair.Value.Last with { FrameNumber = context.Frame }
+                });
+        Dictionary<int, KnockbackOccupancyRuntimeSnapshot> occupancy = snapshot.HitstunOccupancy is null
+            ? new Dictionary<int, KnockbackOccupancyRuntimeSnapshot>()
+            : snapshot.HitstunOccupancy.ToDictionary(pair => pair.Key,
+                pair => pair.Value with { Epoch = context.ReservedEpoch });
+        foreach (var pair in tuples)
+        {
+            ValidatePlayerId(pair.Key);
+            if (pair.Value.Generation == 0)
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.StateMachine,
+                    $"P{pair.Key} knockback tuple has generation 0.");
+            if (!pair.Value.Terminal && !occupancy.ContainsKey(pair.Key))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.StateMachine,
+                    $"P{pair.Key} non-terminal knockback tuple has no hitstun occupancy.");
+            if (occupancy.TryGetValue(pair.Key, out var owner) && owner.Generation > pair.Value.Generation)
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.StateMachine,
+                    $"P{pair.Key} hitstun occupancy generation {owner.Generation} exceeds its tracked tuple generation {pair.Value.Generation}.");
+        }
+        foreach (int playerId in occupancy.Keys)
+        {
+            if (!tuples.ContainsKey(playerId))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.StateMachine,
+                    $"P{playerId} hitstun occupancy has no tracked knockback tuple.");
+        }
         return new StateMachineRuntimeSnapshot(
             snapshot.Stacks.ToDictionary(pair => pair.Key, pair => new List<CharacterState>(pair.Value)),
             snapshot.EffectiveProfiles.ToDictionary(pair => pair.Key, pair => Snapshot.Of(pair.Value)),
             snapshot.GenerationHighWater.ToDictionary(pair => pair.Key,
                 pair => new GenerationEpochSnapshot(context.ReservedEpoch, pair.Value.Generation)),
-            new Dictionary<int, ReactionRecoverySnapshot>(snapshot.ReactionRecovery));
+            new Dictionary<int, ReactionRecoverySnapshot>(snapshot.ReactionRecovery),
+            tuples, occupancy);
     }
 
     internal void InstallRuntimeSnapshot(StateMachineRuntimeSnapshot snapshot)
@@ -292,8 +338,14 @@ internal sealed class StateMachine : IModule, IStateMachine
         _highestKnockbackGeneration = snapshot.GenerationHighWater;
         _reactionRecovery = snapshot.ReactionRecovery;
         _awaitingLaunches = new();
-        _knockbackTuples = new();
-        _hitstunOccupancy = new();
+        _knockbackTuples = snapshot.KnockbackTuples is null
+            ? new Dictionary<int, KnockbackTuple>()
+            : snapshot.KnockbackTuples.ToDictionary(pair => pair.Key,
+                pair => new KnockbackTuple(pair.Value.Epoch, pair.Value.Generation, pair.Value.Last, pair.Value.Terminal));
+        _hitstunOccupancy = snapshot.HitstunOccupancy is null
+            ? new Dictionary<int, (ulong Epoch, ulong Generation)>()
+            : snapshot.HitstunOccupancy.ToDictionary(pair => pair.Key,
+                pair => (pair.Value.Epoch, pair.Value.Generation));
     }
 
     // ── Event handlers (AD-11 peer model) ──

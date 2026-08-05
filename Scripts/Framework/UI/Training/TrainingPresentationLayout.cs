@@ -33,7 +33,8 @@ public readonly record struct TrainingUiLayout(
     LayoutRect LeftDiagnostics,
     LayoutRect LeftDiagnosticsDrawer,
     LayoutRect TopRightTuning,
-    LayoutRect BottomRightPlayback);
+    LayoutRect BottomRightPlayback,
+    LayoutRect BottomRightSaveLoad);
 
 public static class TrainingPresentationLayout
 {
@@ -89,7 +90,7 @@ public static class TrainingPresentationLayout
                 "[TrainingLayout] Viewport cannot contain the collapsed training UI contract.");
 
         double rightX = width - margin - rightWidth;
-        double panelHeight = (usableHeight - gap) / 2;
+        double panelHeight = (usableHeight - 2 * gap) / 3;
         var left = new LayoutRect(margin, margin, leftWidth, usableHeight);
         var drawer = new LayoutRect(
             margin,
@@ -98,7 +99,8 @@ public static class TrainingPresentationLayout
             usableHeight);
         var tuning = new LayoutRect(rightX, margin, rightWidth, panelHeight);
         var playback = new LayoutRect(rightX, margin + panelHeight + gap, rightWidth, panelHeight);
-        return new TrainingUiLayout(uiScale, margin, gap, collapse, left, drawer, tuning, playback);
+        var saveLoad = new LayoutRect(rightX, margin + 2 * (panelHeight + gap), rightWidth, panelHeight);
+        return new TrainingUiLayout(uiScale, margin, gap, collapse, left, drawer, tuning, playback, saveLoad);
     }
 
     private static void ValidateFinitePositive(double width, double height)

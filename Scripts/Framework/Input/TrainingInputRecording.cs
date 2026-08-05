@@ -67,6 +67,10 @@ public sealed class TrainingInputRecording
             throw Error($"Name exceeds {MaxNameScalars} Unicode scalar values.");
     }
 
+    public static bool IsValidName(string? name) =>
+        !string.IsNullOrWhiteSpace(name) &&
+        (name ?? string.Empty).EnumerateRunes().Count() <= MaxNameScalars;
+
     private static void ValidateEntries(TrainingInputRecordingEntry[] entries, int duration)
     {
         int priorFrame = -1;

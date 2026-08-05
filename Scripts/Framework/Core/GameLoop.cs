@@ -44,6 +44,7 @@ public partial class GameLoop : Node
     private string _p2CharacterId = string.Empty;
     private RuntimeTuningService? _runtimeTuningService;
     private RuntimeTuningSessionAuthority? _runtimeTuningSessions;
+    private TrainingStateService? _trainingStateService;
 
     public IStateMachine? StateMachine => _stateMachine;
     public IInputHistory? InputHistory => _inputHistory;
@@ -194,12 +195,17 @@ public partial class GameLoop : Node
                     chargeTracker.ResetPlayer(player);
                     _previousJump[player] = false;
                 },
-                RecordCanonicalBatch);
+                RecordCanonicalBatch,
+                _trainingRecordingLibrary);
             _trainingInputService.StartLifecycleSubscriptions();
             var replayOrchestrator = new ReplayOrchestrator(_frameDataEngine, playbackModes);
             var snapshotCoordinator = CreateRuntimeSnapshotCoordinator(
                 stateMachine, frameDataEngine, physicsEngine, inputHistory, chargeTracker,
-                replayOrchestrator);
+                replayOrchestrator, comboStateTracker, _trainingInputService, _dataStore);
+            _trainingStateService = new TrainingStateService(
+                snapshotCoordinator,
+                () => EventBus.Instance.CurrentFrame,
+                () => EventBus.Instance.LifecycleEpoch);
             replayOrchestrator.AttachSnapshotCoordinator(snapshotCoordinator);
             _replayOrchestrator = replayOrchestrator;
             _matchInitializedHandler = e =>
@@ -227,6 +233,7 @@ public partial class GameLoop : Node
                 RuntimeTuningSessions = _runtimeTuningSessions,
                 TrainingInputService = _trainingInputService,
                 TrainingRecordingLibrary = _trainingRecordingLibrary,
+                TrainingStateService = _trainingStateService,
                 P1CharacterId = _p1CharacterId,
                 P2CharacterId = _p2CharacterId
             });
@@ -401,6 +408,7 @@ public partial class GameLoop : Node
         _trainingInputService?.Shutdown();
         _trainingInputService = null;
         _trainingRecordingLibrary = null;
+        _trainingStateService = null;
         if (_matchInitializedHandler is not null)
             EventBus.Instance.Unsubscribe(_matchInitializedHandler);
         _matchInitializedHandler = null;
@@ -539,7 +547,10 @@ public partial class GameLoop : Node
         PhysicsEngine physicsEngine,
         global::FTG_Framework.Input.InputHistory inputHistory,
         global::FTG_Framework.Input.ChargeTracker chargeTracker,
-        ReplayOrchestrator replayOrchestrator)
+        ReplayOrchestrator replayOrchestrator,
+        global::FTG_Framework.Engine.Combo.ComboStateTracker? comboStateTracker = null,
+        global::FTG_Framework.Input.TrainingInputService? trainingInputService = null,
+        IDataStore? dataStore = null)
     {
         ArgumentNullException.ThrowIfNull(stateMachine);
         ArgumentNullException.ThrowIfNull(frameDataEngine);
@@ -547,8 +558,8 @@ public partial class GameLoop : Node
         ArgumentNullException.ThrowIfNull(inputHistory);
         ArgumentNullException.ThrowIfNull(chargeTracker);
         ArgumentNullException.ThrowIfNull(replayOrchestrator);
-        IStateSnapshotParticipant[] participants =
-        [
+        var participants = new List<IStateSnapshotParticipant>
+        {
             new RuntimeStateSnapshotParticipant<StateMachineRuntimeSnapshot>(
                 SnapshotParticipantCatalog.StateMachine, 1, (_, _) => stateMachine.CaptureRuntimeSnapshot(),
                 stateMachine.PrepareRuntimeSnapshot, stateMachine.InstallRuntimeSnapshot),
@@ -563,8 +574,21 @@ public partial class GameLoop : Node
                 (snapshot, _) => inputHistory.PrepareRuntimeSnapshot(snapshot),
                 snapshot => inputHistory.InstallRuntimeSnapshot(snapshot, chargeTracker)),
             replayOrchestrator
-        ];
-        return StateSnapshotCoordinator.CreateRuntime(EventBus.Instance, participants);
+        };
+        if (comboStateTracker is not null)
+        {
+            participants.Add(new RuntimeStateSnapshotParticipant<ComboRuntimeSnapshot>(
+                SnapshotParticipantCatalog.Combo, 1,
+                (_, _) => comboStateTracker.CaptureComboState(),
+                comboStateTracker.PrepareComboState, comboStateTracker.InstallComboState));
+        }
+        if (trainingInputService is not null)
+        {
+            participants.Add(new global::FTG_Framework.Input.TrainingInputStateParticipant(trainingInputService));
+        }
+        return StateSnapshotCoordinator.CreateRuntime(
+            EventBus.Instance, participants,
+            graphValidator: TrainingSnapshotGraphValidator.Create(dataStore));
     }
 
     private static DirectionValue FallbackDirection(bool left, bool right, bool down, bool up)

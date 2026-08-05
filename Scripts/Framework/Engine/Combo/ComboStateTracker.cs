@@ -126,6 +126,76 @@ internal sealed class ComboStateTracker : IModule, IComboStateTracker
         track.LastObservedMoveId = string.Empty;
     }
 
+    internal ComboRuntimeSnapshot CaptureComboState()
+    {
+        var tracks = new Dictionary<int, ComboTrackRuntimeSnapshot>();
+        foreach (var (playerId, track) in _tracks)
+            tracks[playerId] = new ComboTrackRuntimeSnapshot(
+                track.Active, track.HitCount, track.CurrentMoveId, track.StartFrame,
+                track.PendingAdvantage, track.AttackerIdle, track.LastObservedMoveId);
+        return new ComboRuntimeSnapshot(tracks);
+    }
+
+    internal ComboRuntimeSnapshot PrepareComboState(
+        ComboRuntimeSnapshot snapshot, SnapshotPrepareContext context)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        var rebased = new Dictionary<int, ComboTrackRuntimeSnapshot>(snapshot.Tracks.Count);
+        foreach (var (playerId, originalTrack) in snapshot.Tracks)
+        {
+            ComboTrackRuntimeSnapshot track = originalTrack;
+            if (playerId is not (1 or 2))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.Combo,
+                    $"Track player '{playerId}' is invalid; only players 1 and 2 exist.");
+            if (track.HitCount < 0 || track.PendingAdvantage < 0)
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.Combo,
+                    $"P{playerId} track has a negative hit count or pending advantage.");
+            if (track.Active)
+            {
+                if (string.IsNullOrWhiteSpace(track.CurrentMoveId))
+                    throw new SnapshotPrepareException(SnapshotParticipantCatalog.Combo,
+                        $"P{playerId} active track has no current move identity.");
+                // The dispatch counter advances before subscribers observe it, so a
+                // track that started in the final dispatched frame records frame + 1.
+                // Replay bootstrap/handoff captures run in the live frame domain
+                // while the snapshot frame is the replay domain; rebase instead of
+                // rejecting so a replay ending mid-combo restores cleanly.
+                if (track.StartFrame < 0)
+                    throw new SnapshotPrepareException(SnapshotParticipantCatalog.Combo,
+                        $"P{playerId} active track start frame {track.StartFrame} is inconsistent with snapshot frame {context.Frame}.");
+                if (track.StartFrame > context.Frame + 1 && context.Mode != SnapshotRestoreMode.Normal)
+                    track = track with { StartFrame = context.Frame + 1 };
+                else if (track.StartFrame > context.Frame + 1)
+                    throw new SnapshotPrepareException(SnapshotParticipantCatalog.Combo,
+                        $"P{playerId} active track start frame {track.StartFrame} is inconsistent with snapshot frame {context.Frame}.");
+                if (track.HitCount < 1)
+                    throw new SnapshotPrepareException(SnapshotParticipantCatalog.Combo,
+                        $"P{playerId} active track declares hit count {track.HitCount}.");
+            }
+            rebased[playerId] = track;
+        }
+        return new ComboRuntimeSnapshot(rebased);
+    }
+
+    internal void InstallComboState(ComboRuntimeSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        _tracks.Clear();
+        foreach (var (playerId, track) in snapshot.Tracks)
+        {
+            _tracks[playerId] = new ComboTrack
+            {
+                Active = track.Active,
+                HitCount = track.HitCount,
+                CurrentMoveId = track.CurrentMoveId,
+                StartFrame = track.StartFrame,
+                PendingAdvantage = track.PendingAdvantage,
+                AttackerIdle = track.AttackerIdle,
+                LastObservedMoveId = track.LastObservedMoveId
+            };
+        }
+    }
+
     public bool IsActive(int playerId) =>
         _tracks.TryGetValue(playerId, out var track) && track.Active;
 

@@ -27,6 +27,8 @@ public static class SnapshotParticipantCatalog
     public const string PhysicsMotion = "physics_motion";
     public const string Input = "input";
     public const string Recording = "recording";
+    public const string Combo = "combo";
+    public const string TrainingInput = "training_input";
 
     public static IReadOnlyList<string> Required { get; } = Array.AsReadOnly(new[]
     {

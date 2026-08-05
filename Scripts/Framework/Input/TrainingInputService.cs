@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FTG_Framework.Core;
 using FTG_Framework.Core.Replay;
 using FTG_Framework.Core.Events;
@@ -24,6 +25,7 @@ public sealed class TrainingInputService
     private readonly Action<int, IReadOnlyList<TrainingInputRecordingEntry>>? _injectCanonicalBatch;
     private readonly Action<int, int> _resetTransient;
     private readonly PlaybackModeCoordinator _playbackModes;
+    private readonly TrainingInputRecordingLibrary _library;
     private readonly List<TrainingInputRecordingEntry> _captureEntries = new();
     private int _capturePlayer;
     private int _captureStartFrame;
@@ -42,6 +44,7 @@ public sealed class TrainingInputService
     private bool _pendingLoopReset;
     private bool _pendingStop;
     private bool _lifecycleSubscribed;
+    private RestoredPlaybackSession? _restoredSession;
 
     public bool IsCapturing => _capturePlayer != 0;
     public int CapturePlayer => _capturePlayer;
@@ -49,18 +52,43 @@ public sealed class TrainingInputService
     public int PlaybackPlayer => _playbackPlayer;
     public TrainingInputRecording? ActivePlaybackRecording => _playback;
     public bool HasCompletedCapture => _completedCapture.HasValue;
+    public string? SelectedRecordingName { get; set; }
 
     public TrainingInputService(Action<int, InputType, int> injectCanonical,
         PlaybackModeCoordinator? playbackModes = null,
         Action<int, int>? resetTransient = null,
-        Action<int, IReadOnlyList<TrainingInputRecordingEntry>>? injectCanonicalBatch = null)
+        Action<int, IReadOnlyList<TrainingInputRecordingEntry>>? injectCanonicalBatch = null,
+        TrainingInputRecordingLibrary? library = null)
     {
         ArgumentNullException.ThrowIfNull(injectCanonical);
         _injectCanonical = injectCanonical;
         _playbackModes = playbackModes ?? new PlaybackModeCoordinator();
         _resetTransient = resetTransient ?? ((_, _) => { });
         _injectCanonicalBatch = injectCanonicalBatch;
+        _library = library ?? new TrainingInputRecordingLibrary();
     }
+
+    private sealed record RestoredPlaybackSession(
+        TrainingInputRecording Recording,
+        int DummyPlayer,
+        int StartFrame,
+        int EntryIndex,
+        bool Loop,
+        bool PendingLoopReset,
+        bool PendingStop,
+        ulong Epoch);
+
+    /// <summary>Fully validated, decoded form produced by Prepare and installed
+    /// by the no-fail commit swap. Install is allowed only for Normal restores:
+    /// replay bootstrap/handoff must not replace the live recording library
+    /// with record-time contents.</summary>
+    internal sealed record PreparedTrainingInputState(
+        TrainingInputRecording[] Library,
+        string? P1Assignment,
+        string? P2Assignment,
+        string? SelectedRecording,
+        TrainingInputPlaybackSessionRuntimeSnapshot? Session,
+        bool InstallAllowed);
 
     public bool TryStartCapture(int playerId, int startFrame, out string error)
         => TryStartCapture(playerId, startFrame, 1, out error);
@@ -281,6 +309,7 @@ public sealed class TrainingInputService
 
     public int ProcessPlaybackFrame(int currentFrame, ulong epoch)
     {
+        PromoteRestoredSession(currentFrame, epoch);
         if (_playback is null) return 0;
         if (epoch != _playbackEpoch)
         {
@@ -346,6 +375,171 @@ public sealed class TrainingInputService
         ReleasePlayback(resetTransient: true);
     }
 
+    // ─── Training-input snapshot participant ──────────────────────
+
+    internal TrainingInputRuntimeSnapshot CaptureTrainingState()
+    {
+        var library = new List<TrainingInputRecordingRuntimeSnapshot>();
+        foreach (var pair in _library.Recordings.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+            library.Add(new TrainingInputRecordingRuntimeSnapshot(
+                pair.Key, Convert.ToBase64String(TrainingInputRecordingCodec.Encode(pair.Value))));
+        if (_playback is not null &&
+            !_library.Recordings.ContainsKey(_playback.Name))
+        {
+            // A session's recording must resolve inside the captured payload, so
+            // the snapshot stays self-contained even when playback was started
+            // from a recording that was never stored in the library.
+            library.Add(new TrainingInputRecordingRuntimeSnapshot(
+                _playback.Name, Convert.ToBase64String(TrainingInputRecordingCodec.Encode(_playback))));
+        }
+        TrainingInputPlaybackSessionRuntimeSnapshot? session = null;
+        if (_playback is not null)
+        {
+            session = new TrainingInputPlaybackSessionRuntimeSnapshot(
+                _playback.Name, _playbackPlayer, _playbackStartFrame, _playbackIndex,
+                _loop, _pendingLoopReset, _pendingStop, _playbackEpoch);
+        }
+        else if (_restoredSession is { } pending)
+        {
+            // A restored session is owned state even before the next frame
+            // promotes it; a save taken in that window must not lose it.
+            session = new TrainingInputPlaybackSessionRuntimeSnapshot(
+                pending.Recording.Name, pending.DummyPlayer, pending.StartFrame, pending.EntryIndex,
+                pending.Loop, pending.PendingLoopReset, pending.PendingStop, pending.Epoch);
+        }
+        return new TrainingInputRuntimeSnapshot(
+            library.ToArray(),
+            _library.GetAssigned(1)?.Name,
+            _library.GetAssigned(2)?.Name,
+            SelectedRecordingName,
+            session);
+    }
+
+    /// <summary>Validates and decodes the candidate fully so the commit-time
+    /// install performs only deterministic reference/field swaps (AD-20 no-fail
+    /// Commit): every base64 payload is decoded and matched to its declared
+    /// name, assignments and the session are validated, and the session epoch is
+    /// rebound to the reserved epoch.</summary>
+    internal PreparedTrainingInputState PrepareTrainingState(
+        TrainingInputRuntimeSnapshot snapshot, SnapshotPrepareContext context)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        var decoded = new List<TrainingInputRecording>(snapshot.Library.Length);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (TrainingInputRecordingRuntimeSnapshot entry in snapshot.Library)
+        {
+            if (!TrainingInputRecording.IsValidName(entry.Name))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    "Library entry has an invalid recording name.");
+            if (!names.Add(entry.Name))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    $"Library entry '{entry.Name}' is duplicated.");
+            if (string.IsNullOrWhiteSpace(entry.CodecPayloadBase64))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    $"Recording '{entry.Name}' has no codec payload.");
+            decoded.Add(DecodeLibraryEntry(entry));
+        }
+        ValidateAssignment(snapshot.P1Assignment, names, 1);
+        ValidateAssignment(snapshot.P2Assignment, names, 2);
+        TrainingInputPlaybackSessionRuntimeSnapshot? session = snapshot.Session;
+        if (session is not null)
+        {
+            if (session.DummyPlayer is not (1 or 2))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    $"Playback session dummy player '{session.DummyPlayer}' is invalid.");
+            if (!names.Contains(session.RecordingName))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    $"Playback session recording '{session.RecordingName}' has no library entry.");
+            // The dispatch counter advances before subscribers observe it, so a
+            // session started in the final dispatched frame records frame + 1.
+            if (session.StartFrame < 0 || session.StartFrame > context.Frame + 1)
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    $"Playback session start frame {session.StartFrame} is inconsistent with snapshot frame {context.Frame}.");
+            if (session.EntryIndex < 0)
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    $"Playback session entry index {session.EntryIndex} is negative.");
+            TrainingInputRecording sessionRecording = decoded.First(recording =>
+                string.Equals(recording.Name, session.RecordingName, StringComparison.Ordinal));
+            if (session.EntryIndex > sessionRecording.Entries.Count)
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    $"Playback session entry index {session.EntryIndex} exceeds the recording's {sessionRecording.Entries.Count} entries.");
+            if (session.PendingLoopReset && !session.Loop)
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    "Playback session declares a loop reset without loop enabled.");
+            if (session.PendingStop && session.Loop)
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    "Playback session declares a stop while loop is enabled.");
+            if (session.PendingLoopReset && session.PendingStop)
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    "Playback session declares both a loop reset and a stop.");
+        }
+        var rebased = session is null ? null : session with { Epoch = context.ReservedEpoch };
+        return new PreparedTrainingInputState(
+            decoded.ToArray(), snapshot.P1Assignment, snapshot.P2Assignment,
+            snapshot.SelectedRecording, rebased, context.Mode == SnapshotRestoreMode.Normal);
+
+        static void ValidateAssignment(string? name, IReadOnlySet<string> names, int player)
+        {
+            if (name is null) return;
+            if (!names.Contains(name))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    $"P{player} assignment '{name}' has no library entry.");
+        }
+
+        static TrainingInputRecording DecodeLibraryEntry(TrainingInputRecordingRuntimeSnapshot entry)
+        {
+            TrainingInputRecording recording;
+            try
+            {
+                recording = TrainingInputRecordingCodec.Decode(
+                    Convert.FromBase64String(entry.CodecPayloadBase64));
+            }
+            catch (TrainingInputRecordingException ex)
+            {
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    $"Recording '{entry.Name}' failed to decode: {ex.Message}");
+            }
+            catch (FormatException)
+            {
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    $"Recording '{entry.Name}' has malformed base64 payload.");
+            }
+            if (!string.Equals(recording.Name, entry.Name, StringComparison.Ordinal))
+                throw new SnapshotPrepareException(SnapshotParticipantCatalog.TrainingInput,
+                    $"Recording '{entry.Name}' decoded to a different name '{recording.Name}'.");
+            return recording;
+        }
+    }
+
+    /// <summary>No-fail commit install: only deterministic field/reference swaps.
+    /// Everything fallible (decode, validation, epoch rebind) completed in
+    /// Prepare; the playback-mode rebind is skipped when a live old-epoch
+    /// capture owns the coordinator (that capture is dead work — it is released
+    /// on StateRestored — and the restored session still promotes). Replay
+    /// bootstrap/handoff installs nothing — the live library is untouched.</summary>
+    internal void InstallTrainingState(PreparedTrainingInputState prepared)
+    {
+        ArgumentNullException.ThrowIfNull(prepared);
+        if (!prepared.InstallAllowed)
+            return;
+        _library.ReplaceAll(prepared.Library, prepared.P1Assignment, prepared.P2Assignment);
+        SelectedRecordingName = prepared.SelectedRecording;
+        ulong? sessionEpoch = prepared.Session?.Epoch;
+        _restoredSession = prepared.Session is { } session
+            ? new RestoredPlaybackSession(
+                _library.Recordings[session.RecordingName],
+                session.DummyPlayer, session.StartFrame, session.EntryIndex,
+                session.Loop, session.PendingLoopReset, session.PendingStop, session.Epoch)
+            : null;
+        if (_restoredSession is not null && sessionEpoch is { } epoch)
+        {
+            if (_playbackModes.ActiveMode == RuntimePlaybackMode.TrainingInput)
+                _playbackModes.RebindEpoch(RuntimePlaybackMode.TrainingInput, epoch);
+            else if (_playbackModes.ActiveMode == RuntimePlaybackMode.None && _playbackModes.CapturePlayer == 0)
+                _playbackModes.Enter(RuntimePlaybackMode.TrainingInput, epoch);
+        }
+    }
+
     private void ReleasePlayback(bool resetTransient)
     {
         if (_playback is null) return;
@@ -362,9 +556,32 @@ public sealed class TrainingInputService
         _pendingStop = false;
     }
 
+    /// <summary>Activates a session installed by a successful restore once the
+    /// resumed frame domain reaches its rebased start. A stale epoch drops the
+    /// session instead — old-epoch work is never resurrected. If the user
+    /// started a new playback in the pre-promotion window (a mode-enter that
+    /// was skipped for a live old-epoch capture), the restored session yields —
+    /// it never hijacks an active playback.</summary>
+    private void PromoteRestoredSession(int currentFrame, ulong epoch)
+    {
+        if (_restoredSession is not { } session) return;
+        if (_playback is not null) { _restoredSession = null; return; }
+        if (epoch != session.Epoch || currentFrame < session.StartFrame) return;
+        _playback = session.Recording;
+        _playbackPlayer = session.DummyPlayer;
+        _playbackStartFrame = session.StartFrame;
+        _playbackIndex = session.EntryIndex;
+        _loop = session.Loop;
+        _playbackEpoch = session.Epoch;
+        _pendingLoopReset = session.PendingLoopReset;
+        _pendingStop = session.PendingStop;
+        _restoredSession = null;
+    }
+
     public void Shutdown()
     {
         CancelForLifecycle();
+        _restoredSession = null;
         if (_lifecycleSubscribed)
         {
             EventBus.Instance.Unsubscribe<SceneChangingEvent>(OnSceneChanging);

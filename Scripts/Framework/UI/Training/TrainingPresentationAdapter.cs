@@ -15,6 +15,7 @@ public partial class TrainingPresentationAdapter : Node
     public Button? DiagnosticsClose { get; set; }
     public Control? TopRightTuningRegion { get; set; }
     public Control? BottomRightPlaybackRegion { get; set; }
+    public Control? BottomRightSaveLoadRegion { get; set; }
     public double UiScale { get; set; } = 1;
 
     public WorldPresentationLayout CurrentWorldLayout { get; private set; }
@@ -73,6 +74,7 @@ public partial class TrainingPresentationAdapter : Node
         ApplyRect(LeftDiagnosticsDrawer, CurrentUiLayout.LeftDiagnosticsDrawer);
         ApplyRect(TopRightTuningRegion, CurrentUiLayout.TopRightTuning);
         ApplyRect(BottomRightPlaybackRegion, CurrentUiLayout.BottomRightPlayback);
+        ApplyRect(BottomRightSaveLoadRegion, CurrentUiLayout.BottomRightSaveLoad);
         ApplyDiagnosticsVisibility();
         LayoutRevision++;
     }

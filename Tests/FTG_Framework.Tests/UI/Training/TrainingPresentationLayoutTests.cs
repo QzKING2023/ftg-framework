@@ -60,11 +60,15 @@ public sealed class TrainingPresentationLayoutTests
         Assert.True(result.LeftDiagnostics.Left >= result.SafeMargin - 0.01);
         Assert.True(result.TopRightTuning.Right <= width - result.SafeMargin + 0.01);
         Assert.True(result.BottomRightPlayback.Right <= width - result.SafeMargin + 0.01);
+        Assert.True(result.BottomRightSaveLoad.Right <= width - result.SafeMargin + 0.01);
         Assert.True(result.TopRightTuning.Bottom + result.Gap <= result.BottomRightPlayback.Top + 0.01);
+        Assert.True(result.BottomRightPlayback.Bottom + result.Gap <= result.BottomRightSaveLoad.Top + 0.01);
         Assert.False(result.LeftDiagnostics.Intersects(result.TopRightTuning));
         Assert.False(result.LeftDiagnostics.Intersects(result.BottomRightPlayback));
+        Assert.False(result.LeftDiagnostics.Intersects(result.BottomRightSaveLoad));
         Assert.False(result.LeftDiagnosticsDrawer.Intersects(result.TopRightTuning));
         Assert.False(result.LeftDiagnosticsDrawer.Intersects(result.BottomRightPlayback));
+        Assert.False(result.LeftDiagnosticsDrawer.Intersects(result.BottomRightSaveLoad));
         Assert.Equal(12 * uiScale, result.SafeMargin, 3);
         Assert.Equal(8 * uiScale, result.Gap, 3);
         Assert.True(result.LeftDiagnosticsDrawer.Left >= result.SafeMargin - 0.01);
@@ -73,10 +77,13 @@ public sealed class TrainingPresentationLayoutTests
         Assert.True(result.LeftDiagnosticsDrawer.Width >= result.LeftDiagnostics.Width);
         Assert.True(result.TopRightTuning.Height > 0);
         Assert.True(result.BottomRightPlayback.Height > 0);
+        Assert.True(result.BottomRightSaveLoad.Height > 0);
+        Assert.True(result.BottomRightSaveLoad.Bottom <= height - result.SafeMargin + 0.01);
         foreach (LayoutRect rect in new[]
                  {
                      result.LeftDiagnostics, result.LeftDiagnosticsDrawer,
-                     result.TopRightTuning, result.BottomRightPlayback
+                     result.TopRightTuning, result.BottomRightPlayback,
+                     result.BottomRightSaveLoad
                  })
         {
             Assert.True(rect.Left >= result.SafeMargin - 0.01);

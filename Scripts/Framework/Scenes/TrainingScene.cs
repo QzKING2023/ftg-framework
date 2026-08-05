@@ -20,6 +20,7 @@ public partial class TrainingScene : Node, IScene
     public RuntimeTuningSessionAuthority? RuntimeTuningSessions { get; set; }
     public TrainingInputService? TrainingInputService { get; set; }
     public TrainingInputRecordingLibrary? TrainingRecordingLibrary { get; set; }
+    public TrainingStateService? TrainingStateService { get; set; }
     public string P1CharacterId { get; set; } = string.Empty;
     public string P2CharacterId { get; set; } = string.Empty;
 
@@ -34,6 +35,7 @@ public partial class TrainingScene : Node, IScene
     private DiagnosticsTestHarness? _diagnostics;
     private Label? _diagnosticsLabel;
     private TrainingInputPlaybackPanel? _trainingInputPanel;
+    private TrainingSaveLoadPanel? _saveLoadPanel;
     private TrainingPresentationAdapter? _presentationAdapter;
     private Node2D? _worldPresentationRoot;
     private CanvasLayer? _trainingUiLayer;
@@ -71,6 +73,7 @@ public partial class TrainingScene : Node, IScene
         var leftDrawer = CreateRegion("LeftDiagnosticsDrawer", trainingUiRoot);
         var topRightRegion = CreateRegion("TopRightTuningRegion", trainingUiRoot);
         var bottomRightRegion = CreateRegion("BottomRightPlaybackRegion", trainingUiRoot);
+        var saveLoadRegion = CreateRegion("BottomRightSaveLoadRegion", trainingUiRoot);
         var diagnosticsToggle = new Button
         {
             Name = "OpenDiagnosticsDrawer",
@@ -181,6 +184,15 @@ public partial class TrainingScene : Node, IScene
             topRightRegion.AddChild(_runtimeTuningPanel);
         }
 
+        if (TrainingStateService is not null)
+        {
+            _saveLoadPanel = new TrainingSaveLoadPanel
+            {
+                Service = TrainingStateService
+            };
+            saveLoadRegion.AddChild(_saveLoadPanel);
+        }
+
         _presentationAdapter = new TrainingPresentationAdapter
         {
             Name = "TrainingPresentationAdapter",
@@ -193,6 +205,7 @@ public partial class TrainingScene : Node, IScene
             DiagnosticsClose = diagnosticsClose,
             TopRightTuningRegion = topRightRegion,
             BottomRightPlaybackRegion = bottomRightRegion,
+            BottomRightSaveLoadRegion = saveLoadRegion,
             UiScale = uiScale
         };
         AddChild(_presentationAdapter);
@@ -304,6 +317,8 @@ public partial class TrainingScene : Node, IScene
     {
         _trainingInputPanel?.Shutdown();
         _trainingInputPanel = null;
+        _saveLoadPanel?.Shutdown();
+        _saveLoadPanel = null;
         TrainingInputService?.CancelForLifecycle();
         _comboDisplay?.Shutdown();
         _comboDisplay = null;

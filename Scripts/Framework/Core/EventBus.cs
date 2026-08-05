@@ -29,6 +29,11 @@ namespace FTG_Framework.Core;
 /// and dispatched during the following frame. This prevents unbounded re-entry and
 /// keeps frame boundaries well-defined.
 ///
+/// <para><b>Frame-number semantics.</b> <c>CurrentFrame</c> is an Int32 counter
+/// advanced exactly once per <c>ProcessFrame()</c>. Reaching <c>Int32.MaxValue</c>
+/// is a contract violation: <c>ProcessFrame()</c> throws rather than wrap, because
+/// a silent wrap would corrupt deterministic hashing and replay frame catalogs.</para>
+///
 /// <b>Eight-phase pipeline (AD-12):</b>
 /// <list type="number">
 /// <item>Phase 0 — Hot-Reload: drain <c>DataReloadedEvent</c> from FileWatcher</item>
@@ -219,6 +224,9 @@ public sealed class EventBus
     // system's events before their own subscribers run.
     public void ProcessFrame()
     {
+        if (_frameNumber == int.MaxValue)
+            throw new InvalidOperationException(
+                "[EventBus] Frame counter exhausted; Int32 frame numbers cannot advance beyond Int32.MaxValue.");
         _dispatching = true;
         _dispatchFrame = _frameNumber;
         try

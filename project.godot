@@ -38,12 +38,6 @@ enabled=PackedStringArray("res://addons/ftg-framework/plugin.cfg", "res://addons
 test_harness/enabled=true
 training/ui_scale=1.0
 
-[importer_defaults]
-
-animation_library={
-&"nodes/root_scale": 2.0
-}
-
 [input]
 
 p1_world_left={

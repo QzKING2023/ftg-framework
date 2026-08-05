@@ -59,6 +59,27 @@ if [ -z "$MANIFEST_DIRS" ]; then
     echo "ERROR: manifest is empty or has no entries: $MANIFEST" >&2
     exit 1
 fi
+# Validate entries — mirror ProjectScaffolder.LoadFrameworkSourceDirs.
+# Process substitution keeps this loop in the main shell so exit 1 aborts.
+while read -r dir; do
+    case "$dir" in
+        *\\* | /* | *:* | //*)
+            echo "ERROR: invalid framework source manifest entry: $dir" >&2; exit 1 ;;
+    esac
+    IFS='/' read -r -a parts <<< "$dir"
+    for part in "${parts[@]}"; do
+        case "$part" in
+            '' | . | ..)
+                echo "ERROR: invalid framework source manifest entry: $dir" >&2; exit 1 ;;
+        esac
+    done
+done < <(printf '%s\n' "$MANIFEST_DIRS")
+DUPLICATES="$(printf '%s\n' "$MANIFEST_DIRS" | sort | uniq -d)"
+if [ -n "$DUPLICATES" ]; then
+    echo "ERROR: framework source manifest contains duplicate entries:" >&2
+    echo "$DUPLICATES" >&2
+    exit 1
+fi
 echo "$MANIFEST_DIRS" | while read -r dir; do
     # Addon layout strips the Scripts/Framework/ prefix
     rel="${dir#Scripts/Framework/}"

@@ -38,6 +38,27 @@ $sourceDirs = Get-Content $manifestPath |
     Where-Object { $_ -and -not $_.StartsWith('#') }
 if (-not $sourceDirs) { throw "Manifest is empty: $manifestPath" }
 
+# Validate manifest entries — mirror ProjectScaffolder.LoadFrameworkSourceDirs
+$seen = @{}
+foreach ($dir in $sourceDirs) {
+    if ($dir.Contains('\') -or [System.IO.Path]::IsPathRooted($dir) -or $dir.Contains(':')) {
+        throw "Invalid framework source manifest entry: $dir"
+    }
+    $parts = $dir -split '/'
+    if ($parts -contains '' -or $parts -contains '.' -or $parts -contains '..') {
+        throw "Invalid framework source manifest entry: $dir"
+    }
+    $resolved = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $dir))
+    $rootResolved = [System.IO.Path]::GetFullPath($repoRoot).TrimEnd('\')
+    if (-not $resolved.StartsWith($rootResolved + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Framework source manifest entry escapes repo root: $dir"
+    }
+    if ($seen.ContainsKey($dir)) {
+        throw "Framework source manifest contains duplicate entries: $dir"
+    }
+    $seen[$dir] = $true
+}
+
 foreach ($dir in $sourceDirs) {
     $srcPath = Join-Path $repoRoot ($dir -replace '/', '\')
     if (-not (Test-Path $srcPath)) { throw "Framework source directory missing: $srcPath" }

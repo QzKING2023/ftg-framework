@@ -70,9 +70,9 @@ action_items:
     owner: "Dana (QA Engineer)"
     status: done
   - epic: 2
-    action: "Continue per-story code review for Epic 3"
+    action: "Continue per-story code review for Epic 3 — [2026-08-05] done: Epic 3 complete; per-story reviews executed during Epic 3 (see v2-3 story records); item superseded by the Lifecycle/Timing review discipline"
     owner: "Dev workflow"
-    status: open
+    status: done
   - epic: 2
     action: "Document AD-4 dispatch semantics centrally (LIFO, per-phase grouping, same-frame queuing)"
     owner: "Charlie (Senior Dev)"
@@ -130,9 +130,9 @@ action_items:
     owner: "Charlie (Senior Dev)"
     status: done
   - epic: "v2-3"
-    action: "Review Epic 4 stories against Epic 3 learnings — re-assess estimates considering SceneManager, EditorPlugin spike result, Story 3.6 deferred impact"
+    action: "Review Epic 4 stories against Epic 3 learnings — re-assess estimates considering SceneManager, EditorPlugin spike result, Story 3.6 deferred impact — [2026-08-05] done: folded into the Epic 4 planning review; estimates re-assessed at story creation against the Lifecycle/Timing gate items"
     owner: "Alice (Product Owner)"
-    status: open
+    status: done
 
   - epic: "v2-1"
     action: "Fix knockback completion ownership so an old trajectory cannot reset a newer Hitstun occupancy"
@@ -181,6 +181,42 @@ action_items:
   - epic: "v2-2/v2-corrective"
     action: "Freeze the combined Story 2.3 + CORR-1 inventory and execute JGA-2.3-CORR-1 once both implementations and automated gates pass; map shared evidence and approvals separately to each Story"
     owner: "Amelia (Developer) + QA + Q1625 (Godot acceptance)"
+    status: done
+  - epic: "v2-2"
+    action: "A-class timing/race three-line defense: (a) add Lifecycle/Timing section to risk checklist; (b) ready-for-dev gate checklist items (capture epoch at subscription, invalidate before cleanup, exactly-once; no fallible operation after first committed swap); (c) adversarial timing fault-injection test scenarios (stale-epoch subscriber x new-epoch event, staged-byte tampering) — [2026-08-05] done: Lifecycle/Timing chapter + gate items in planning-artifacts/epic-4-risk-and-evidence-checklist.md §2; adversarial tests A1/A2 green (EventBusEpochTests.StaleEpochSubscriber_..., MoveDatasetPersistenceTests.Save_StagedBytesTamperedAfterValidation_...; 108 affected tests passed)"
+    owner: "Winston (System Architect), Charlie (Senior Dev), Dana (QA Engineer)"
+    status: done
+  - epic: "v2-2"
+    action: "Acceptance-finding flowback mechanism: every manual acceptance finding must produce a regression test or checklist entry, not just a bug fix — [2026-08-05] done: flowback process in planning-artifacts/epic-4-risk-and-evidence-checklist.md §3"
+    owner: "Amelia (Developer)"
+    status: done
+  - epic: "v2-2"
+    action: "Epic 4 pre-kickoff technical debt clearance gate: Corr2ResponsiveSmoke re-entry flake, FtgCliTests package-test archive isolation, project.godot animation importer root scale, mojibake workflow.md, Scaffold framework-source-dirs.txt validation, EventBus int-frame overflow semantics, PREP-2.3 backlog-to-done transition - itemized acceptance sign-off — [2026-08-05] done: all seven items closed with itemized evidence in planning-artifacts/epic-4-risk-and-evidence-checklist.md §13 (settle-loop re-entry probe, version-pinned archive isolation, importer block removed, workflow.md verified clean UTF-8 at HEAD, packager manifest validation, Int32 frame-overflow guard + regression test, PREP-2.3 sign-off via evidence/v2-prep-2-3/index.md 10 AC rows)"
+    owner: "Charlie (Senior Dev), Dana (QA Engineer), Winston (System Architect)"
+    status: done
+  - epic: "v2-2"
+    action: "Track .NET 8 EOL (2026-11-10) as ongoing monitoring item — [2026-08-05] done: monitoring entry recorded in planning-artifacts/epic-4-risk-and-evidence-checklist.md §11; re-evaluate at next major planning cycle before EOL"
+    owner: "Tracking"
+    status: done
+  - epic: "v2-2"
+    action: "Define cross-system evidence standards for Epic 4, reusing the JGA-2.3-CORR-1 joint-acceptance pattern — [2026-08-05] done: standards in planning-artifacts/epic-4-risk-and-evidence-checklist.md §5"
+    owner: "Dana (QA Engineer)"
+    status: done
+  - epic: "v2-2"
+    action: "Story 4.2 interface-contract spike: snapshot coordinator non-observable restore path x ReplayCodec, before Story 4.2 ready-for-dev — [2026-08-05] done: implementation-artifacts/spike-4-2-nonobservable-restore-x-replaycodec.md; verdict GO with two additive contract items (declared InitialSnapshotHash binding; orchestrator driver start at snapshot.frame + 1)"
+    owner: "Elena (Junior Dev), Charlie (Senior Dev)"
+    status: done
+  - epic: "v2-2"
+    action: "Record combo-expressiveness ceiling (stack-based state machine + minimal move data) as a known V3-anchored limitation mitigated by tuning move data; do not misclassify as framework defect — [2026-08-05] done: planning-artifacts/epic-4-risk-and-evidence-checklist.md §10 + project memory project_roadmap_vision.md"
+    owner: "Winston (System Architect)"
+    status: done
+  - epic: "v2-2"
+    action: "Define at least one reference combo-path dataset as trial material for Story 4.1 balance testbed, before Story 4.1 ready-for-dev — [2026-08-05] done: evidence/story-4-1-reference-dataset/ (E4.1-REF-001: 8 paths, 3 open questions, SHA-256 inventory)"
+    owner: "Charlie (Senior Dev)"
+    status: done
+  - epic: "v2-2"
+    action: "Epic 4 planning review: revise all three Epic 4 stories against the new Lifecycle/Timing checklist before kickoff; preserve FR-34~36 coverage — [2026-08-05] done: S4.1-AC12/13, S4.2-AC12/13, S4.3-AC12/13 added and evidence-link ACs extended in planning-artifacts/epics/epic-4-cross-dimensional-integrations.md; role approvals tracked in epic-4-risk-and-evidence-checklist.md §13"
+    owner: "Alice (Product Owner)"
     status: done
 
 development_status:
@@ -243,7 +279,7 @@ development_status:
   v2-prep-2-4-epic-2-planning-and-evidence-review: done
 
   # Epic 2: Move Authoring & Training Suite (FR-23~27)
-  v2-epic-2: in-progress
+  v2-epic-2: done
   v2-2-1-editorplugin-move-authoring: done
   v2-2-1-a-load-edit-validation-conflicts: done
   v2-2-1-b-path-confined-atomic-persistence: done
@@ -283,7 +319,7 @@ development_status:
   v2-2-4-d-godot-determinism-evidence: done
   v2-2-4-e-manual-acceptance-correction: done
   v2-2-5-training-state-save-load: done
-  v2-epic-2-retrospective: optional
+  v2-epic-2-retrospective: done
 
   # Epic 3: Runtime Infrastructure & Developer Experience (FR-28~31, FR-33)
   v2-epic-3: done
@@ -297,8 +333,13 @@ development_status:
   v2-epic-3-retrospective: done
 
   # Epic 4: Cross-Dimensional Integrations (FR-34~36)
-  v2-epic-4: backlog
-  v2-4-1-deterministic-balance-testbed: backlog
+  # Epic 4 start gate (2026-08-05): all nine v2-2 retrospective action items and the
+  # two stale tracking items are done with evidence; debt-clearance gate and Epic 4
+  # planning review (story revision against the Lifecycle/Timing checklist) complete;
+  # itemized sign-off in planning-artifacts/epic-4-risk-and-evidence-checklist.md §13.
+  # Kickoff authorized by Q1625 on 2026-08-05; Story 4.1 created (ready-for-dev).
+  v2-epic-4: in-progress
+  v2-4-1-deterministic-balance-testbed: ready-for-dev
   v2-4-2-state-scoped-save-replay: backlog
   v2-4-3-unified-toolbox-dock: backlog
   v2-epic-4-retrospective: optional

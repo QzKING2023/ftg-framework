@@ -902,11 +902,17 @@ public class FtgCliTests
             Assert.True(process.WaitForExit(120000), "Packaging script timed out");
             Assert.Equal(0, process.ExitCode);
 
-            // Version comes from plugin.cfg — locate the produced zip by glob.
-            var zips = Directory.GetFiles(Path.Combine(repoRoot, "Scaffold"), "ftg-framework-*.zip");
-            Assert.NotEmpty(zips);
+            // Pin the produced archive to the current plugin.cfg version so
+            // stale zips from earlier runs or versions cannot satisfy this test.
+            var pluginCfgPath = Path.Combine(repoRoot, "addons", "ftg-framework", "plugin.cfg");
+            var version = File.ReadLines(pluginCfgPath)
+                .First(line => line.StartsWith("version=", StringComparison.Ordinal))
+                .Split('"')[1];
+            var zipPath = Path.Combine(repoRoot, "Scaffold", $"ftg-framework-{version}.zip");
+            Assert.True(File.Exists(zipPath),
+                $"Packaging did not produce the current-version archive: {zipPath}");
 
-            using var zip = ZipFile.OpenRead(zips[0]);
+            using var zip = ZipFile.OpenRead(zipPath);
             var names = zip.Entries.Select(e => e.FullName.Replace('\\', '/')).ToList();
 
             Assert.Contains(names, n => n == "ftg-framework/plugin.cfg");

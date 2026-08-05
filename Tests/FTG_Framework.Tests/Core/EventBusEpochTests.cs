@@ -154,6 +154,53 @@ public sealed class EventBusEpochTests : IDisposable
     }
 
     [Fact]
+    public void StaleEpochSubscriber_MustRevalidateAtDispatchToRejectNewEpochEvent()
+    {
+        // Adversarial timing scenario (Class A): a subscriber that captured the
+        // lifecycle epoch at subscription time, then fails to re-validate at
+        // dispatch time, WILL observe a new-epoch event. Envelope-level epoch
+        // filtering protects stale *envelopes*; subscriber-level protection
+        // requires the capture-at-subscription / revalidate-at-dispatch pattern.
+        ulong capturedAtSubscription = _bus.LifecycleEpoch;
+        int naiveCalls = 0;
+        int guardedCalls = 0;
+        Action<InputReceivedEvent> naive = _ => naiveCalls++;
+        Action<InputReceivedEvent> guarded = _ =>
+        {
+            if (_bus.LifecycleEpoch != capturedAtSubscription) return;
+            guardedCalls++;
+        };
+        _bus.Subscribe(naive);
+        _bus.Subscribe(guarded);
+        try
+        {
+            _bus.PublishImmediate(new MatchInitializedEvent("p1", "p2"));
+            _bus.Publish(new InputReceivedEvent(1, 0, 1, 1));
+            _bus.ProcessFrame();
+
+            Assert.Equal(capturedAtSubscription + 1, _bus.LifecycleEpoch);
+            Assert.Equal(1, naiveCalls);
+            Assert.Equal(0, guardedCalls);
+        }
+        finally
+        {
+            _bus.Unsubscribe(naive);
+            _bus.Unsubscribe(guarded);
+        }
+    }
+
+    [Fact]
+    public void ProcessFrame_AtInt32MaxFrame_ThrowsInsteadOfWrapping()
+    {
+        _bus.RewindFrameCounter(int.MaxValue - 1);
+        _bus.ProcessFrame();
+        Assert.Equal(int.MaxValue, _bus.CurrentFrame);
+
+        Assert.Throws<InvalidOperationException>(() => _bus.ProcessFrame());
+        Assert.Equal(int.MaxValue, _bus.CurrentFrame);
+    }
+
+    [Fact]
     public void StaleReloadAndQueuedWork_AreDroppedBeforeRecorderObservation()
     {
         var recorder = new RecordingSpy();

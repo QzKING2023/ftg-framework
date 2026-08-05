@@ -148,6 +148,36 @@ public sealed class MoveDatasetPersistenceTests : IDisposable
     }
 
     [Fact]
+    public void Save_StagedBytesTamperedAfterValidation_IsRejectedBeforeReplace()
+    {
+        // Adversarial timing scenario (Class A): an external writer mutates the
+        // staged file after validation succeeded. The final boundary re-check
+        // (no injectable/user code may run after it) must reject the save and
+        // leave destination, dataset version, and content untouched.
+        string path = WriteDocument("moves", Original);
+        var store = CreateStore();
+        var service = new MoveDatasetPersistence(_root, store, point =>
+        {
+            if (point == MovePersistenceFaultPoint.AfterStagedValidation)
+            {
+                string staged = Assert.Single(Directory.GetFiles(_root, "*.tmp"));
+                File.WriteAllText(staged, "tampered staged bytes", new UTF8Encoding(false));
+            }
+        });
+        var candidate = MoveAuthoringCandidate.FromDocument(service.Load("moves"))
+            .EditMove("5A", move => move with { Damage = 11 });
+
+        MoveSaveResult result = service.Save("moves", candidate);
+
+        Assert.Equal(MoveSaveStatus.Failed, result.Status);
+        Assert.Contains("changed after validation", result.Diagnostic!, StringComparison.Ordinal);
+        Assert.Equal(Encoding.UTF8.GetBytes(Original), File.ReadAllBytes(path));
+        Assert.Equal(10, store.GetMove("5A")!.Damage);
+        Assert.Equal(0UL, store.MoveDatasetVersion);
+        Assert.Empty(Directory.GetFiles(_root, "*.tmp"));
+    }
+
+    [Fact]
     public void Save_ErrorCleanupFault_PreservesDestinationAndCommittedDataset()
     {
         string path = WriteDocument("moves", Original);

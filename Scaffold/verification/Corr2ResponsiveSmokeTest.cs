@@ -111,11 +111,32 @@ public partial class Corr2ResponsiveSmokeTest : Node
         if (adapter.LayoutRevision != beforeExitSignal)
             failures.Add("detached adapter still received viewport resize");
         adapterParent.AddChild(adapter);
-        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        int afterReady = adapter.LayoutRevision;
+        // NOTIFICATION_READY is delivered through the message queue and async
+        // window-resize delivery can overlap re-entry, so a single-frame wait
+        // is not a reliable readiness probe. Settle until the re-entered
+        // adapter has re-subscribed AND its layout revision is stable, then
+        // emit exactly one size change to prove the subscription is single.
+        int afterReady = beforeExitSignal;
+        int stableFrames = 0;
+        bool reentered = false;
+        for (int settle = 0; settle < 600; settle++)
+        {
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            int revision = adapter.LayoutRevision;
+            if (revision == afterReady) stableFrames++;
+            else { afterReady = revision; stableFrames = 0; }
+            if (afterReady > beforeExitSignal && stableFrames >= 3)
+            {
+                reentered = true;
+                break;
+            }
+        }
+        if (!reentered)
+            failures.Add("re-entered adapter did not re-subscribe to viewport resize");
         GetTree().Root.EmitSignal(Viewport.SignalName.SizeChanged);
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         if (adapter.LayoutRevision != afterReady + 1)
-            failures.Add("re-entered adapter did not receive exactly one resize callback");
+            failures.Add($"re-entered adapter did not receive exactly one resize callback (before={beforeExitSignal}, ready={afterReady}, after={adapter.LayoutRevision})");
 
         var actions = new[]
         {

@@ -40,7 +40,6 @@ public partial class InputLog : Control
             }
         }
     }
-    [Export] public Vector2 PanelPosition { get; set; } = new(10, 110);
     [Export] public Vector2 PanelSize { get; set; } = new(280, 180);
     [Export] public Color TextColor { get; set; } = Colors.White;
     [Export] public int FontSize { get; set; } = 12;
@@ -129,27 +128,22 @@ public partial class InputLog : Control
         if (TrackedPlayer < 1 || TrackedPlayer > 2)
             GD.PushError($"[InputLog] TrackedPlayer must be 1 or 2, got {TrackedPlayer}.");
 
+        CustomMinimumSize = PanelSize * (float)GetThemeDefaultBaseScale();
         _background = new ColorRect
         {
-            Color = BackgroundColor,
-            Size = PanelSize
+            Color = BackgroundColor
         };
+        _background.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(_background);
 
-        _scrollContainer = new ScrollContainer
-        {
-            Position = Vector2.Zero,
-            Size = PanelSize
-        };
+        _scrollContainer = new ScrollContainer();
+        _scrollContainer.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(_scrollContainer);
 
         _vbox = new VBoxContainer();
         _scrollContainer.AddChild(_vbox);
 
         CreateRowLabels();
-
-        Position = PanelPosition;
-        Size = PanelSize;
 
         _LoadInitialSnapshot();
         _RefreshDisplay();

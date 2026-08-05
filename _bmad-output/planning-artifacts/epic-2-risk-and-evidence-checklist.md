@@ -26,7 +26,7 @@ This is the canonical PREP-2.4 readiness artifact. A story cannot enter `ready-f
 - After CORR-1 implementation and both automated gates pass, one immutable combined inventory enters the joint Godot session at `_bmad-output/implementation-artifacts/evidence/joint-2-3-corr-1/acceptance-plan.md`.
 - Shared raw evidence is stored once. Story 2.3 and CORR-1 retain separate AC mappings, SHA-256 references, approval records, failure disposition, and completion status.
 - Story 2.3 E2.3-G/E cannot pass from CORR-1 evidence alone; CORR-1 GODOT/SCAFFOLD evidence cannot pass from ComboDisplay observation alone.
-- Story 2.4 remains blocked only by CORR-1 completion under the approved 2026-08-03 correction.
+- CORR-1 is complete. Story 2.4 slice D now depends on CORR-2 responsive-presentation and shortcut evidence under the approved 2026-08-04 correction.
 
 ## Blocking Decision Inventory
 
@@ -59,8 +59,10 @@ This is the canonical PREP-2.4 readiness artifact. A story cannot enter `ready-f
 ### P-REC — Recording Codec and Determinism
 
 - Schema version 1; maximum duration 36,000 frames, 65,536 entries, 4 MiB encoded UTF-8 payload, and 128 Unicode scalar values in a name.
+- Capture duration is derived with checked arithmetic from explicit start and stop frames; no duration is selected before capture. Reaching the duration limit auto-finalizes with an explicit reason.
 - Stable identity is `(relative_frame, within_frame_sequence)`. Both are non-negative checked `int`; sequence begins at zero per frame and is contiguous. Invalid order/identity/value rejects the candidate.
-- Loop baseline releases training-owned directions/buttons and clears its transient buffer/charge contribution through the canonical Input boundary before rebasing.
+- Loop baseline releases training-owned directions/buttons and clears its transient buffer/charge contribution through the canonical Input boundary before rebasing. Iterations use a `duration + 1` span so the next relative frame zero occurs on the immediately following schedulable frame without additional waiting.
+- One ViewModel command and visible toggle own normal capture start/stop. Same-name replacement requires explicit confirmation and atomically installs the new content; cancellation/failure preserves the old recording, selection, and assignment, while active playback rejects replacement.
 - Compare 600 frames after first injection, or terminal frame plus 120 when shorter, across starts separated by at least 10,000 frames and seeds 2202-2206.
 
 ### P-SAVE — Training Snapshot Container
@@ -69,6 +71,25 @@ This is the canonical PREP-2.4 readiness artifact. A story cannot enter `ready-f
 - Integrity is lowercase hexadecimal SHA-256 over canonical UTF-8 payload bytes. Compatibility requires the same framework major/minor; migrations are explicit, ordered, complete, and tested.
 - Compare 600 frames after restore with active combo, in-flight knockback, buffered/held input, and an assigned recording. Positions, resources, stacks, move progress, generations, recordings, and hashes must match.
 - Reference environment: Windows x64, Godot 4.5.1 .NET, `net8.0`, repository SDK policy, plus one clean generated-scaffold run. Any additional release OS requires codec/persistence portability evidence.
+
+### P-CORR-2 — Responsive Training Presentation
+
+| Parameter | Binding value |
+|---|---|
+| Reference design viewport | `1152x648` |
+| Minimum supported viewport | `960x540` |
+| Required viewport matrix | `960x540`, `1152x648`, `1280x720`, `1920x1080`, `2560x1080` |
+| Required UI scale matrix | `100%`, `150%`, `200%` |
+| Screen-space safe margin | `12 px` at 100% scale |
+| Minimum overlay separation | `8 px` at 100% scale |
+| World scaling | uniform scale; centered reference region; surplus axis expands visible world/background |
+| Tuning region | top-right |
+| Recording/playback region | bottom-right |
+| Diagnostics region | bounded left region with wrapping and scroll/collapse |
+| Recording shortcut | `training_record_toggle`, default `Ctrl+Shift+R` |
+| Play-once shortcut | `training_play_once`, default `Ctrl+Shift+P` |
+| Loop shortcut | `training_loop_toggle`, default `Ctrl+Shift+L` |
+| Stop shortcut | `training_playback_stop`, default `Ctrl+Shift+X` |
 
 ## Risk Matrix
 
@@ -115,10 +136,10 @@ Risk dimensions: lifecycle epoch; ownership; generation; event order; immutabili
 | Story 2.4 | event order | Applicable: same-frame entries preserve explicit within-frame sequence. | S2.4-AC02 | E2.4-B |
 | Story 2.4 | immutability | Applicable: finalized recording cannot change with capture-buffer mutation. | S2.4-AC03 | E2.4-U |
 | Story 2.4 | invalid input | Applicable: full invalid matrix rejects before assigning/scheduling. | S2.4-AC04 | E2.4-U |
-| Story 2.4 | failure atomicity | N/A: Story 2.4 has no file persistence; candidate assignment is all-or-nothing under invalid-input evidence. | N/A | N/A |
+| Story 2.4 | failure atomicity | Applicable: confirmed same-name replacement installs the new immutable recording atomically; cancel/failure preserves the old recording, selection, assignment, and schedule. | S2.4-AC14 | E2.4-U, E2.4-E |
 | Story 2.4 | concurrency | Applicable: capture, training playback, live input, and Replay ownership cannot overlap illegally. | S2.4-AC07 | E2.4-C |
 | Story 2.4 | test isolation | Applicable: playback/EventBus tests use PREP-2.2 scopes and release ownership. | S2.4-AC13 | E2.4-B |
-| Story 2.4 | runtime/scaffold parity | N/A: Story 2.4 changes training runtime controls and does not alter generated-scaffold inventory. | N/A | N/A |
+| Story 2.4 / CORR-2 | runtime/scaffold parity | Applicable: responsive presentation, layout regions, and InputMap actions must remain equivalent in repository and generated-scaffold scenes. | S2.4-AC13, C2-AC07 | E2.4-S |
 | Story 2.4 | determinism | Applicable: rebased executions match across starts/seeds. | S2.4-AC11 | E2.4-R |
 | Story 2.5 | lifecycle epoch | Applicable: Prepare/Commit reserves and activates one epoch and resumes at F+1. | S2.5-AC11 | E2.5-L |
 | Story 2.5 | ownership | Applicable: component codecs and the existing Core coordinator retain singular ownership. | S2.5-AC01 | E2.5-U |
@@ -141,7 +162,7 @@ Every artifact lives under `_bmad-output/implementation-artifacts/evidence/v2-2-
 | Story 2.1 | E2.1-U required | E2.1-D required | N/A: no EventBus contract | E2.1-F required: every pre-commit failure preserves prior bytes/DataStore and returns error; post-commit cleanup failure preserves the new commit, returns success, and emits a diagnostic | E2.1-C required | E2.1-L plugin disable/reload required | E2.1-G editor + UndoRedo required | E2.1-S required | E2.1-R JSON/runtime load required | E2.1-E author-save-runtime-load required |
 | Story 2.2 | E2.2-U required | E2.2-D required | E2.2-B reload observation required | E2.2-F every persistence seam required | E2.2-C editor/tuner race required | E2.2-L initiation snapshot/restart required | E2.2-G runtime panel required | N/A: no generated-scaffold inventory change in Story 2.2 | E2.2-R restart required | E2.2-E tune-write-reload required |
 | Story 2.3 | E2.3-U required | N/A: no Data mutation | E2.3-B required | N/A: no fallible persistence; invalid-event preservation in unit tests | E2.3-C same-frame order required | E2.3-L required | E2.3-G runtime display required | N/A: no generated-scaffold inventory change in Story 2.3 | N/A: transient observer | E2.3-E hit/block/end/restore required |
-| Story 2.4 | E2.4-U codec/ViewModel required | N/A: Input-owned codec | E2.4-B injection/order required | N/A: validation is candidate-atomic; invalid matrix in unit tests | E2.4-C playback ownership required | E2.4-L required | E2.4-G dummy playback required | N/A: no generated-scaffold inventory change in Story 2.4 | E2.4-R codec + deterministic hash required | E2.4-E standalone record/playback required |
+| Story 2.4 / CORR-2 | E2.4-U codec/ViewModel, stop-derived duration, toggle idempotency, atomic overwrite + layout/shortcut routing required | E2.4-D presentation/simulation isolation required | E2.4-B injection/order and gapless-loop timing required | E2.4-U/E overwrite cancel/failure preservation required; CORR-2 layout adds no persistence boundary | E2.4-C playback ownership required; layout applies on the Godot main thread | E2.4-L required | E2.4-G dummy playback + viewport/UI-scale matrix required | E2.4-S responsive scene/InputMap parity required | E2.4-R codec + pre/post-resize deterministic hash required | E2.4-E dynamic capture, one-toggle, gapless loop, same-name overwrite + responsive interaction required |
 | Story 2.5 | E2.5-U codecs/ViewModel required | E2.5-D persistence required | E2.5-B restore notification/queues required | E2.5-F every Prepare/file seam required | E2.5-C capture/load exclusion required | E2.5-L epoch/frame required | E2.5-G mid-combo restore required | E2.5-S clean generated-scaffold save/load required | E2.5-R restart + recording required | E2.5-E multi-frame hash required |
 
 ## Bounded Vertical-Slice Plans
@@ -151,9 +172,19 @@ Slice IDs are stable execution/evidence keys. Parent stories remain FR/user-outc
 - **S2.1-A:** developer can load/edit a move and receives complete inline validation/conflict results; **S2.1-B:** developer saves and reloads one path-confined move with byte-preserving failure proof; **S2.1-C:** developer performs editor selection, save, UndoRedo, scaffold, and runtime-load flow in Godot.
 - **S2.2-A:** developer stages edits while active gameplay remains unchanged; **S2.2-B:** one writer commits and a stale concurrent writer receives a recoverable conflict with fault-equivalence proof; **S2.2-C:** developer observes committed tuning after watcher processing and restart in Godot.
 - **S2.3-A:** developer observes isolated per-attacker count/damage for authoritative hits, including invalid/overflow preservation; **S2.3-B:** developer observes deterministic hit/block/end and lifecycle resets without duplicate subscriptions; **S2.3-C:** rendered Godot display matches the ViewModel through exit/re-entry.
-- **S2.4-A:** developer records, names, lists, and reloads a validated immutable recording through the ViewModel/codec boundary; **S2.4-B:** developer plays the recording once from different absolute frames with identical relative outcomes; **S2.4-C:** developer starts/stops/loops while capture/live-input/Replay conflicts and lifecycle cancellation are visibly enforced; **S2.4-D:** Godot dummy playback produces the accepted deterministic hash window.
+- **S2.4-A:** developer records, names, lists, and reloads a validated immutable recording through the ViewModel/codec boundary; **S2.4-B:** developer plays the recording once from different absolute frames with identical relative outcomes; **S2.4-C:** developer starts/stops/loops while capture/live-input/Replay conflicts and lifecycle cancellation are visibly enforced; **S2.4-D:** Godot dummy playback produces the accepted deterministic hash window after CORR-2 proves responsive layout, shortcuts, resize/fullscreen state retention, and repository/scaffold parity; **S2.4-E:** developer captures until the single toggle stops, observes a gapless loop boundary, and explicitly overwrites a same-name recording with failure-atomic preservation evidence.
 - **S2.5-A:** developer saves a complete inspectable training snapshot containing every required participant and recording metadata; **S2.5-B:** developer atomically overwrites/loads a save while injected file/codec failures preserve the prior save and live state; **S2.5-C:** developer restores a mid-combo state through full Prepare/no-fail Commit and observes exactly one StateRestored/F+1 continuation; **S2.5-D:** developer restores assigned/mid-playback Story 2.4 recording state without old-epoch work; **S2.5-E:** Godot ViewModel flow reproduces the accepted multi-frame state hash.
 
 ## Approval Record
+
+### CORR-2 Evidence Classification
+
+| Work item | Primary risks | Required evidence |
+|---|---|---|
+| CORR-2-A | resize mutates authoritative state; aspect distortion; center drift; scaffold divergence | UNIT layout calculations; INT presentation/simulation isolation; GODOT viewport/fullscreen matrix; SCAFFOLD parity; E2E real-character framing |
+| CORR-2-B | overlay collision; clipped/unreachable controls; lost focus/edit state; duplicated resize ownership | UNIT region calculations; LIFE rebuild/scene-exit behavior; GODOT 100%-200% scale, scrolling, focus, non-overlap; E2E tuning + playback coexistence |
+| CORR-2-C | shortcut/gameplay conflicts; text input interception; duplicate commands; stale lifecycle ownership | UNIT command routing; INT InputMap/ownership; LIFE replay/restore/scene transitions; GODOT keyboard/controller; SCAFFOLD action parity; E2E Story 2.4 interaction |
+
+`FAULT` is N/A because CORR-2 adds no persistence commit boundary; existing Story 2.2 and Story 2.4 failure semantics receive regression coverage. `CONC` is N/A because layout is applied on the Godot main thread; background callbacks may not mutate Controls directly. Product Owner, Architect, QA, and Q1625 acceptance are required for CORR-2 completion.
 
 The PREP-2.4 binding decisions are stored in `_bmad-output/implementation-artifacts/evidence/v2-prep-2-4/role-approvals.md` and remain valid historical evidence for the reviewed inventory. The approved 2026-08-01 planning reconciliation and its passing readiness rerun authorize the source, vocabulary, and stable-slice amendments recorded here; they do not make the prior SHA-256 inventory describe the amended files. Before Epic 2 kickoff, Product Owner, Architect, and QA must approve fresh hashes for the current planning set. Any rejection reopens the affected row.

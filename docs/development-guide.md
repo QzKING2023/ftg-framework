@@ -1,5 +1,14 @@
 # FTG Framework — Development Guide
 
+## Training UI Layout Rules
+
+- Do not assign final runtime overlay positions through absolute `Control.Position` values.
+- Add runtime tools to a named `TrainingUiRoot` region.
+- Keep layout calculation pure and apply results through thin Godot adapters.
+- Do not alter authoritative world state in viewport resize callbacks.
+- Add every primary training action through InputMap and expose its resolved binding in the UI.
+- Verify the required viewport/UI-scale matrix and generated-scaffold parity before accepting a training UI change.
+
 ## Prerequisites
 
 | Tool | Version | Notes |

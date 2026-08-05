@@ -1,5 +1,16 @@
 # FTG Framework — Component Inventory
 
+## Implemented CORR-2 Components
+
+These components are present in the repository. Their acceptance evidence and current review state are tracked separately in `sprint-status.yaml`.
+
+| Component | Responsibility |
+|---|---|
+| `TrainingPresentationLayout` | Pure-C# calculation of reference-region scale, center, safe margins, and responsive overlay allocations |
+| `TrainingPresentationAdapter` | Thin Godot adapter applying world transforms and screen-space layout on viewport changes |
+| `TrainingUiRoot` | Screen-space owner for training/developer Controls |
+| `TrainingShortcutRouter` | Maps resolved InputMap actions to the same validated ViewModel commands used by visible controls |
+
 ## Core Components
 
 ### Event Bus

@@ -193,6 +193,33 @@ public class FtgCliTests
         Assert.Contains("[dotnet]", godotContent);
         Assert.Contains("GameLoop", godotContent);
         Assert.Contains("FrameRateManager", godotContent);
+        Assert.Contains("window/size/viewport_width=1152", godotContent);
+        Assert.Contains("window/size/viewport_height=648", godotContent);
+        Assert.Contains("window/stretch/mode=\"disabled\"", godotContent);
+        Assert.Contains("training/ui_scale=1.0", godotContent);
+        Assert.Contains("training_record_toggle", godotContent);
+        Assert.Contains("training_play_once", godotContent);
+        Assert.Contains("training_loop_toggle", godotContent);
+        Assert.Contains("training_playback_stop", godotContent);
+
+        var repositoryGodot = File.ReadAllText(Path.Combine(repoRoot, "project.godot"));
+        // Scaffold template keeps the explicit design-size/stretch contract.
+        foreach (string setting in new[]
+        {
+            "window/size/viewport_width=1152",
+            "window/size/viewport_height=648",
+            "window/size/window_width_override=1152",
+            "window/size/window_height_override=648",
+            "window/stretch/mode=\"disabled\""
+        })
+        {
+            Assert.Contains(setting, godotContent);
+        }
+        // Repository project.godot is editor-normalized: the Godot 4.5 editor
+        // expresses the design contract through the window override alone, and
+        // stretch remains disabled by default. Runtime behavior matches the scaffold.
+        Assert.Contains("window/size/window_width_override=1152", repositoryGodot);
+        Assert.Contains("window/size/window_height_override=648", repositoryGodot);
 
         // .csproj exists and is valid XML
         var csprojPath = Path.Combine(templateDir, "FTG_Game.csproj");
@@ -202,7 +229,13 @@ public class FtgCliTests
         Assert.Contains("net8.0", csprojContent);
 
         // scene file exists
-        Assert.True(File.Exists(Path.Combine(templateDir, "main.tscn")));
+        var mainScene = Path.Combine(templateDir, "main.tscn");
+        Assert.True(File.Exists(mainScene));
+        Assert.Contains("FTGTrainingHost", File.ReadAllText(mainScene));
+
+        var verificationDir = Path.Combine(repoRoot, "Scaffold", "verification");
+        Assert.True(File.Exists(Path.Combine(verificationDir, "Corr2ResponsiveSmokeTest.cs")));
+        Assert.True(File.Exists(Path.Combine(verificationDir, "corr2_responsive_smoke.tscn")));
 
         // .gitignore exists
         var gitignorePath = Path.Combine(templateDir, ".gitignore");

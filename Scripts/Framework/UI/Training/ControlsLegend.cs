@@ -10,9 +10,8 @@ public partial class ControlsLegend : Control
 
     public override void _Ready()
     {
-        SetAnchorsPreset(LayoutPreset.BottomWide);
-        OffsetTop = -150;
-        CustomMinimumSize = new Vector2(500, 140);
+        CustomMinimumSize = new Vector2(0, 140);
+        SizeFlagsHorizontal = SizeFlags.ExpandFill;
         var scroll = new ScrollContainer
         {
             FocusMode = FocusModeEnum.All,

@@ -259,16 +259,16 @@ So that I can trust the displayed hit count and damage while tuning or replaying
 ## Story 2.4: Versioned Relative-Frame Input Recording and Playback
 
 As a developer practicing against a training dummy,
-I want to record canonical inputs and replay them from any chosen start frame,
+I want to record a dynamically bounded sequence of canonical inputs and replay it from any chosen start frame,
 So that I can reproduce an exact sequence without tying it to the original session timeline.
 
 **Acceptance Criteria:**
 
 **S2.4-AC01**
 **Given** recording starts for a valid source player at frame S
-**When** canonical input events are accepted after SOCD cleaning
+**When** canonical input events are accepted after SOCD cleaning and before the user stops recording
 **Then** each immutable entry stores its input type/value and `relative_frame = event_frame - S`
-**And** raw pre-SOCD hardware state is not recorded.
+**And** raw pre-SOCD hardware state is not recorded and no duration is selected before capture.
 
 **S2.4-AC02**
 **Given** several inputs occur on the same relative frame
@@ -277,10 +277,10 @@ So that I can reproduce an exact sequence without tying it to the original sessi
 **And** playback order does not depend on dictionary, collection, or subscriber iteration order.
 
 **S2.4-AC03**
-**Given** recording stops at frame E
+**Given** an active recording began at frame S and the user stops it at frame E
 **When** the immutable recording is finalized
-**Then** it contains schema version, source player, duration, ordered entries, and optional user-facing name
-**And** later mutation of the capture buffer cannot change the finalized recording.
+**Then** checked arithmetic requires `E >= S`, derives `duration = E - S`, and stores schema version, source player, derived duration, ordered entries, and optional user-facing name
+**And** later mutation of the capture buffer cannot change the finalized recording; the P-REC duration limit auto-finalizes with an explicit reason.
 
 **S2.4-AC04**
 **Given** a recording candidate has an invalid player, unsupported input type/value, negative frame, decreasing order, entry beyond duration, duplicate forbidden identity, unsupported schema version, or exceeds a documented codec resource limit
@@ -315,8 +315,8 @@ So that I can reproduce an exact sequence without tying it to the original sessi
 **S2.4-AC09**
 **Given** loop mode is enabled
 **When** playback reaches the loop boundary
-**Then** input transient state is reset according to the documented loop baseline and the next iteration rebases to a new start frame
-**And** held or buffered state from the previous iteration cannot leak unless explicitly represented in the recording.
+**Then** every terminal-frame entry is injected in stable order, input transient state is reset according to the documented loop baseline, and the next iteration rebases without an additional idle or waiting frame
+**And** relative frame zero is processed on the immediately following schedulable frame while held or buffered state cannot leak unless explicitly represented in the recording.
 
 **S2.4-AC10**
 **Given** a scene/match transition, successful restore, replay lifecycle transition, or explicit stop allocates or activates a different epoch
@@ -331,18 +331,26 @@ So that I can reproduce an exact sequence without tying it to the original sessi
 **And** a deterministic state hash over the documented observation window matches across runs.
 
 **S2.4-AC12**
-**Given** multiple recordings are captured
-**When** the training ViewModel lists, names, selects, assigns, starts, stops, or loops them
-**Then** selection changes do not mutate immutable recording contents
-**And** the ViewModel remains testable without Godot.
+**Given** recording is inactive or active and the responsive training panel is available
+**When** the user activates the single panel recording toggle or resolved `training_record_toggle` action
+**Then** the same ViewModel command starts capture and changes the control from `Start Recording` to `Stop Recording`, or stops and finalizes exactly once with a stop-derived duration
+**And** layout recomputation cannot trigger either transition, `training_playback_stop` remains playback-only, and the ViewModel/shortcut routing remain testable without Godot.
 
 **S2.4-AC13**
 **Given** Story 2.4 is proposed for `ready-for-dev` or completion
 **When** its risk/evidence row is reviewed
-**Then** codec/validation unit, input integration, SOCD-boundary, ordering, rebasing, ownership-conflict, loop reset, lifecycle cancellation, determinism, ViewModel, and Godot dummy-playback evidence is linked
+**Then** codec/validation unit, input integration, SOCD-boundary, ordering, rebasing, ownership-conflict, gapless-loop timing, stop-derived duration, toggle idempotency, atomic overwrite, lifecycle cancellation, determinism, ViewModel, resolved-shortcut parity, responsive bottom-right layout, resize/fullscreen state retention, non-overlap, 100%-200% UI-scale, and Godot dummy-playback evidence is linked
 **And** Story 2.4 requires no future Story 2.5 implementation for standalone acceptance.
 
+**S2.4-AC14**
+**Given** a newly finalized recording has the same stored name as an existing recording
+**When** replacement is requested
+**Then** the UI names the target and requires explicit confirmation before atomically replacing the old recording so list, selection, assignment, codec export, and later playback observe only the new content
+**And** cancellation, validation failure, commit failure, or active playback preserves the old recording and state without a partial new entry; active playback reports that it must be stopped first.
+
 ## Story 2.5: Failure-Atomic Training State Save and Load
+
+Story 2.5 runtime Controls must consume the CORR-2 `TrainingUiRoot` layout policy. Story 2.5 may not introduce fixed window coordinates or a parallel resize listener/layout authority.
 
 As a developer practicing complex situations,
 I want to save and restore the complete training-room state,

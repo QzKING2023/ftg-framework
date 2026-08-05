@@ -7,7 +7,6 @@ namespace FTG_Framework.UI.Training;
 
 public partial class EventBusDebugPanel : Control
 {
-    [Export] public Vector2 PanelPosition { get; set; } = new(400, 10);
     [Export] public Vector2 PanelSize { get; set; } = new(400, 500);
     [Export] public int FontSize { get; set; } = 12;
     [Export] public Color BackgroundColor { get; set; } = new(0, 0, 0, 0.7f);
@@ -35,18 +34,20 @@ public partial class EventBusDebugPanel : Control
 
     public override void _Ready()
     {
+        CustomMinimumSize = PanelSize * (float)GetThemeDefaultBaseScale();
         var background = new ColorRect
         {
-            Color = BackgroundColor,
-            Size = PanelSize
+            Color = BackgroundColor
         };
+        background.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(background);
 
-        _container = new VBoxContainer
-        {
-            Position = new Vector2(5, 5),
-            Size = PanelSize - new Vector2(10, 10)
-        };
+        _container = new VBoxContainer();
+        _container.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _container.OffsetLeft = 5;
+        _container.OffsetTop = 5;
+        _container.OffsetRight = -5;
+        _container.OffsetBottom = -5;
         AddChild(_container);
 
         _titleLabel = new Label { Text = "EventBus Debug Panel (PageUp/PageDown navigate)" };
@@ -90,9 +91,6 @@ public partial class EventBusDebugPanel : Control
         _detailLabel.AddThemeFontSizeOverride("font_size", FontSize);
         _detailLabel.SizeFlagsVertical |= Control.SizeFlags.ExpandFill;
         _container.AddChild(_detailLabel);
-
-        Position = PanelPosition;
-        Size = PanelSize;
 
         // Start hidden — user toggles via BackQuote key
         Visible = false;

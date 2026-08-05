@@ -10,7 +10,6 @@ public partial class AdvantageDisplay : Control
 {
     [Export] public int TrackedPlayer { get; set; } = 1;
     [Export] public bool ShowWhenZero { get; set; } = true;
-    [Export] public Vector2 PanelPosition { get; set; } = new(10, 75);
     [Export] public Vector2 PanelSize { get; set; } = new(120, 30);
     [Export] public Color TextColor { get; set; } = Colors.White;
     [Export] public int FontSize { get; set; } = 14;
@@ -36,11 +35,12 @@ public partial class AdvantageDisplay : Control
 
         _vm = new AdvantageViewModel(TrackedPlayer, ShowWhenZero);
 
+        CustomMinimumSize = PanelSize * (float)GetThemeDefaultBaseScale();
         _background = new ColorRect
         {
-            Color = BackgroundColor,
-            Size = PanelSize
+            Color = BackgroundColor
         };
+        _background.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(_background);
 
         _label = new Label
@@ -50,9 +50,6 @@ public partial class AdvantageDisplay : Control
         _label.AddThemeColorOverride("font_color", TextColor);
         _label.AddThemeFontSizeOverride("font_size", FontSize);
         AddChild(_label);
-
-        Position = PanelPosition;
-        Size = PanelSize;
 
         EventBus.Instance.Subscribe<FrameAdvancedEvent>(_OnFrameAdvanced);
         EventBus.Instance.Subscribe<HitConnectedEvent>(_OnHitConnected);

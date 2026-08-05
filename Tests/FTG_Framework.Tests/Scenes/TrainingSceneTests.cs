@@ -11,6 +11,106 @@ namespace FTG_Framework.Tests.Scenes;
 public class TrainingSceneTests
 {
     [Fact]
+    public void TrainingScene_ComposesRenderOnlyWorldAndIndependentScreenSpaceUi()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scripts", "Framework", "Scenes", "TrainingScene.cs"));
+
+        Assert.Contains("WorldPresentationRoot", source);
+        Assert.Contains("TrainingPresentationCamera", source);
+        Assert.Contains("new Camera2D", source);
+        Assert.Contains("TrainingUiLayer", source);
+        Assert.Contains("TrainingUiRoot", source);
+        Assert.Contains("LeftDiagnosticsRegion", source);
+        Assert.Contains("LeftDiagnosticsDrawer", source);
+        Assert.Contains("OpenDiagnosticsDrawer", source);
+        Assert.Contains("CloseDiagnosticsDrawer", source);
+        Assert.Contains("TopRightTuningRegion", source);
+        Assert.Contains("BottomRightPlaybackRegion", source);
+        Assert.Contains("GameplayLegend", source);
+        Assert.Contains("LayoutPreset.BottomWide", source);
+        Assert.Contains("leftScroll.OffsetBottom = -148", source);
+        Assert.DoesNotContain("leftContent.AddChild(new ControlsLegend())", source);
+        Assert.Contains("TrainingPresentationAdapter", source);
+        Assert.Contains("TrainingShortcutRouter", source);
+        Assert.DoesNotContain("GetViewport().GetVisibleRect()", source);
+    }
+
+    [Fact]
+    public void ResponsivePanels_DoNotAssignFinalWindowPositions()
+    {
+        string root = FindRepoRoot();
+        string tuning = File.ReadAllText(Path.Combine(root,
+            "Scripts", "Framework", "UI", "Training", "RuntimeTuningPanel.cs"));
+        string playback = File.ReadAllText(Path.Combine(root,
+            "Scripts", "Framework", "UI", "Training", "TrainingInputPlaybackPanel.cs"));
+
+        Assert.DoesNotContain("Position = new Vector2(620, 10)", tuning);
+        Assert.DoesNotContain("Position = new Vector2(620, 10)", playback);
+        Assert.Contains("LayoutPreset.FullRect", tuning);
+        Assert.Contains("LayoutPreset.FullRect", playback);
+    }
+
+    [Fact]
+    public void PresentationAdapter_UsesPhysicalWindowSizeAndCameraOnly()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scripts", "Framework", "UI", "Training",
+            "TrainingPresentationAdapter.cs"));
+
+        Assert.Contains("GetWindow().Size", source);
+        Assert.Contains("WorldCamera.Zoom", source);
+        Assert.DoesNotContain("GlobalPosition =", source);
+        Assert.DoesNotContain("EventBus", source);
+        string smoke = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scaffold", "verification", "Corr2ResponsiveSmokeTest.cs"));
+        Assert.Contains("adapterParent.RemoveChild(adapter)", smoke);
+        Assert.Contains("adapterParent.AddChild(adapter)", smoke);
+        Assert.Contains("did not receive exactly one resize callback", smoke);
+    }
+
+    [Fact]
+    public void TrainingShortcutRouter_UsesGuiAwareEventRoutingWithoutGameplayInjection()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scripts", "Framework", "UI", "Training",
+            "TrainingShortcutRouter.cs"));
+
+        Assert.Contains("override void _UnhandledInput", source);
+        Assert.Contains("GuiGetFocusOwner()", source);
+        Assert.Contains("LineEdit or TextEdit or CodeEdit", source);
+        Assert.Contains("allowEcho: false, exactMatch: true", source);
+        Assert.Contains("TryResolveSingleCommand", source);
+        Assert.Contains("SetInputAsHandled()", source);
+        Assert.Contains("InputMap.ActionGetEvents(action)", source);
+        Assert.DoesNotContain("ParseInputEvent", source);
+        Assert.DoesNotContain("InputReceivedEvent", source);
+    }
+
+    [Fact]
+    public void TrainingScene_ReleasesGuiFocusOnUnhandledPrimaryClickOnly()
+    {
+        Assert.True(TrainingScene.ShouldReleaseGuiFocus(
+            MouseButton.Left, pressed: true, hasFocusOwner: true));
+        Assert.False(TrainingScene.ShouldReleaseGuiFocus(
+            MouseButton.Left, pressed: false, hasFocusOwner: true));
+        Assert.False(TrainingScene.ShouldReleaseGuiFocus(
+            MouseButton.Right, pressed: true, hasFocusOwner: true));
+        Assert.False(TrainingScene.ShouldReleaseGuiFocus(
+            MouseButton.Left, pressed: true, hasFocusOwner: false));
+    }
+
+    [Fact]
+    public void RecordingConfirmation_DoesNotForceFocusBackOntoRecordToggle()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scripts", "Framework", "UI", "Training",
+            "TrainingInputPlaybackPanel.cs"));
+
+        Assert.DoesNotContain("_recordToggle?.GrabFocus()", source);
+    }
+
+    [Fact]
     public void TryCalculateCharacterSpawnPositions_StandardViewport_CentersVisiblePair()
     {
         var visibleRect = new Rect2(Vector2.Zero, new Vector2(1152, 648));
@@ -117,6 +217,38 @@ public class TrainingSceneTests
         Assert.Contains("AddChild(_comboDisplay)", source);
         Assert.Contains("_comboDisplay?.Shutdown()", source);
         Assert.Contains("_comboDisplay = null", source);
+    }
+
+    [Fact]
+    public void TrainingScene_ComposesAndShutsDownTrainingInputPlaybackPanel()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scripts", "Framework", "Scenes", "TrainingScene.cs"));
+        Assert.Contains("_trainingInputPanel = new TrainingInputPlaybackPanel", source);
+        Assert.Contains("AddChild(_trainingInputPanel)", source);
+        Assert.Contains("_trainingInputPanel?.Shutdown()", source);
+        Assert.Contains("TrainingInputService?.CancelForLifecycle()", source);
+    }
+
+    [Fact]
+    public void TrainingInputPanel_UsesFocusNavigationScalingAndNonColorStatus()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepoRoot(), "Scripts", "Framework", "UI", "Training", "TrainingInputPlaybackPanel.cs"));
+        Assert.Contains("ScrollContainer", source);
+        Assert.DoesNotContain("CustomMinimumSize = new Vector2(390, 300)", source);
+        Assert.Contains("FocusNeighborTop", source);
+        Assert.Contains("FocusNeighborBottom", source);
+        Assert.DoesNotContain("new SpinBox", source);
+        Assert.DoesNotContain("Stop / Name", source);
+        Assert.DoesNotContain("Confirm Replace", source);
+        Assert.Contains("Start Recording", source);
+        Assert.Contains("ConfirmationDialog", source);
+        Assert.Contains("ExecuteRecordToggleCommand(_vm", source);
+        Assert.Contains("return viewModel.ToggleCapture(name)", source);
+        Assert.Contains("TrainingShortcutCommand.RecordToggle => ExecuteRecordToggle()", source);
+        Assert.Contains("StatusText", source);
+        Assert.Contains("ui_accept", source);
     }
 
     [Fact]

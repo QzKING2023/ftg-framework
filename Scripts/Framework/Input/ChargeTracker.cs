@@ -206,6 +206,19 @@ internal sealed class ChargeTracker : IModule, IChargeTracker
         _lastUpdateFrame = snapshot.LastUpdateFrame;
     }
 
+    internal void ResetPlayer(int playerId)
+    {
+        if (playerId is < 1 or > 2)
+            throw new ArgumentOutOfRangeException(nameof(playerId), "[Input] Invalid player reset.");
+        int player = playerId - 1;
+        for (int direction = 0; direction < NumChargeDirs; direction++)
+        {
+            _chargeStartFrame[player, direction] = -1;
+            _chargeEndFrame[player, direction] = -1;
+            _wasCharging[player, direction] = false;
+        }
+    }
+
     private static int GetChargeDirIndex(DirectionValue dir)
     {
         return dir switch

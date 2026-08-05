@@ -7,7 +7,7 @@ paradigm: layered
 scope: 'V2 modules — Physics, State Machine, Replay, Object Pool, Character & Move Authoring, Training Suite, Developer Experience'
 status: final
 created: '2026-07-26'
-updated: '2026-08-01'
+updated: '2026-08-04'
 binds: ['FR-16'..'FR-36']
 sources:
   - '_bmad-output/planning-artifacts/prds/prd-ftg-framework-2026-07-26/prd.md'
@@ -195,8 +195,8 @@ V1 AD-1 through AD-8 remain binding. Their `.archive` location records chronolog
 ### AD-21 — Accessible and Lifecycle-Safe Interaction Boundary
 
 - **Binds:** runtime Controls, EditorPlugin docks, training tools, character selection, EventBus debugging, and the unified toolbox
-- **Prevents:** inaccessible UI-only operation, hidden destructive effects, stale subscriptions/focus, clipped controls, and duplicated lifecycle state
-- **Rule:** Interaction orchestration lives in pure C# ViewModels/services behind thin Godot adapters. Every flow supports keyboard operation and applicable controller bindings; restores focus after dialogs/rebuilds; communicates status without color alone; remains readable at 100%–200% UI scale and scrolls rather than clips. Destructive actions name the target and require confirmation. A transaction is cancellable only before commit. Disable, scene exit, replay/restore, and reconstruction dispose subscriptions and transient ownership exactly once, then rebuild from authoritative state. The project UX contract maps each material surface to these requirements and evidence.
+- **Prevents:** inaccessible UI-only operation, hidden destructive effects, stale subscriptions/focus, clipped controls, overlapping overlays, fixed-window-coordinate drift, and duplicated lifecycle state
+- **Rule:** Interaction orchestration lives in pure C# ViewModels/services behind thin Godot adapters. Every flow supports keyboard operation and applicable controller bindings; restores focus after dialogs/rebuilds; communicates status without color alone; remains readable at 100%–200% UI scale and scrolls or collapses rather than clips. Runtime overlays use anchors, containers, safe margins, and shared layout regions instead of fixed window coordinates. Primary actions expose documented non-conflicting InputMap bindings and show those bindings in the visible UI. Destructive actions name the target and require confirmation. A transaction is cancellable only before commit. Disable, scene exit, replay/restore, and reconstruction dispose subscriptions and transient ownership exactly once, then rebuild from authoritative state. The project UX contract maps each material surface to these requirements and evidence.
 
 AD-21 is a forward planning contract. It has no retroactive Adoption Gate evidence and does not reopen completed stories.
 
@@ -207,6 +207,32 @@ AD-21 is a forward planning contract. It has no retroactive Adoption Gate eviden
 - **Rule:** Godot host adapters sample named actions for both players and emit world-axis/button values only. Pure C# canonicalizes directions from the tick-start authoritative facing snapshot. Physics alone advances position, jump motion, facing, collision outcomes, and their snapshot state. Diagnostic mutation requires both the serialized `ftg/test_harness/enabled` setting and a debug build, is visibly marked TEST ONLY, and cannot satisfy gameplay evidence. Repository and scaffold share or parity-test controls, settings, presentation, and verification paths.
 
 AD-22 is corrective work and does not reopen the historical completion of V2 Epic 1.
+
+### AD-23 — Responsive Training Presentation Boundary
+
+- **Binds:** repository and generated-scaffold training scenes, character presentation, runtime training Controls, CORR-1 verification presentation, Stories 2.2–2.5, and future training/toolbox surfaces
+- **Prevents:** window-size-dependent authoritative state, stretched or off-center gameplay presentation, overlay collisions, clipped diagnostics, and repository/scaffold layout drift
+- **Rule:** Training presentation is split into two explicit roots:
+
+  1. `WorldPresentationRoot` owns visual transformation of gameplay-world nodes.
+  2. `TrainingUiRoot`, hosted in an independent screen-space `CanvasLayer`, owns developer and training Controls and never inherits the world transform.
+
+  The reference design viewport is `1152x648`. On resize or fullscreen transition, the presentation adapter computes one uniform scale from the available viewport, keeps the design region centered, and expands the visible world/background on the surplus axis so the window remains filled without non-uniform stretching. Character framing derives from the centered design region and is recalculated as presentation state only.
+
+  Resize handling must not write authoritative Physics positions, lifecycle epochs, input frames, collision data, recording schedules, or replay state. Simulation remains expressed in framework world units; only the Godot presentation transform and screen-space layout change.
+
+  `TrainingUiRoot` owns shared responsive regions:
+
+  - top-right: runtime tuning;
+  - bottom-right: input recording/playback;
+  - left: diagnostics, legends, frame data, and other read-only prompts;
+  - center: gameplay presentation, with overlays remaining screen-space.
+
+  All regions use a `12 px` safe margin and at least `8 px` separation at 100% UI scale. Right-side panels constrain their height to their allocated region and scroll internally when required. Left-side content wraps and uses a bounded scroll/collapse container. At smaller supported sizes or 200% UI scale, controls may scroll or collapse but may not overlap, clip unreachable actions, or leave the viewport.
+
+  The shared layout policy is represented by a pure-C# calculation/model boundary. Godot adapters apply anchors, offsets, visibility, and container constraints. Repository and generated-scaffold scenes use the same policy or pass an explicit parity test.
+
+AD-23 is corrective work and does not reopen completed Epic 1, Story 2.2, Story 2.3, or Epic 3 product scope.
 
 ## Adoption Gate
 
@@ -348,11 +374,11 @@ Scripts/Framework/Editor/  # EditorPlugin thin adapter; FTG_Framework.Editor; Go
 | FR-19 | Physics parameter hot-reload | `Data/` + `Core/` | AD-15, AD-9, AD-19 |
 | FR-20 | Stack-based state machine | `Engine/StateMachine/` | AD-11, AD-18 |
 | FR-21 | Per-state PhysicsResponseProfile association | `Engine/StateMachine/` | AD-16, AD-3 |
-| FR-22 | Character template + minimal verification composition | `Characters/` + `Scenes/` + `Engine/Physics/` | AD-10, AD-21, AD-22 |
+| FR-22 | Character template + responsive verification composition | `Characters/` + `Scenes/` + `Engine/Physics/` | AD-10, AD-21, AD-22, AD-23 |
 | FR-23 | EditorPlugin move authoring | `Data/` + `Scripts/Framework/Editor/` | AD-6, AD-15, AD-21 |
-| FR-24 | Runtime tuning with JSON writeback | `Data/` + `UI/Training/` | AD-15, AD-9, AD-19, AD-21 |
+| FR-24 | Runtime tuning with responsive JSON-writeback UI | `Data/` + `UI/Training/` | AD-15, AD-9, AD-19, AD-21, AD-23 |
 | FR-25 | Combo counter + damage display | `UI/Training/` | AD-3 (subscribe only), AD-21 |
-| FR-26 | Input recording & playback | `Input/` + `UI/Training/` | AD-3, AD-12, AD-18, AD-21 |
+| FR-26 | Input recording & responsive playback controls | `Input/` + `UI/Training/` | AD-3, AD-12, AD-18, AD-21, AD-23 |
 | FR-27 | Training state save/load | `UI/Training/` + `Core/` | AD-18, AD-20, AD-21 |
 | FR-28 | Deterministic replay system | `Core/` | AD-13, AD-9, AD-12, AD-18 |
 | FR-29 | Object pool | `Core/` | AD-14, AD-17 |

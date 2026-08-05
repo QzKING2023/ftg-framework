@@ -4,6 +4,7 @@ using FTG_Framework.Characters;
 using FTG_Framework.Core;
 using FTG_Framework.Core.Events;
 using FTG_Framework.Data;
+using FTG_Framework.Input;
 using FTG_Framework.UI.Training;
 using Godot;
 
@@ -17,6 +18,8 @@ public partial class TrainingScene : Node, IScene
     public IStateMachine? StateMachine { get; set; }
     public IRuntimeTuningService? RuntimeTuningService { get; set; }
     public RuntimeTuningSessionAuthority? RuntimeTuningSessions { get; set; }
+    public TrainingInputService? TrainingInputService { get; set; }
+    public TrainingInputRecordingLibrary? TrainingRecordingLibrary { get; set; }
     public string P1CharacterId { get; set; } = string.Empty;
     public string P2CharacterId { get; set; } = string.Empty;
 
@@ -30,17 +33,82 @@ public partial class TrainingScene : Node, IScene
     private CharacterController? _p2Character;
     private DiagnosticsTestHarness? _diagnostics;
     private Label? _diagnosticsLabel;
+    private TrainingInputPlaybackPanel? _trainingInputPanel;
+    private TrainingPresentationAdapter? _presentationAdapter;
+    private Node2D? _worldPresentationRoot;
+    private CanvasLayer? _trainingUiLayer;
 
     public void Enter(ISceneManager manager)
     {
-        InstantiateCharacters();
+        _worldPresentationRoot = new Node2D { Name = "WorldPresentationRoot" };
+        AddChild(_worldPresentationRoot);
+        var camera = new Camera2D
+        {
+            Name = "TrainingPresentationCamera",
+            Enabled = true,
+            Position = new Vector2(576, 324)
+        };
+        _worldPresentationRoot.AddChild(camera);
+
+        InstantiateCharacters(_worldPresentationRoot);
 
         var presentation = new TestMatchPresentation();
         if (_p1Character is not null && _p2Character is not null)
             presentation.Bind(_p1Character, _p2Character);
-        AddChild(presentation);
+        _worldPresentationRoot.AddChild(presentation);
 
-        AddChild(new ControlsLegend());
+        _trainingUiLayer = new CanvasLayer { Name = "TrainingUiLayer" };
+        AddChild(_trainingUiLayer);
+        double uiScale = ProjectSettings.GetSetting("ftg/training/ui_scale", 1.0).AsDouble();
+        var trainingUiRoot = new Control
+        {
+            Name = "TrainingUiRoot",
+            Theme = new Theme { DefaultBaseScale = (float)uiScale }
+        };
+        trainingUiRoot.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _trainingUiLayer.AddChild(trainingUiRoot);
+        var leftRegion = CreateRegion("LeftDiagnosticsRegion", trainingUiRoot);
+        var leftDrawer = CreateRegion("LeftDiagnosticsDrawer", trainingUiRoot);
+        var topRightRegion = CreateRegion("TopRightTuningRegion", trainingUiRoot);
+        var bottomRightRegion = CreateRegion("BottomRightPlaybackRegion", trainingUiRoot);
+        var diagnosticsToggle = new Button
+        {
+            Name = "OpenDiagnosticsDrawer",
+            Text = "Diagnostics",
+            FocusMode = Control.FocusModeEnum.All
+        };
+        diagnosticsToggle.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        leftRegion.AddChild(diagnosticsToggle);
+        var diagnosticsClose = new Button
+        {
+            Name = "CloseDiagnosticsDrawer",
+            Text = "Close diagnostics",
+            FocusMode = Control.FocusModeEnum.All
+        };
+        diagnosticsClose.SetAnchorsPreset(Control.LayoutPreset.TopWide);
+        diagnosticsClose.OffsetBottom = 36;
+        leftDrawer.AddChild(diagnosticsClose);
+        var leftScroll = new ScrollContainer
+        {
+            Name = "LeftDiagnosticsScroll",
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Auto,
+            VerticalScrollMode = ScrollContainer.ScrollMode.Auto
+        };
+        leftScroll.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        leftScroll.OffsetTop = 40;
+        leftScroll.OffsetBottom = -148;
+        leftDrawer.AddChild(leftScroll);
+        var leftContent = new VBoxContainer
+        {
+            Name = "LeftDiagnosticsContent",
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill
+        };
+        leftScroll.AddChild(leftContent);
+        var gameplayLegend = new ControlsLegend { Name = "GameplayLegend" };
+        gameplayLegend.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
+        gameplayLegend.OffsetTop = -140;
+        gameplayLegend.OffsetBottom = 0;
+        leftDrawer.AddChild(gameplayLegend);
 
         bool settingEnabled = ProjectSettings.GetSetting(
             "ftg/test_harness/enabled", false).AsBool();
@@ -51,49 +119,56 @@ public partial class TrainingScene : Node, IScene
             Text = settingEnabled && OS.IsDebugBuild()
                 ? DiagnosticsTestHarness.TestModeText
                 : "DIAGNOSTICS DISABLED — gameplay evidence only",
-            Position = new Vector2(10, 180),
-            AutowrapMode = TextServer.AutowrapMode.WordSmart
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill
         };
-        AddChild(_diagnosticsLabel);
+        leftContent.AddChild(_diagnosticsLabel);
 
         var frameDataPanel = new FrameDataPanel
         {
-            PanelPosition = new Vector2(10, 10),
             DataStore = DataStore
         };
-        AddChild(frameDataPanel);
+        leftContent.AddChild(frameDataPanel);
 
-        var advantageDisplay = new AdvantageDisplay
-        {
-            PanelPosition = new Vector2(10, 75)
-        };
-        AddChild(advantageDisplay);
+        var advantageDisplay = new AdvantageDisplay();
+        leftContent.AddChild(advantageDisplay);
 
-        _comboDisplay = new ComboDisplay
-        {
-            PanelPosition = new Vector2(10, 110)
-        };
-        AddChild(_comboDisplay);
+        _comboDisplay = new ComboDisplay();
+        leftContent.AddChild(_comboDisplay);
 
         _inputLog = new InputLog
         {
-            PanelPosition = new Vector2(10, 145),
             InputHistory = InputHistory
         };
-        AddChild(_inputLog);
+        leftContent.AddChild(_inputLog);
 
         _playbackControls = new PlaybackControls
         {
             FrameDataEngine = FrameDataEngine,
             InputLog = _inputLog
         };
-        AddChild(_playbackControls);
+        leftContent.AddChild(_playbackControls);
+
+        if (TrainingInputService is not null && TrainingRecordingLibrary is not null)
+        {
+            _trainingInputPanel = new TrainingInputPlaybackPanel
+            {
+                Service = TrainingInputService,
+                Library = TrainingRecordingLibrary
+            };
+            bottomRightRegion.AddChild(_trainingInputPanel);
+            AddChild(new TrainingShortcutRouter
+            {
+                Name = "TrainingShortcutRouter",
+                Panel = _trainingInputPanel
+            });
+        }
 
         _hitboxOverlay = new HitboxOverlay();
-        AddChild(_hitboxOverlay);
+        _worldPresentationRoot.AddChild(_hitboxOverlay);
 
         var debugPanel = new EventBusDebugPanel();
-        AddChild(debugPanel);
+        leftContent.AddChild(debugPanel);
 
         if (RuntimeTuningService is not null && RuntimeTuningSessions is not null)
         {
@@ -103,13 +178,36 @@ public partial class TrainingScene : Node, IScene
                 DataStore = DataStore,
                 Sessions = RuntimeTuningSessions
             };
-            AddChild(_runtimeTuningPanel);
+            topRightRegion.AddChild(_runtimeTuningPanel);
         }
+
+        _presentationAdapter = new TrainingPresentationAdapter
+        {
+            Name = "TrainingPresentationAdapter",
+            WorldCamera = camera,
+            WorldPresentation = presentation,
+            TrainingUiRoot = trainingUiRoot,
+            LeftDiagnosticsRegion = leftRegion,
+            LeftDiagnosticsDrawer = leftDrawer,
+            DiagnosticsToggle = diagnosticsToggle,
+            DiagnosticsClose = diagnosticsClose,
+            TopRightTuningRegion = topRightRegion,
+            BottomRightPlaybackRegion = bottomRightRegion,
+            UiScale = uiScale
+        };
+        AddChild(_presentationAdapter);
 
         SubscribeDebugEvents();
     }
 
-    private void InstantiateCharacters()
+    private static Control CreateRegion(string name, Control parent)
+    {
+        var region = new Control { Name = name, ClipContents = true };
+        parent.AddChild(region);
+        return region;
+    }
+
+    private void InstantiateCharacters(Node2D worldRoot)
     {
         var templatePath = "res://Characters/character_template.tscn";
         if (!Godot.FileAccess.FileExists(templatePath))
@@ -125,7 +223,9 @@ public partial class TrainingScene : Node, IScene
             return;
         }
 
-        var visibleRect = GetViewport().GetVisibleRect();
+        var visibleRect = new Rect2(Vector2.Zero, new Vector2(
+            (float)TrainingPresentationLayout.DesignWidth,
+            (float)TrainingPresentationLayout.DesignHeight));
         if (!TryCalculateCharacterSpawnPositions(visibleRect, out var p1Position, out var p2Position))
         {
             GD.PushWarning(
@@ -161,8 +261,8 @@ public partial class TrainingScene : Node, IScene
         p2.Position = p2Position;
         _p2Character = p2;
 
-        AddChild(p1);
-        AddChild(p2);
+        worldRoot.AddChild(p1);
+        worldRoot.AddChild(p2);
     }
 
     internal static bool TryCalculateCharacterSpawnPositions(
@@ -202,16 +302,35 @@ public partial class TrainingScene : Node, IScene
 
     public void Exit()
     {
+        _trainingInputPanel?.Shutdown();
+        _trainingInputPanel = null;
+        TrainingInputService?.CancelForLifecycle();
         _comboDisplay?.Shutdown();
         _comboDisplay = null;
         _runtimeTuningPanel?.Shutdown();
         _runtimeTuningPanel = null;
+        _presentationAdapter = null;
+        _trainingUiLayer = null;
+        _worldPresentationRoot = null;
         if (StateMachine is not null)
             _diagnostics?.Reset(StateMachine);
         _diagnostics = null;
         _diagnosticsLabel = null;
         UnsubscribeDebugEvents();
     }
+
+    public override void _UnhandledInput(InputEvent @event)
+    {
+        Control? focusOwner = GetViewport().GuiGetFocusOwner();
+        if (@event is not InputEventMouseButton mouseButton ||
+            !ShouldReleaseGuiFocus(
+                mouseButton.ButtonIndex, mouseButton.Pressed, focusOwner is not null)) return;
+        focusOwner!.ReleaseFocus();
+    }
+
+    internal static bool ShouldReleaseGuiFocus(
+        MouseButton button, bool pressed, bool hasFocusOwner) =>
+        hasFocusOwner && button == MouseButton.Left && pressed;
 
     public override void _Process(double delta)
     {

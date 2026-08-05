@@ -8,6 +8,8 @@ public partial class TestMatchPresentation : Node2D
 {
     private CharacterController? _p1;
     private CharacterController? _p2;
+    public LayoutRect VisibleWorldRect { get; set; } = new(0, 0,
+        TrainingPresentationLayout.DesignWidth, TrainingPresentationLayout.DesignHeight);
 
     public void Bind(CharacterController p1, CharacterController p2)
     {
@@ -21,7 +23,8 @@ public partial class TestMatchPresentation : Node2D
     {
         if (_p1 is null || _p2 is null) return;
         float groundY = Mathf.Max(_p1.GlobalPosition.Y, _p2.GlobalPosition.Y) + 25;
-        DrawLine(new Vector2(0, groundY), new Vector2(GetViewportRect().Size.X, groundY), Colors.White, 3);
+        DrawLine(new Vector2((float)VisibleWorldRect.Left, groundY),
+            new Vector2((float)VisibleWorldRect.Right, groundY), Colors.White, 3);
         DrawCharacter(_p1.GlobalPosition, true);
         DrawCharacter(_p2.GlobalPosition, false);
     }

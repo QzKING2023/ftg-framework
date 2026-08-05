@@ -17,6 +17,21 @@ dotnet build "$output/MyFighter/MyFighter.csproj" --no-restore
 & "D:\path\to\Godot_mono_console.exe" --headless --path "$output/MyFighter" res://scaffold_smoke.tscn
 ```
 
+Run the CORR-2 responsive presentation and shortcut-parity harness against the
+same generated project:
+
+```powershell
+Copy-Item Scaffold/verification/Corr2ResponsiveSmokeTest.cs "$output/MyFighter/Scripts/"
+Copy-Item Scaffold/verification/corr2_responsive_smoke.tscn "$output/MyFighter/"
+dotnet build "$output/MyFighter/MyFighter.csproj" --no-restore
+& "D:\path\to\Godot_mono_console.exe" --headless --path "$output/MyFighter" res://corr2_responsive_smoke.tscn
+```
+
+Success prints `[Corr2ResponsiveSmoke] PASS` and exits zero. Headless runs skip
+the platform fullscreen transition while still covering the viewport/UI-scale
+matrix, visible-world bounds, ultra-wide expansion, authoritative-state
+preservation, focus reachability, and keyboard/controller InputMap parity.
+
 On Unix-like systems, use the equivalent `cp` commands and invoke the installed
 .NET-enabled Godot console binary. Success prints `[ScaffoldSmoke] PASS` and exits
 zero. The harness waits up to 600 rendered frames for training initialization,

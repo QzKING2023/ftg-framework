@@ -10,7 +10,6 @@ namespace FTG_Framework.UI.Training;
 public partial class FrameDataPanel : Control
 {
     [Export] public int TrackedPlayer { get; set; } = 1;
-    [Export] public Vector2 PanelPosition { get; set; } = new(10, 10);
     [Export] public Vector2 PanelSize { get; set; } = new(300, 60);
     [Export] public Color TextColor { get; set; } = Colors.White;
     [Export] public int FontSize { get; set; } = 14;
@@ -30,11 +29,12 @@ public partial class FrameDataPanel : Control
 
     public override void _Ready()
     {
+        CustomMinimumSize = PanelSize * (float)GetThemeDefaultBaseScale();
         _background = new ColorRect
         {
-            Color = BackgroundColor,
-            Size = PanelSize
+            Color = BackgroundColor
         };
+        _background.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(_background);
 
         _infoLabel = new Label
@@ -52,9 +52,6 @@ public partial class FrameDataPanel : Control
         _durationsLabel.AddThemeColorOverride("font_color", TextColor);
         _durationsLabel.AddThemeFontSizeOverride("font_size", FontSize);
         AddChild(_durationsLabel);
-
-        Position = PanelPosition;
-        Size = PanelSize;
 
         EventBus.Instance.Subscribe<MoveFrameChangedEvent>(_OnMoveFrameChanged);
 

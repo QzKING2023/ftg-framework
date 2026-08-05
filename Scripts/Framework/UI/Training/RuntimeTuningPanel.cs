@@ -37,19 +37,18 @@ public partial class RuntimeTuningPanel : Control
             GD.PushError("[RuntimeTuningPanel] Service, DataStore, and Sessions are required.");
             return;
         }
-        CustomMinimumSize = new Vector2(360, 320);
-        Position = new Vector2(620, 10);
+        SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         _viewModel = new RuntimeTuningViewModel(Service, Sessions);
         EnsureControllerActions();
 
         _scroll = new ScrollContainer
         {
-            CustomMinimumSize = new Vector2(360, 320),
             HorizontalScrollMode = ScrollContainer.ScrollMode.Auto,
             VerticalScrollMode = ScrollContainer.ScrollMode.Auto
         };
+        _scroll.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(_scroll);
-        var root = new VBoxContainer { CustomMinimumSize = new Vector2(340, 300) };
+        var root = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _scroll.AddChild(root);
         root.AddChild(new Label { Text = "Runtime Tuning (next initiation)" });
 

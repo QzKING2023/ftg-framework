@@ -17,3 +17,8 @@
 ## Deferred from: code review of v2-2-1-c-godot-editor-flow (2026-08-02)
 
 - `Tests/FTG_Framework.Tests/Scaffold/FtgCliTests.cs:863-893`: `PackageAddon_ProducesValidZip` uses the first matching archive and deletes all `ftg-framework-*.zip` files. This is a real isolation/cleanup risk, but the behavior predates the reviewed slice-C diff and belongs in separate test-infrastructure work.
+
+## Deferred from: code review of v2-2-4-e-manual-acceptance-correction (2026-08-04)
+
+- Preserve the unrelated `project.godot` animation-library importer root-scale setting for its owning workstream rather than changing user-owned baseline state during Story 2.4-E review.
+- Repair or remove the pre-existing untracked mojibake `workflow.md` in a documentation-cleanup workstream; it is not referenced by Story 2.4-E evidence.

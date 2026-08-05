@@ -1,5 +1,28 @@
 # Source Tree Analysis
 
+## Implemented CORR-2 Structure
+
+The following files and scene composition exist in the current repository:
+
+```text
+Scripts/Framework/UI/Training/
+  TrainingPresentationLayout.cs
+  TrainingPresentationAdapter.cs
+  TrainingShortcutRouter.cs
+  RuntimeTuningPanel.cs
+  TrainingInputPlaybackPanel.cs
+
+TrainingScene
+├── WorldPresentationRoot
+│   ├── Stage
+│   └── Characters
+└── TrainingUiLayer
+    └── TrainingUiRoot
+        ├── LeftDiagnosticsRegion
+        ├── TopRightTuningRegion
+        └── BottomRightPlaybackRegion
+```
+
 ## Full Directory Tree
 
 ```
@@ -93,7 +116,7 @@ ftg-framework/                          # Project root
 | `Scripts/Framework/Input/` | Input system: history, buffer, leniency, charge, priority |
 | `Scripts/Framework/Data/` | Data loading and storage: JSON parsing, immutable models, IDataStore |
 | `Scripts/Framework/Engine/` | (planned) Frame data engine and combo executor |
-| `Scripts/Framework/UI/` | (planned) Training mode UI components |
+| `Scripts/Framework/UI/` | Training mode UI components, including responsive presentation and recording/playback controls |
 | `Tests/FTG_Framework.Tests/` | xUnit test project for framework verification |
 
 ## Entry Points

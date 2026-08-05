@@ -1,3 +1,3 @@
 [gd_scene format=3 uid="uid://ftg0main0scene01"]
 
-[node name="Node2D" type="Node2D"]
+[node name="FTGTrainingHost" type="Node2D"]

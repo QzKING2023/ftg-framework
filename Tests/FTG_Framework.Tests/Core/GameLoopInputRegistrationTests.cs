@@ -8,6 +8,23 @@ namespace FTG_Framework.Tests.Core;
 public class GameLoopInputRegistrationTests
 {
     [Fact]
+    public void CaptureFrameCompletionOccursBeforeEventBusFrameAdvance()
+    {
+        var service = new TrainingInputService((_, _, _) => { });
+        Assert.True(service.TryStartCapture(1, 0, 7, out _));
+        int terminal = TrainingInputRecording.MaxDurationFrames;
+        service.AcceptCanonicalInput(1, InputType.Button, (int)ButtonValue.A, terminal);
+        bool dispatchObservedCompletedCapture = false;
+
+        GameLoop.CompleteTrainingInputFrame(service, terminal, () =>
+            dispatchObservedCompletedCapture = !service.IsCapturing && service.HasCompletedCapture);
+
+        Assert.True(dispatchObservedCompletedCapture);
+        Assert.True(service.TryTakeCompletedCapture(out var completion));
+        Assert.Single(completion.Recording.Entries);
+    }
+
+    [Fact]
     public void GameplayActions_AreCanonicalAndPlayerIsolated()
     {
         Assert.Equal(new[]
@@ -59,5 +76,28 @@ public class GameLoopInputRegistrationTests
         Assert.Equal(DirectionValue.Neutral, cleaned);
         Assert.False(command.CrouchHeld);
         Assert.False(command.JumpPressed);
+    }
+
+    [Theory]
+    [InlineData(DirectionValue.Forward, true, 1)]
+    [InlineData(DirectionValue.Back, true, -1)]
+    [InlineData(DirectionValue.Forward, false, -1)]
+    [InlineData(DirectionValue.Back, false, 1)]
+    [InlineData(DirectionValue.Neutral, true, 0)]
+    public void CanonicalDirection_MapsBackToWorldAxis(
+        DirectionValue direction, bool facingRight, int expected)
+    {
+        Assert.Equal(expected, GameLoop.WorldAxisFromCanonical(direction, facingRight));
+    }
+
+    [Fact]
+    public void TrainingPlaybackOwner_SuppressesOnlyOwnedPlayersLiveInput()
+    {
+        var service = new TrainingInputService((_, _, _) => { });
+        var recording = new TrainingInputRecording(1, 1, 1, "dummy", []);
+        Assert.True(service.TryStartPlayback(recording, 2, 0, false, 1, out _));
+
+        Assert.True(GameLoop.ShouldUseLiveInput(service, 1));
+        Assert.False(GameLoop.ShouldUseLiveInput(service, 2));
     }
 }

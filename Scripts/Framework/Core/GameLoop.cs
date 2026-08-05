@@ -35,6 +35,9 @@ public partial class GameLoop : Node
     private ISOCDResolver? _socdResolver;
     private ISceneManager? _sceneManager;
     private ReplayOrchestrator? _replayOrchestrator;
+    private TrainingInputService? _trainingInputService;
+    private TrainingInputRecordingLibrary? _trainingRecordingLibrary;
+    private PhysicsFacingSnapshot _inputFacingSnapshot = new(true, false, false);
     private FileWatcher? _fileWatcher;
     private Action<MatchInitializedEvent>? _matchInitializedHandler;
     private string _p1CharacterId = string.Empty;
@@ -180,7 +183,20 @@ public partial class GameLoop : Node
 
             _socdResolver = new global::FTG_Framework.Input.DefaultSOCDResolver();
 
-            var replayOrchestrator = new ReplayOrchestrator(_frameDataEngine);
+            var playbackModes = new PlaybackModeCoordinator();
+            _trainingRecordingLibrary = new TrainingInputRecordingLibrary();
+            _trainingInputService = new TrainingInputService(
+                RecordCanonicalInput,
+                playbackModes,
+                (player, fromFrame) =>
+                {
+                    inputHistory.ResetTrainingTransient(player, fromFrame);
+                    chargeTracker.ResetPlayer(player);
+                    _previousJump[player] = false;
+                },
+                RecordCanonicalBatch);
+            _trainingInputService.StartLifecycleSubscriptions();
+            var replayOrchestrator = new ReplayOrchestrator(_frameDataEngine, playbackModes);
             var snapshotCoordinator = CreateRuntimeSnapshotCoordinator(
                 stateMachine, frameDataEngine, physicsEngine, inputHistory, chargeTracker,
                 replayOrchestrator);
@@ -196,23 +212,6 @@ public partial class GameLoop : Node
             // ── Scene setup ──
             _sceneManager = new SceneManager(this);
 
-            var characterSelectScene = new CharacterSelectScene
-            {
-                DataStore = _dataStore
-            };
-
-            var trainingScene = new TrainingScene
-            {
-                DataStore = _dataStore,
-                InputHistory = _inputHistory,
-                FrameDataEngine = _frameDataEngine,
-                StateMachine = _stateMachine,
-                RuntimeTuningService = _runtimeTuningService,
-                RuntimeTuningSessions = _runtimeTuningSessions,
-                P1CharacterId = _p1CharacterId,
-                P2CharacterId = _p2CharacterId
-            };
-
             _sceneManager.RegisterScene("character_select", () => new CharacterSelectScene
             {
                 DataStore = _dataStore
@@ -226,6 +225,8 @@ public partial class GameLoop : Node
                 StateMachine = _stateMachine,
                 RuntimeTuningService = _runtimeTuningService,
                 RuntimeTuningSessions = _runtimeTuningSessions,
+                TrainingInputService = _trainingInputService,
+                TrainingRecordingLibrary = _trainingRecordingLibrary,
                 P1CharacterId = _p1CharacterId,
                 P2CharacterId = _p2CharacterId
             });
@@ -302,6 +303,9 @@ public partial class GameLoop : Node
         // SOCD cleaning + direction combine
         var facingSnapshot = _physicsEngine?.CaptureFacingSnapshot() ??
             new PhysicsFacingSnapshot(true, false, false);
+        _inputFacingSnapshot = facingSnapshot;
+        _trainingInputService?.ProcessPlaybackFrame(
+            EventBus.Instance.CurrentFrame, EventBus.Instance.LifecycleEpoch);
         var worldDir = _socdResolver is not null
             ? SafeResolve(_socdResolver, back, forward, down, up)
             : FallbackDirection(back, forward, down, up);
@@ -311,16 +315,18 @@ public partial class GameLoop : Node
         var dir = WorldInputMapper.Map(
             new WorldInputSample(p1Axis, p1Crouch, p1Jump),
             facingSnapshot.P1FacingRight ? AuthoritativeFacing.Right : AuthoritativeFacing.Left).Direction;
-        _inputHistory?.RecordInput(1, InputType.Directional, (int)dir);
-        _physicsEngine?.SetLocomotionCommand(BuildLocomotionCommand(
-            1, p1Axis, worldDir, _previousJump[1]));
-        _previousJump[1] = p1Jump;
+        if (ShouldUseLiveInput(_trainingInputService, 1))
+            _trainingInputService?.AcceptCanonicalInput(
+                1, InputType.Directional, (int)dir, EventBus.Instance.CurrentFrame);
 
         // Button inputs — record once on the rising edge of each press
-        if (btnA && !_prevBtnA) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.A);
-        if (btnB && !_prevBtnB) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.B);
-        if (btnC && !_prevBtnC) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.C);
-        if (btnD && !_prevBtnD) _inputHistory?.RecordInput(1, InputType.Button, (int)ButtonValue.D);
+        if (ShouldUseLiveInput(_trainingInputService, 1))
+        {
+            if (btnA && !_prevBtnA) _trainingInputService?.AcceptCanonicalInput(1, InputType.Button, (int)ButtonValue.A, EventBus.Instance.CurrentFrame);
+            if (btnB && !_prevBtnB) _trainingInputService?.AcceptCanonicalInput(1, InputType.Button, (int)ButtonValue.B, EventBus.Instance.CurrentFrame);
+            if (btnC && !_prevBtnC) _trainingInputService?.AcceptCanonicalInput(1, InputType.Button, (int)ButtonValue.C, EventBus.Instance.CurrentFrame);
+            if (btnD && !_prevBtnD) _trainingInputService?.AcceptCanonicalInput(1, InputType.Button, (int)ButtonValue.D, EventBus.Instance.CurrentFrame);
+        }
         _prevBtnA = btnA;
         _prevBtnB = btnB;
         _prevBtnC = btnC;
@@ -351,12 +357,13 @@ public partial class GameLoop : Node
         var p2Canonical = WorldInputMapper.Map(
             new WorldInputSample(p2Axis, p2Crouch, p2Jump),
             facingSnapshot.P2FacingRight ? AuthoritativeFacing.Right : AuthoritativeFacing.Left);
-        _inputHistory?.RecordInput(2, InputType.Directional, (int)p2Canonical.Direction);
-        _physicsEngine?.SetLocomotionCommand(BuildLocomotionCommand(
-            2, p2Axis, p2World, _previousJump[2]));
-        _previousJump[2] = p2Jump;
-        if (p2Light && !_prevP2Light)
-            _inputHistory?.RecordInput(2, InputType.Button, (int)ButtonValue.A);
+        if (ShouldUseLiveInput(_trainingInputService, 2))
+        {
+            _trainingInputService?.AcceptCanonicalInput(
+                2, InputType.Directional, (int)p2Canonical.Direction, EventBus.Instance.CurrentFrame);
+            if (p2Light && !_prevP2Light)
+                _trainingInputService?.AcceptCanonicalInput(2, InputType.Button, (int)ButtonValue.A, EventBus.Instance.CurrentFrame);
+        }
         _prevP2Light = p2Light;
         _chargeTracker?.Update(2, EventBus.Instance.CurrentFrame);
         var p2Matches = _inputBuffer?.TryMatch(2);
@@ -374,7 +381,8 @@ public partial class GameLoop : Node
         if (ShouldRunPhysics(_replayOrchestrator is { IsPlaying: true }))
             _physicsEngine?.Update();
 
-        EventBus.Instance.ProcessFrame();
+        CompleteTrainingInputFrame(
+            _trainingInputService, EventBus.Instance.CurrentFrame, EventBus.Instance.ProcessFrame);
 
         // Capture FrameDataEngine snapshot for replay recording.
         _replayOrchestrator?.CaptureSnapshot(EventBus.Instance.CurrentFrame - 1);
@@ -390,6 +398,9 @@ public partial class GameLoop : Node
 
     public override void _ExitTree()
     {
+        _trainingInputService?.Shutdown();
+        _trainingInputService = null;
+        _trainingRecordingLibrary = null;
         if (_matchInitializedHandler is not null)
             EventBus.Instance.Unsubscribe(_matchInitializedHandler);
         _matchInitializedHandler = null;
@@ -417,6 +428,58 @@ public partial class GameLoop : Node
             playerId, worldAxis, HasDown(cleanedDirection), jump && !previousJump);
     }
     internal static bool ShouldRunPhysics(bool replayPlaying) => !replayPlaying;
+
+    internal static bool ShouldUseLiveInput(TrainingInputService? service, int playerId) =>
+        service is null || !service.IsPlaying || service.PlaybackPlayer != playerId;
+
+    internal static void CompleteTrainingInputFrame(
+        TrainingInputService? service, int currentFrame, Action dispatchFrame)
+    {
+        ArgumentNullException.ThrowIfNull(dispatchFrame);
+        service?.CompleteCaptureFrame(currentFrame);
+        dispatchFrame();
+        service?.CompleteFrame();
+    }
+
+    internal static int WorldAxisFromCanonical(DirectionValue direction, bool facingRight)
+    {
+        int relative = HasBack(direction) ? -1 : HasForward(direction) ? 1 : 0;
+        return facingRight ? relative : -relative;
+    }
+
+    private void RecordCanonicalInput(int playerId, InputType type, int value)
+    {
+        _inputHistory?.RecordInput(playerId, type, value);
+        if (type != InputType.Directional) return;
+        var direction = (DirectionValue)value;
+        bool facingRight = playerId == 1
+            ? _inputFacingSnapshot.P1FacingRight
+            : _inputFacingSnapshot.P2FacingRight;
+        int axis = WorldAxisFromCanonical(direction, facingRight);
+        _physicsEngine?.SetLocomotionCommand(BuildLocomotionCommand(
+            playerId, axis, direction, _previousJump[playerId]));
+        _previousJump[playerId] = HasUp(direction);
+    }
+
+    private void RecordCanonicalBatch(int playerId, IReadOnlyList<TrainingInputRecordingEntry> entries)
+    {
+        if (_inputHistory is global::FTG_Framework.Input.InputHistory history)
+            history.RecordPlaybackInputs(playerId, entries);
+        else
+            foreach (var entry in entries) _inputHistory?.RecordInput(playerId, entry.InputType, entry.InputValue);
+        foreach (var entry in entries)
+        {
+            if (entry.InputType != InputType.Directional) continue;
+            var direction = (DirectionValue)entry.InputValue;
+            bool facingRight = playerId == 1
+                ? _inputFacingSnapshot.P1FacingRight
+                : _inputFacingSnapshot.P2FacingRight;
+            int axis = WorldAxisFromCanonical(direction, facingRight);
+            _physicsEngine?.SetLocomotionCommand(BuildLocomotionCommand(
+                playerId, axis, direction, _previousJump[playerId]));
+            _previousJump[playerId] = HasUp(direction);
+        }
+    }
 
     internal static void ValidateMoveKnockbackProfiles(IDataStore dataStore)
     {

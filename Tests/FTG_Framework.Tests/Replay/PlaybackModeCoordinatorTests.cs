@@ -29,4 +29,71 @@ public sealed class PlaybackModeCoordinatorTests
         Assert.Equal(RuntimePlaybackMode.TrainingInput, coordinator.ActiveMode);
         Assert.Equal((ulong)4, coordinator.ActiveEpoch);
     }
+
+    [Fact]
+    public void Capture_ExcludesAuthoritativeReplayButAllowsTrainingInputForOtherPlayer()
+    {
+        var coordinator = new PlaybackModeCoordinator();
+        Assert.True(coordinator.TryEnterCapture(1, 7, out _));
+        coordinator.Enter(RuntimePlaybackMode.TrainingInput, 7);
+        coordinator.Exit(RuntimePlaybackMode.TrainingInput);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            coordinator.Enter(RuntimePlaybackMode.AuthoritativeReplay, 7));
+        Assert.Equal(1, coordinator.CapturePlayer);
+    }
+
+    [Fact]
+    public void TrainingInput_RejectsDifferentEpochWhenCaptureAlreadyOwnsLifecycle()
+    {
+        var coordinator = new PlaybackModeCoordinator();
+        Assert.True(coordinator.TryEnterCapture(1, 7, out _));
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() =>
+            coordinator.Enter(RuntimePlaybackMode.TrainingInput, 8));
+
+        Assert.Contains("epoch", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(RuntimePlaybackMode.None, coordinator.ActiveMode);
+        Assert.Equal((ulong)0, coordinator.ActiveEpoch);
+        Assert.Equal(1, coordinator.CapturePlayer);
+        Assert.Equal((ulong)7, coordinator.CaptureEpoch);
+    }
+
+    [Fact]
+    public void Capture_RejectsDifferentEpochWhenTrainingInputAlreadyOwnsLifecycle()
+    {
+        var coordinator = new PlaybackModeCoordinator();
+        coordinator.Enter(RuntimePlaybackMode.TrainingInput, 8);
+
+        Assert.False(coordinator.TryEnterCapture(1, 7, out string error));
+
+        Assert.Contains("epoch", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(RuntimePlaybackMode.TrainingInput, coordinator.ActiveMode);
+        Assert.Equal((ulong)8, coordinator.ActiveEpoch);
+        Assert.Equal(0, coordinator.CapturePlayer);
+        Assert.Equal((ulong)0, coordinator.CaptureEpoch);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void CaptureAndTrainingInput_ShareSameEpochInEitherAcquisitionOrder(bool captureFirst)
+    {
+        var coordinator = new PlaybackModeCoordinator();
+        if (captureFirst)
+        {
+            Assert.True(coordinator.TryEnterCapture(1, 7, out _));
+            coordinator.Enter(RuntimePlaybackMode.TrainingInput, 7);
+        }
+        else
+        {
+            coordinator.Enter(RuntimePlaybackMode.TrainingInput, 7);
+            Assert.True(coordinator.TryEnterCapture(1, 7, out _));
+        }
+
+        Assert.Equal(RuntimePlaybackMode.TrainingInput, coordinator.ActiveMode);
+        Assert.Equal((ulong)7, coordinator.ActiveEpoch);
+        Assert.Equal(1, coordinator.CapturePlayer);
+        Assert.Equal((ulong)7, coordinator.CaptureEpoch);
+    }
 }

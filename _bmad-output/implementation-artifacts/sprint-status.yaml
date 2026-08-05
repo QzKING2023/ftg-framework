@@ -264,13 +264,24 @@ development_status:
   # while retaining separate mappings and approvals. CORR-1 is accepted; Story
   # 2.4 was explicitly started through create-story on 2026-08-04.
   v2-corr-1-minimal-playable-test-character: done
-  v2-2-4-input-recording-playback: ready-for-dev
+  # Approved 2026-08-04 course correction: CORR-2 establishes responsive world
+  # presentation, screen-space training UI regions, and recording/playback shortcuts.
+  # It does not reopen completed Epic 1, Story 2.2, Story 2.3, CORR-1, or Epic 3.
+  # Story 2.4-D cannot complete before CORR-2-C joint Godot evidence passes.
+  v2-corr-2-responsive-training-presentation: done
+  v2-corr-2-a-responsive-world-presentation: done
+  v2-corr-2-b-responsive-training-ui: done
+  v2-corr-2-c-shortcuts-joint-godot-evidence: done
+  v2-2-4-input-recording-playback: done
   # Execute S2.4-A first; B and C consume its immutable codec/authority contract,
-  # and D completes only after A-C plus the parent E2E acceptance pass.
-  v2-2-4-a-recording-codec-viewmodel: ready-for-dev
-  v2-2-4-b-relative-frame-playback: ready-for-dev
-  v2-2-4-c-ownership-lifecycle: ready-for-dev
-  v2-2-4-d-godot-determinism-evidence: ready-for-dev
+  # D completes only after A-C plus the parent E2E acceptance pass. Approved
+  # CORR-2 manual-feedback correction S2.4-E must complete before parent acceptance;
+  # it does not trigger final code review.
+  v2-2-4-a-recording-codec-viewmodel: done
+  v2-2-4-b-relative-frame-playback: done
+  v2-2-4-c-ownership-lifecycle: done
+  v2-2-4-d-godot-determinism-evidence: done
+  v2-2-4-e-manual-acceptance-correction: done
   v2-2-5-training-state-save-load: backlog
   v2-epic-2-retrospective: optional
 

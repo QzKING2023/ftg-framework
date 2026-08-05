@@ -19,9 +19,18 @@ GameLoop="*res://Scripts/Framework/Core/GameLoop.cs"
 
 project/assembly_name="{{FTG_PROJECT_NAME}}"
 
+[display]
+
+window/size/viewport_width=1152
+window/size/viewport_height=648
+window/size/window_width_override=1152
+window/size/window_height_override=648
+window/stretch/mode="disabled"
+
 [ftg]
 
 test_harness/enabled=true
+training/ui_scale=1.0
 
 [editor_plugins]
 
@@ -68,4 +77,20 @@ p2_jump={
 p2_light={
 "deadzone": 0.5,
 "events": [Object(InputEventKey,"physical_keycode":78)]
+}
+training_record_toggle={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"shift_pressed":true,"ctrl_pressed":true,"keycode":82,"unicode":114)]
+}
+training_play_once={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"shift_pressed":true,"ctrl_pressed":true,"keycode":80,"unicode":112)]
+}
+training_loop_toggle={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"shift_pressed":true,"ctrl_pressed":true,"keycode":76,"unicode":108)]
+}
+training_playback_stop={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"shift_pressed":true,"ctrl_pressed":true,"keycode":88,"unicode":120)]
 }

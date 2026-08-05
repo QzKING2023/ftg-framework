@@ -1,5 +1,16 @@
 # FTG Framework — Architecture Navigation
 
+## Responsive Training Presentation
+
+The approved CORR-2 target separates authoritative gameplay presentation from developer UI:
+
+- `WorldPresentationRoot` applies the AD-23 centered uniform presentation transform for the `1152x648` reference viewport.
+- `TrainingUiRoot` is an independent screen-space layer using shared responsive regions.
+- Window resize and fullscreen transitions update presentation only; they do not modify Physics positions, input schedules, lifecycle epochs, or replay state.
+- Runtime tuning occupies the top-right region, recording/playback occupies the bottom-right region, and diagnostics use a bounded left-side region.
+
+See [CORR-2](../_bmad-output/planning-artifacts/epics/corr-2-responsive-training-presentation.md) for the executable acceptance contract. The presentation components are implemented; Story 2.4-E evidence and review status remain tracked in the canonical sprint status.
+
 The [V2 Architecture Spine](../_bmad-output/planning-artifacts/architecture/architecture-ftg-framework-2026-07-26/ARCHITECTURE-SPINE.md) is normative. This generated document is only a compact map; when wording differs, the Spine and its inherited archived V1 decisions win.
 
 ## Architecture Shape

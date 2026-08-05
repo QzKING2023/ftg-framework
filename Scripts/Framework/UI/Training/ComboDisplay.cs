@@ -7,7 +7,6 @@ namespace FTG_Framework.UI.Training;
 public partial class ComboDisplay : Control
 {
     [Export] public int TrackedAttacker { get; set; } = 1;
-    [Export] public Vector2 PanelPosition { get; set; } = new(10, 110);
     [Export] public Vector2 PanelSize { get; set; } = new(240, 32);
     [Export] public Color TextColor { get; set; } = Colors.White;
     [Export] public int FontSize { get; set; } = 14;
@@ -47,31 +46,32 @@ public partial class ComboDisplay : Control
         _controller = new ComboDisplayController(_viewModel);
         _controller.StateChanged += Render;
 
+        double scale = GetThemeDefaultBaseScale();
+        CustomMinimumSize = PanelSize * (float)scale;
         _background = new ColorRect
         {
             Color = BackgroundColor,
             MouseFilter = MouseFilterEnum.Ignore,
-            CustomMinimumSize = PanelSize,
-            Size = PanelSize
+            CustomMinimumSize = PanelSize
         };
+        _background.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(_background);
 
         _label = new Label
         {
-            Position = new Vector2(5, 5),
-            Size = PanelSize - new Vector2(10, 10),
-            CustomMinimumSize = PanelSize - new Vector2(10, 10),
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
             MouseFilter = MouseFilterEnum.Ignore,
             FocusMode = FocusModeEnum.None
         };
+        _label.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _label.OffsetLeft = 5;
+        _label.OffsetTop = 5;
+        _label.OffsetRight = -5;
+        _label.OffsetBottom = -5;
         _label.AddThemeColorOverride("font_color", TextColor);
         _label.AddThemeFontSizeOverride("font_size", FontSize);
         AddChild(_label);
 
-        Position = PanelPosition;
-        Size = PanelSize;
-        CustomMinimumSize = PanelSize;
         MouseFilter = MouseFilterEnum.Ignore;
         FocusMode = FocusModeEnum.None;
     }

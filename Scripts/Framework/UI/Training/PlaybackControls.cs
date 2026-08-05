@@ -8,7 +8,6 @@ namespace FTG_Framework.UI.Training;
 
 public partial class PlaybackControls : Control
 {
-    [Export] public Vector2 PanelPosition { get; set; } = new(400, 10);
     [Export] public Vector2 PanelSize { get; set; } = new(200, 40);
     [Export] public Color TextColor { get; set; } = Colors.White;
     [Export] public int FontSize { get; set; } = 12;
@@ -50,11 +49,12 @@ public partial class PlaybackControls : Control
         if (_label != null)
             return;
 
+        CustomMinimumSize = PanelSize * (float)GetThemeDefaultBaseScale();
         _background = new ColorRect
         {
-            Color = BackgroundColor,
-            Size = PanelSize
+            Color = BackgroundColor
         };
+        _background.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(_background);
 
         _label = new Label
@@ -64,9 +64,6 @@ public partial class PlaybackControls : Control
         _label.AddThemeColorOverride("font_color", TextColor);
         _label.AddThemeFontSizeOverride("font_size", FontSize);
         AddChild(_label);
-
-        Position = PanelPosition;
-        Size = PanelSize;
 
         UpdateLabel();
     }

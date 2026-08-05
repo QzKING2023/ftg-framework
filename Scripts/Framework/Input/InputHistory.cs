@@ -71,6 +71,29 @@ internal sealed class InputHistory : IModule, IInputHistory
         EventBus.Instance.Publish(new InputReceivedEvent(playerId, frame, (int)type, value));
     }
 
+    internal void RecordPlaybackInputs(int playerId, IReadOnlyList<TrainingInputRecordingEntry> entries)
+    {
+        if (playerId is < 1 or > 2)
+            throw new ArgumentOutOfRangeException(nameof(playerId), "[Input] Invalid playback player.");
+        ArgumentNullException.ThrowIfNull(entries);
+        int frame = EventBus.Instance.CurrentFrame;
+        foreach (var entry in entries)
+        {
+            var track = entry.InputType == InputType.Directional
+                ? _directionalTracks[playerId - 1]
+                : _buttonTracks[playerId - 1];
+            track.Add(new InputEntry(frame, entry.InputType, entry.InputValue));
+        }
+        // EventBus dispatches same-type envelopes LIFO. Publish the batch in reverse
+        // so observers receive the recording's explicit ascending sequence.
+        for (int i = entries.Count - 1; i >= 0; i--)
+        {
+            var entry = entries[i];
+            EventBus.Instance.Publish(new InputReceivedEvent(
+                playerId, frame, (int)entry.InputType, entry.InputValue));
+        }
+    }
+
     public IReadOnlyList<InputEntry> GetDirectionalHistory(int playerId)
     {
         if (playerId < 1 || playerId > 2)
@@ -134,5 +157,16 @@ internal sealed class InputHistory : IModule, IInputHistory
         _directionalTracks[1].Replace(snapshot.P2Directions);
         _buttonTracks[1].Replace(snapshot.P2Buttons);
         chargeTracker.InstallRuntimeSnapshot(snapshot);
+    }
+
+    internal void ResetTrainingTransient(int playerId, int fromFrame)
+    {
+        if (playerId is < 1 or > 2)
+            throw new ArgumentOutOfRangeException(nameof(playerId), "[Input] Invalid training reset boundary.");
+        if (fromFrame < 0)
+            throw new ArgumentOutOfRangeException(nameof(fromFrame), "[Input] Invalid training reset boundary.");
+        int index = playerId - 1;
+        _directionalTracks[index].RemoveTailWhile(entry => entry.Frame >= fromFrame);
+        _buttonTracks[index].RemoveTailWhile(entry => entry.Frame >= fromFrame);
     }
 }

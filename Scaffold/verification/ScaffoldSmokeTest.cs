@@ -83,8 +83,8 @@ public partial class ScaffoldSmokeTest : Node
                     "res://Scripts/Framework/Data/example_knockback_profiles.json");
                 _originalProfileJson = System.IO.File.ReadAllText(_profilePath);
                 string updatedProfileJson = _originalProfileJson.Replace(
-                    "\"horizontal\": 3.0",
-                    "\"horizontal\": 4.5",
+                    "\"horizontal\": 0.5",
+                    "\"horizontal\": 1.5",
                     StringComparison.Ordinal);
                 if (updatedProfileJson == _originalProfileJson)
                 {
@@ -236,7 +236,7 @@ public partial class ScaffoldSmokeTest : Node
         if (!_hotReloadRequested)
             failures.Add("physics profile hot-reload was not requested");
         var reloadedProfile = gameLoop?.DataStore?.GetKnockbackProfile("light_hit");
-        if (reloadedProfile?.Horizontal != 4.5f)
+        if (reloadedProfile?.Horizontal != 1.5f)
             failures.Add(
                 $"light_hit hot-reload was not visible (horizontal={reloadedProfile?.Horizontal})");
         var directions = history?.GetDirectionalHistory(1).Select(entry => entry.Value).ToHashSet() ?? [];

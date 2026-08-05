@@ -68,7 +68,7 @@ public sealed class EventBus
     private ulong? _reservedEpoch;
     private bool _snapshotQuiesced;
     private bool _publicationProhibited;
-    private bool _replayDerivedPublicationSuppressed;
+    private bool _replayApplyActive;
     private long _nextEnvelopeSequence;
 
     public int CurrentFrame => _frameNumber;
@@ -149,17 +149,43 @@ public sealed class EventBus
             if (_publicationProhibited)
                 throw new InvalidOperationException("[EventBus] Publication is prohibited from a StateRestored observer.");
             Type runtimeType = evt.GetType();
-            if (_replayDerivedPublicationSuppressed && EventTypeRegistry.IsRegistered(runtimeType)
-                && EventTypeRegistry.GetPolicy(runtimeType) == EventTypeRegistry.ReplayPolicy.ObserveOnly)
+            // Session-level replay apply: derived publications are suppressed so
+            // injected events execute exactly once (owner-applier + queue dispatch),
+            // never re-broadcast by cancel-chain or frame-update subscribers.
+            if (_replayApplyActive && EventTypeRegistry.IsRegistered(runtimeType))
                 return;
             if (IsLifecycle(evt) && _lifecycleEpoch == ulong.MaxValue)
                 throw new InvalidOperationException("[EventBus] Lifecycle epoch exhausted.");
-            if (_snapshotQuiesced)
-                _quarantinedQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence()));
-            else if (_dispatching)
-                _nextQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence()));
-            else
-                _currentQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence()));
+            Enqueue(evt!, runtimeType);
+        }
+    }
+
+    private void Enqueue<T>(T evt, Type runtimeType)
+    {
+        if (_snapshotQuiesced)
+            _quarantinedQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence()));
+        else if (_dispatching)
+            _nextQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence()));
+        else
+            _currentQueue.Add(new Envelope(evt!, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence()));
+    }
+
+    /// <summary>
+    /// Replay injection seam: queues a recorded event for the current frame's
+    /// dispatch pipeline, bypassing session-level replay suppression so the
+    /// recorded envelope still executes. Effects land at the recorded position
+    /// (end of frame k, visible in the hash at k+1) matching the recording side.
+    /// </summary>
+    internal void InjectReplayEvent(object evt)
+    {
+        ArgumentNullException.ThrowIfNull(evt);
+        lock (_epochSync)
+        {
+            if (_publicationProhibited)
+                throw new InvalidOperationException("[EventBus] Publication is prohibited from a StateRestored observer.");
+            if (IsLifecycle(evt) && _lifecycleEpoch == ulong.MaxValue)
+                throw new InvalidOperationException("[EventBus] Lifecycle epoch exhausted.");
+            Enqueue(evt, evt.GetType());
         }
     }
 
@@ -170,6 +196,8 @@ public sealed class EventBus
     {
         if (_publicationProhibited)
             throw new InvalidOperationException("[EventBus] Publication is prohibited from a StateRestored observer.");
+        if (_replayApplyActive && EventTypeRegistry.IsRegistered(typeof(T)))
+            return;
         var envelope = new Envelope(evt, _lifecycleEpoch, _frameNumber, NextEnvelopeSequence());
         if (IsLifecycle(evt))
             envelope = ActivateLifecycle(envelope);
@@ -478,8 +506,10 @@ public sealed class EventBus
 
     internal void SetLifecycleEpochForTesting(ulong epoch) => _lifecycleEpoch = epoch;
 
-    internal void BeginReplayAuthoritativeApply() => _replayDerivedPublicationSuppressed = true;
-    internal void EndReplayAuthoritativeApply() => _replayDerivedPublicationSuppressed = false;
+    internal void BeginReplayApply() => _replayApplyActive = true;
+    internal void EndReplayApply() => _replayApplyActive = false;
+    internal void BeginReplayAuthoritativeApply() => BeginReplayApply();
+    internal void EndReplayAuthoritativeApply() => EndReplayApply();
 
     internal SnapshotAtomicityDiagnostic GetSnapshotAtomicityDiagnostic()
     {
@@ -553,7 +583,7 @@ public sealed class EventBus
         _reservedEpoch = null;
         _snapshotQuiesced = false;
         _publicationProhibited = false;
-        _replayDerivedPublicationSuppressed = false;
+        _replayApplyActive = false;
         _nextEnvelopeSequence = 0;
         Paused = false;
         StepRequested = false;
@@ -587,6 +617,7 @@ public sealed class EventBus
             Paused,
             StepRequested,
             SuppressFrameAdvanced,
+            _replayApplyActive,
             Recorder is not null);
     }
 }
@@ -619,6 +650,7 @@ internal sealed record EventBusTestDiagnostic(
     bool Paused,
     bool StepRequested,
     bool SuppressFrameAdvanced,
+    bool ReplayApplyActive,
     bool HasRecorder)
 {
     public int SubscriberTypeCount => SubscriberTypes.Count;
@@ -633,6 +665,7 @@ internal sealed record EventBusTestDiagnostic(
         || Paused
         || StepRequested
         || SuppressFrameAdvanced
+        || ReplayApplyActive
         || HasRecorder;
 
     public bool IsClean => SubscriberTypeCount == 0
@@ -647,5 +680,6 @@ internal sealed record EventBusTestDiagnostic(
         && !Paused
         && !StepRequested
         && !SuppressFrameAdvanced
+        && !ReplayApplyActive
         && !HasRecorder;
 }

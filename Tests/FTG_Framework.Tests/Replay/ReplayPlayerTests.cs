@@ -74,6 +74,9 @@ public class ReplayPlayerTests : IDisposable
         {
             int dispatched = player.ProcessFrameReplay(EventBus.Instance, 0);
             Assert.Equal(2, dispatched);
+            // Injected events queue for the frame dispatch pipeline; effects land
+            // when ProcessFrame dispatches (mirroring the recording side).
+            EventBus.Instance.ProcessFrame();
             Assert.Single(received);
             var hit = Assert.IsType<HitConnectedEvent>(received[0]);
             Assert.Equal("5LP", hit.MoveId);
@@ -98,6 +101,7 @@ public class ReplayPlayerTests : IDisposable
 
         int dispatched = player.ProcessFrameReplay(EventBus.Instance, 0);
         Assert.Equal(1, dispatched);
+        EventBus.Instance.ProcessFrame();
     }
 
     [Fact]
@@ -141,8 +145,16 @@ public class ReplayPlayerTests : IDisposable
             };
             var player = new ReplayPlayer();
             player.Load(CreateTestFile(entries, 0));
-            Assert.Equal(2, player.ProcessFrameReplay(EventBus.Instance, 0));
-            EventBus.Instance.ProcessFrame();
+            // The orchestrator brackets the whole playback session: derived
+            // publication of registered types is suppressed for its duration,
+            // so only the StateChangedEvent already in the stream dispatches.
+            EventBus.Instance.BeginReplayApply();
+            try
+            {
+                Assert.Equal(2, player.ProcessFrameReplay(EventBus.Instance, 0));
+                EventBus.Instance.ProcessFrame();
+            }
+            finally { EventBus.Instance.EndReplayApply(); }
             Assert.Equal(1, observed);
         }
         finally

@@ -54,3 +54,34 @@ dotnet build "$output/MyFighter/MyFighter.csproj" --no-restore
 
 Success prints `[BalanceTrialSmoke] PASS` (with window, damage, combo, initiation
 count, terminal move, position, and committed data versions) and exits zero.
+
+## Story 4.2 state-scoped replay smoke (E4.2-G, E4.2-S)
+
+The state-scoped replay harness proves Story 2.5 snapshot bootstrap end to end in
+a generated project. Flow B saves a mid-move snapshot, records 30 frames, and
+replays them with byte-identical per-frame hashes. Flow A saves mid-combo after
+real walking (3px/frame, stop at 45px), records 40 frames, replays, and verifies
+zero `StateRestored` publications, replay-end rebind into live play, and live
+continuation.
+
+```powershell
+Copy-Item Scaffold/verification/StateScopedReplaySmokeTest.cs "$output/MyFighter/Scripts/"
+Copy-Item Scaffold/verification/state_scoped_replay_smoke.tscn "$output/MyFighter/"
+dotnet build "$output/MyFighter/MyFighter.csproj" --no-restore
+& "D:\path\to\Godot_mono_console.exe" --headless --path "$output/MyFighter" res://state_scoped_replay_smoke.tscn
+```
+
+Success prints `[StateScopedReplaySmoke] PASS` and exits zero. The harness
+persists trails to `user://s42-recorded-trail.json` / `s42-replayed-trail.json`.
+
+Restart portability (E4.2-S): replay the same file in a clean second process.
+With the same generated project still present, pass `--replay-verify` as a user
+argument; the harness loads `user://s42-replay-b.json`, replays it against the
+persisted recorded trail, asserts zero `StateRestored` publications, and prints
+`[StateScopedReplaySmoke] PASS (restart verify)`:
+
+```powershell
+& "D:\path\to\Godot_mono_console.exe" --headless --path "$output/MyFighter" res://state_scoped_replay_smoke.tscn -- --replay-verify
+```
+
+The main flow and the restart verify flow each exit with code 0 only on PASS.

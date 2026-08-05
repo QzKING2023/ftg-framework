@@ -1,16 +1,18 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
-using System.Reflection;
-using System.Text.Json;
 using System.Linq;
+using System.Text.Json;
 
 namespace FTG_Framework.Core.Replay;
 
 /// <summary>
 /// Production player — reads a ReplayFile and provides events frame by frame.
-/// Uses cached MethodInfo delegates for per-event PublishImmediate dispatch
-/// (zero per-frame reflection overhead).
+/// Injections queue through EventBus.InjectReplayEvent so effects land in the
+/// frame dispatch pipeline at the recorded position (end of frame k, visible in
+/// the hash at k+1), matching the recording side. The owner-applier hook
+/// reproduces direct engine calls (e.g. StartMove) performed on the live side
+/// outside the event stream.
 /// </summary>
 internal sealed class ReplayPlayer : IReplayPlayer
 {
@@ -21,12 +23,16 @@ internal sealed class ReplayPlayer : IReplayPlayer
         PropertyNameCaseInsensitive = true
     };
 
-    private static readonly MethodInfo PublishImmediateMethod = typeof(EventBus)
-        .GetMethod(nameof(EventBus.PublishImmediate), BindingFlags.Public | BindingFlags.Instance)!;
-
-    // Cached: event type name → (MethodInfo, Type) for PublishImmediate<T> dispatch
-    private readonly Dictionary<string, (MethodInfo method, Type eventType)> _dispatchCache = new();
+    // Cached: event type name → Type for deserialization
+    private readonly Dictionary<string, Type> _dispatchCache = new();
     private ReplayFile? _loadedFile;
+
+    /// <summary>
+    /// Reproduces direct engine calls that the recording side performed outside
+    /// the event stream (e.g. FrameDataEngine.StartMove for MoveStartedEvent).
+    /// Invoked at injection time, before the event is queued.
+    /// </summary>
+    public Action<object>? OwnerApplier { get; set; }
 
     public int FrameCount { get; private set; }
     public int TotalEvents { get; private set; }
@@ -62,15 +68,12 @@ internal sealed class ReplayPlayer : IReplayPlayer
             }
             list.Add(entry);
 
-            // Pre-cache dispatch MethodInfo for this event type
+            // Pre-cache event type for deserialization
             if (!_dispatchCache.ContainsKey(entry.EventType))
             {
-                var eventType = EventTypeRegistry.Resolve(entry.EventType);
+                Type? eventType = EventTypeRegistry.Resolve(entry.EventType);
                 if (eventType is not null)
-                {
-                    var genericMethod = PublishImmediateMethod.MakeGenericMethod(eventType);
-                    _dispatchCache[entry.EventType] = (genericMethod, eventType);
-                }
+                    _dispatchCache[entry.EventType] = eventType;
             }
         }
     }
@@ -83,8 +86,9 @@ internal sealed class ReplayPlayer : IReplayPlayer
     }
 
     /// <summary>
-    /// Drains all events recorded at the given frame and injects them via PublishImmediate.
-    /// Returns the number of events successfully dispatched.
+    /// Drains all events recorded at the given frame: owner-applies direct
+    /// engine calls, then queues the envelope for the frame dispatch pipeline.
+    /// Returns the number of events successfully queued.
     /// </summary>
     public int ProcessFrameReplay(EventBus bus, int frameNumber)
     {
@@ -93,23 +97,22 @@ internal sealed class ReplayPlayer : IReplayPlayer
             return 0;
 
         int dispatched = 0;
-        foreach (var entry in entries.OrderBy(entry => entry.Phase == 0
+        // ReplayRecorder assigns (frame, phase, seq) in DISPATCH order; ProcessFrame
+        // dispatches per-phase LIFO, so queue in descending order to reproduce it.
+        foreach (var entry in entries.OrderByDescending(entry => entry.Phase == 0
                      ? EventTypeRegistry.GetPhase(EventTypeRegistry.Resolve(entry.EventType)!)
-                     : entry.Phase).ThenBy(entry => entry.Sequence))
+                     : entry.Phase).ThenByDescending(entry => entry.Sequence))
         {
-            if (!_dispatchCache.TryGetValue(entry.EventType, out var cached))
+            if (!_dispatchCache.TryGetValue(entry.EventType, out Type? eventType))
                 continue;
 
-            var eventObj = JsonSerializer.Deserialize(entry.Payload, cached.eventType, JsonOptions);
+            var eventObj = JsonSerializer.Deserialize(entry.Payload, eventType, JsonOptions);
             if (eventObj is null)
                 continue;
 
             ReplayVersionValidator.ValidateDeserializedEvent(eventObj, entry.EventType);
-
-            bool suppressDerived = EventTypeRegistry.GetPolicy(cached.eventType) == EventTypeRegistry.ReplayPolicy.Authoritative;
-            if (suppressDerived) bus.BeginReplayAuthoritativeApply();
-            try { cached.method.Invoke(bus, [eventObj]); }
-            finally { if (suppressDerived) bus.EndReplayAuthoritativeApply(); }
+            OwnerApplier?.Invoke(eventObj);
+            bus.InjectReplayEvent(eventObj);
             dispatched++;
         }
 

@@ -110,6 +110,9 @@ public sealed class KnockbackReplayTests : IDisposable
         try
         {
             Assert.Equal(1, player.ProcessFrameReplay(EventBus.Instance, 0));
+            // Injected events queue for the frame dispatch pipeline; effects land
+            // when ProcessFrame dispatches (mirroring the recording side).
+            EventBus.Instance.ProcessFrame();
             Assert.Equal(expected, observed);
         }
         finally { EventBus.Instance.Unsubscribe(handler); }

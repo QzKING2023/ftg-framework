@@ -51,7 +51,8 @@ internal sealed class EventBusTestScope : IDisposable
         if (diagnostic.CurrentQueueCount != 0 || diagnostic.NextQueueCount != 0) state |= EventBusResidualState.Queues;
         if (diagnostic.PendingReloadCount != 0) state |= EventBusResidualState.PendingReloads;
         if (diagnostic.IsDispatching || diagnostic.DispatchEpoch is not null) state |= EventBusResidualState.Dispatch;
-        if (diagnostic.Paused || diagnostic.StepRequested || diagnostic.SuppressFrameAdvanced) state |= EventBusResidualState.Flags;
+        if (diagnostic.Paused || diagnostic.StepRequested || diagnostic.SuppressFrameAdvanced
+            || diagnostic.ReplayApplyActive) state |= EventBusResidualState.Flags;
         if (diagnostic.HasRecorder) state |= EventBusResidualState.Recorder;
         return state;
     }

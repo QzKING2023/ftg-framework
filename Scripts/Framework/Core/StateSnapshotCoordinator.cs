@@ -56,6 +56,44 @@ public sealed class StateSnapshotCoordinator
         return new StateSnapshotCoordinator(eventBus, materialized, faultInjector, graphValidator);
     }
 
+    /// <summary>
+    /// Pre-acceptance validation seam (S4.2-AC04): validates catalog, codec
+    /// versions, and the cross-component graph against the candidate components
+    /// only — no quiescence, epoch reservation, or lifecycle mutation. Lets the
+    /// replay bootstrap reject an incompatible candidate before acquiring
+    /// playback ownership (S4.2-B).
+    /// </summary>
+    public void ValidateSnapshot(StateSnapshot snapshot, SnapshotRestoreMode mode)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.SchemaVersion != CurrentSchemaVersion)
+            throw new SnapshotPrepareException("container.schema_version", $"Unsupported version {snapshot.SchemaVersion}.");
+        if (!string.Equals(snapshot.FrameworkVersion, _frameworkVersion, StringComparison.Ordinal))
+            throw new SnapshotPrepareException("container.framework_version",
+                $"Snapshot framework '{snapshot.FrameworkVersion}' is incompatible with '{_frameworkVersion}'.");
+
+        var byId = snapshot.Components.ToDictionary(c => c.Discriminator, StringComparer.Ordinal);
+        var participantByDiscriminator = _participants.ToDictionary(
+            participant => participant.Discriminator, StringComparer.Ordinal);
+        string[] unknown = byId.Keys.Where(id => !participantByDiscriminator.ContainsKey(id)).ToArray();
+        if (unknown.Length != 0)
+            throw new SnapshotPrepareException("component_catalog",
+                $"Snapshot contains unknown components: {string.Join(", ", unknown)}.");
+        foreach (IStateSnapshotParticipant participant in _participants)
+        {
+            if (!byId.TryGetValue(participant.Discriminator, out SnapshotComponent? component))
+            {
+                if (SnapshotParticipantCatalog.Required.Contains(participant.Discriminator))
+                    throw new SnapshotPrepareException(participant.Discriminator, "Required component is missing.");
+                continue;
+            }
+            if (component.CodecVersion != participant.CodecVersion)
+                throw new SnapshotPrepareException(participant.Discriminator,
+                    $"Unsupported codec version {component.CodecVersion}.");
+        }
+        _graphValidator?.Invoke(byId, new SnapshotPrepareContext(snapshot.SourceEpoch, snapshot.SourceEpoch, snapshot.Frame, mode));
+    }
+
     public StateSnapshot Capture(int frame, string frameworkVersion)
     {
         _eventBus.BeginSnapshotQuiescence();

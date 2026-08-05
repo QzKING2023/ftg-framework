@@ -210,6 +210,48 @@ public sealed class TrainingSnapshotGraphValidatorTests
     }
 
     [Fact]
+    public void Validate_NormalMode_ComboStartFrameBeyondFrameBound_Rejects()
+    {
+        var byId = HappyGraph(frame: 10);
+        byId[SnapshotParticipantCatalog.Combo] = Component(
+            SnapshotParticipantCatalog.Combo,
+            new ComboRuntimeSnapshot(new Dictionary<int, ComboTrackRuntimeSnapshot>
+            {
+                [1] = new ComboTrackRuntimeSnapshot(true, 1, "jab", 100, 1, false, "jab")
+            }));
+        Assert.Throws<SnapshotPrepareException>(() =>
+            TrainingSnapshotGraphValidator.Validate(byId, Context(), dataStore: null));
+    }
+
+    [Fact]
+    public void Validate_ReplayBootstrapMode_ComboStartFrameBeyondNormalBound_Passes()
+    {
+        var byId = HappyGraph(frame: 10);
+        byId[SnapshotParticipantCatalog.Combo] = Component(
+            SnapshotParticipantCatalog.Combo,
+            new ComboRuntimeSnapshot(new Dictionary<int, ComboTrackRuntimeSnapshot>
+            {
+                [1] = new ComboTrackRuntimeSnapshot(true, 1, "jab", 100, 1, false, "jab")
+            }));
+        TrainingSnapshotGraphValidator.Validate(
+            byId, Context() with { Mode = SnapshotRestoreMode.ReplayBootstrap }, dataStore: null);
+    }
+
+    [Fact]
+    public void Validate_ReplayBootstrapMode_NegativeComboStartFrame_Rejects()
+    {
+        var byId = HappyGraph(frame: 10);
+        byId[SnapshotParticipantCatalog.Combo] = Component(
+            SnapshotParticipantCatalog.Combo,
+            new ComboRuntimeSnapshot(new Dictionary<int, ComboTrackRuntimeSnapshot>
+            {
+                [1] = new ComboTrackRuntimeSnapshot(true, 1, "jab", -1, 1, false, "jab")
+            }));
+        Assert.Throws<SnapshotPrepareException>(() => TrainingSnapshotGraphValidator.Validate(
+            byId, Context() with { Mode = SnapshotRestoreMode.ReplayBootstrap }, dataStore: null));
+    }
+
+    [Fact]
     public void Validate_UnknownPlayerTrajectory_Rejects()
     {
         var byId = HappyGraph();

@@ -26,8 +26,9 @@ public sealed class ReplayOrchestratorTests : IDisposable
         var coordinator = new StateSnapshotCoordinator(EventBus.Instance, [Participant(slot)]);
         var initial = new StateSnapshot(1, "2.3.0", 17, 4,
             [new SnapshotComponent("owner", 1, "{\"Value\":\"recorded\"}")]);
+        byte[] initialBytes = StateSnapshotCodec.Encode(initial);
         ReplayCodec.Write(_path, new ReplayFile("2.3.0", ReplayVersionValidator.CurrentDataVersion,
-            1, [], StateSnapshotCodec.Encode(initial)));
+            1, [], initialBytes, ReplayFile.ComputeInitialSnapshotHash(initialBytes)));
         var modes = new PlaybackModeCoordinator();
         var orchestrator = new ReplayOrchestrator(playbackModes: modes, snapshotCoordinator: coordinator);
 
@@ -51,8 +52,9 @@ public sealed class ReplayOrchestratorTests : IDisposable
         var coordinator = new StateSnapshotCoordinator(EventBus.Instance, [failing]);
         var initial = new StateSnapshot(1, "2.3.0", 1, 0,
             [new SnapshotComponent("owner", 1, "{\"Value\":\"recorded\"}")]);
+        byte[] initialBytes = StateSnapshotCodec.Encode(initial);
         ReplayCodec.Write(_path, new ReplayFile("2.3.0", ReplayVersionValidator.CurrentDataVersion,
-            1, [], StateSnapshotCodec.Encode(initial)));
+            1, [], initialBytes, ReplayFile.ComputeInitialSnapshotHash(initialBytes)));
         var recorder = new StubRecorder();
         EventBus.Instance.Recorder = recorder;
         var modes = new PlaybackModeCoordinator();
@@ -82,6 +84,30 @@ public sealed class ReplayOrchestratorTests : IDisposable
         Assert.Same(recorder, EventBus.Instance.Recorder);
         Assert.False(EventBus.Instance.SuppressFrameAdvanced);
         Assert.Equal(RuntimePlaybackMode.TrainingInput, modes.ActiveMode);
+    }
+
+    [Fact]
+    public void StopRecording_StampsInitialSnapshotHashOverCapturedBytes()
+    {
+        var slot = new SnapshotReference<OwnerState>(new OwnerState("live"));
+        var coordinator = new StateSnapshotCoordinator(EventBus.Instance, [Participant(slot)]);
+        var orchestrator = new ReplayOrchestrator(snapshotCoordinator: coordinator);
+
+        orchestrator.StartRecording();
+        ReplayFile file = orchestrator.StopRecording();
+
+        Assert.NotNull(file.InitialSnapshot);
+        Assert.Equal(ReplayFile.ComputeInitialSnapshotHash(file.InitialSnapshot), file.InitialSnapshotHash);
+    }
+
+    [Fact]
+    public void StopRecording_WithoutCoordinatorLeavesSnapshotAndHashNull()
+    {
+        var orchestrator = new ReplayOrchestrator();
+        orchestrator.StartRecording();
+        ReplayFile file = orchestrator.StopRecording();
+        Assert.Null(file.InitialSnapshot);
+        Assert.Null(file.InitialSnapshotHash);
     }
 
     private static JsonStateSnapshotParticipant<OwnerState> Participant(SnapshotReference<OwnerState> slot) =>

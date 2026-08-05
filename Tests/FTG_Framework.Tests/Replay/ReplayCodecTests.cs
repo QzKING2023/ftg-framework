@@ -18,7 +18,7 @@ public sealed class ReplayCodecTests
         [
             new ReplayEntry(0, "FrameAdvancedEvent", "{\"FrameNumber\":0}", phase: 1, sequence: 0, sourceEpoch: 4),
             new ReplayEntry(1, "InputReceivedEvent", "{\"PlayerId\":1,\"InputType\":0,\"Value\":1}", phase: 2, sequence: 0, sourceEpoch: 4)
-        ], initialSnapshot);
+        ], initialSnapshot, ReplayFile.ComputeInitialSnapshotHash(initialSnapshot));
 
         byte[] encoded = ReplayCodec.Encode(file);
         ReplayFile decoded = ReplayCodec.Decode(encoded, "2.3.0");

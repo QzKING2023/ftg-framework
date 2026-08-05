@@ -69,7 +69,22 @@ public static class ReplayCodec
         ReplayVersionValidator.ValidateVersion(file.DataVersion);
         ReplayVersionValidator.ValidateFrameworkVersion(file.FrameworkVersion, currentFrameworkVersion);
         if (file.InitialSnapshot is not null)
+        {
             _ = StateSnapshotCodec.Decode(file.InitialSnapshot);
+            // S4.2 spike contract: the declared initial-snapshot hash is enforced
+            // when the snapshot is present (validate-when-present — legacy files
+            // without the field remain readable).
+            if (string.IsNullOrWhiteSpace(file.InitialSnapshotHash))
+                throw new InvalidDataException("[Replay] InitialSnapshot is present but InitialSnapshotHash is missing.");
+            if (!IsHexDigest(file.InitialSnapshotHash) ||
+                !string.Equals(ReplayFile.ComputeInitialSnapshotHash(file.InitialSnapshot), file.InitialSnapshotHash,
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("[Replay] InitialSnapshotHash does not match the embedded initial snapshot.");
+        }
+        else if (file.InitialSnapshotHash is not null)
+        {
+            throw new InvalidDataException("[Replay] InitialSnapshotHash is present without an initial snapshot.");
+        }
         if (file.Entries is null)
             throw new InvalidDataException("[Replay] Entries are required.");
         var sequences = new Dictionary<(int Frame, int Phase), HashSet<int>>();
@@ -107,6 +122,14 @@ public static class ReplayCodec
     public static void Write(string path, ReplayFile file) => File.WriteAllBytes(path, Encode(file));
     public static ReplayFile Read(string path, string currentFrameworkVersion) =>
         Decode(File.ReadAllBytes(path), currentFrameworkVersion);
+
+    private static bool IsHexDigest(string value)
+    {
+        if (value.Length != 64) return false;
+        foreach (char character in value)
+            if (!Uri.IsHexDigit(character)) return false;
+        return true;
+    }
 
     private sealed record ReplayContainer(int ContainerVersion, string IntegrityHash, byte[] Payload);
 }

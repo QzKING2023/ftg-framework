@@ -341,8 +341,8 @@ development_status:
   # Kickoff authorized by Q1625 on 2026-08-05; Story 4.1 created (ready-for-dev).
   v2-epic-4: in-progress
   v2-4-1-deterministic-balance-testbed: done
-  # v2-4-2: ready-for-dev — story created 2026-08-05 from spike 4.2 GO + checklist P-4.2;
-  # the two spike contract items (InitialSnapshotHash; F+1 driver loop) are bound as slice boundaries.
-  v2-4-2-state-scoped-save-replay: ready-for-dev
+  # v2-4-2: review — all slices S4.2-A..E complete 2026-08-05; evidence/v2-4-2 published
+  # (focused 26/26, regression 1287/1287, godot-smoke + restart-verify exit 0).
+  v2-4-2-state-scoped-save-replay: review
   v2-4-3-unified-toolbox-dock: backlog
   v2-epic-4-retrospective: optional

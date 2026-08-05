@@ -58,10 +58,79 @@ public partial class GameLoop : Node
     public IStateMachine? StateMachine => _stateMachine;
     public IInputHistory? InputHistory => _inputHistory;
     public IPhysicsEngine? PhysicsEngine => _physicsEngine;
+    public IFrameDataEngine? FrameDataEngine => _frameDataEngine;
     internal IDataStore? DataStore => _dataStore;
     public BalanceTrialService? BalanceTrialService => _balanceTrialService;
     public TrainingStateService? TrainingStateService => _trainingStateService;
     public TrainingInputRecordingLibrary? TrainingRecordingLibrary => _trainingRecordingLibrary;
+    public TrainingInputService? TrainingInputService => _trainingInputService;
+
+    // ─── State-scoped replay surface (S4.2-E harness, E4.2-G/E4.2-S) ───
+
+    public bool ReplayIsRecording => _replayOrchestrator?.IsRecording ?? false;
+    public bool ReplayIsPlaying => _replayOrchestrator?.IsPlaying ?? false;
+
+    /// <summary>Restores the selected Story 2.5 save non-observably and starts
+    /// authoritative recording from snapshot.frame + 1.</summary>
+    public bool TryStartStateScopedRecording(string snapshotPath, out string error)
+    {
+        if (_replayOrchestrator is null)
+        {
+            error = "[Replay] Runtime replay orchestrator is unavailable.";
+            return false;
+        }
+        return _replayOrchestrator.TryStartStateScopedRecording(snapshotPath, out error);
+    }
+
+    /// <summary>Stops the state-scoped recording and writes the ReplayFile.</summary>
+    public bool TryStopStateScopedRecording(string replayPath, out string error)
+    {
+        if (_replayOrchestrator is null)
+        {
+            error = "[Replay] Runtime replay orchestrator is unavailable.";
+            return false;
+        }
+        try
+        {
+            ReplayFile file = _replayOrchestrator.StopRecording();
+            ReplayCodec.Write(replayPath, file);
+            error = string.Empty;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    /// <summary>Starts authoritative playback of a state-scoped ReplayFile;
+    /// the driver loop runs inside GameLoop._Process.</summary>
+    public bool TryStartStateScopedPlayback(string replayPath, out string error)
+    {
+        if (_replayOrchestrator is null)
+        {
+            error = "[Replay] Runtime replay orchestrator is unavailable.";
+            return false;
+        }
+        try
+        {
+            _replayOrchestrator.LoadAndStartReplay(replayPath);
+            error = string.Empty;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    public void StopReplay() => _replayOrchestrator?.Stop();
+
+    /// <summary>Externally captured per-frame state hash over the runtime engines
+    /// (S4.2-E4.2-R evidence — never part of the replay container).</summary>
+    public string ComputeFrameHash(int frame, int targetPlayer = 1) => HashRuntimeFrame(frame, targetPlayer);
 
     public override void _Ready()
     {

@@ -44,3 +44,6 @@ FTG_Framework.Tests.UI.EventBusDebugViewModelTests
 FTG_Framework.Tests.UI.Training.ComboDisplayEventBusTests
 FTG_Framework.Tests.UI.Training.ViewModels.PlaybackControlsViewModelTests
 FTG_Framework.Tests.UI.Training.ViewModels.TrainingSaveLoadViewModelTests
+FTG_Framework.Tests.Replay.StateScopedReplayBootstrapTests
+FTG_Framework.Tests.Replay.StateScopedReplayHashTests
+FTG_Framework.Tests.Replay.StateScopedFaultInjectionTests

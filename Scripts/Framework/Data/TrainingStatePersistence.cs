@@ -226,7 +226,7 @@ internal static class TrainingStatePersistence
         _ = ExtractVerifiedContainer(fileBytes, out _);
     }
 
-    private static byte[] ExtractVerifiedContainer(byte[] fileBytes, out string digest)
+    internal static byte[] ExtractVerifiedContainer(byte[] fileBytes, out string digest)
     {
         FileDocumentDto document;
         try

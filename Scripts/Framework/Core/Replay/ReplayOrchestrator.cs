@@ -1,8 +1,10 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 using FTG_Framework.Core.Events;
+using FTG_Framework.Data;
 
 namespace FTG_Framework.Core.Replay;
 
@@ -41,6 +43,18 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
         _snapshotCoordinator = snapshotCoordinator;
         _recorder = new ReplayRecorder();
         _player = new ReplayPlayer();
+        _player.OwnerApplier = ApplyOwnerState;
+    }
+
+    // Reproduces direct StartMove calls performed on the recording side outside
+    // the event stream, so the FrameDataEngine state lands at the same frame as
+    // recorded (hash@k). The Idle guard inside StartMove keeps the call
+    // idempotent when a cancel chain already placed the engine in a phase.
+    private void ApplyOwnerState(object evt)
+    {
+        if (_frameDataEngine is null || evt is not MoveStartedEvent started)
+            return;
+        _frameDataEngine.StartMove(started.PlayerId, started.MoveId);
     }
 
     internal void AttachSnapshotCoordinator(StateSnapshotCoordinator coordinator)
@@ -106,6 +120,109 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
         FrameworkLog.Info?.Invoke("[Replay] Recording started.");
     }
 
+    /// <summary>
+    /// State-scoped recording entry (S4.2-B, S4.2-AC01/AC05): restores the
+    /// selected Story 2.5 save through the non-observable ReplayBootstrap path
+    /// under one fresh reserved epoch (no StateRestored), then attaches the
+    /// authoritative recorder so the first envelope lands at snapshot.frame + 1.
+    /// Every fallible step (file read, container verification, decode, graph
+    /// pre-validation, ownership checks) precedes the restore commit (S4.2-AC13);
+    /// rejection leaves live state, epoch, queues, and the save file unchanged
+    /// (S4.2-AC09).
+    /// </summary>
+    public bool TryStartStateScopedRecording(string snapshotPath, out string error)
+    {
+        if (_recorder.IsRecording)
+        {
+            error = "[Replay] A recording is already active; state-scoped recording is exactly-once.";
+            return false;
+        }
+        if (_player.IsPlaying)
+        {
+            error = "[Replay] Authoritative replay is active; state-scoped recording cannot share the session.";
+            return false;
+        }
+        if (_playbackModes.ActiveMode != RuntimePlaybackMode.None)
+        {
+            error = $"[Replay] {_playbackModes.ActiveMode} owns the session; state-scoped recording cannot begin.";
+            return false;
+        }
+        if (_playbackModes.CapturePlayer != 0)
+        {
+            error = $"[Replay] P{_playbackModes.CapturePlayer} capture is active; state-scoped recording cannot begin.";
+            return false;
+        }
+        if (_snapshotCoordinator is null)
+        {
+            error = "[Replay] State-scoped recording requires a runtime snapshot coordinator.";
+            return false;
+        }
+
+        byte[] fileBytes;
+        try { fileBytes = File.ReadAllBytes(snapshotPath); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            error = $"[Replay] Cannot read snapshot save file: {ex.Message}";
+            return false;
+        }
+        byte[] containerBytes;
+        try
+        {
+            containerBytes = TrainingStatePersistence.ExtractVerifiedContainer(fileBytes, out _);
+        }
+        catch (Exception ex) when (ex is TrainingStateLoadException or InvalidDataException or FormatException)
+        {
+            error = $"[Replay] Snapshot save file failed integrity verification: {ex.Message}";
+            return false;
+        }
+        StateSnapshot snapshot;
+        try
+        {
+            snapshot = StateSnapshotCodec.Decode(containerBytes);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or ArgumentException or FormatException)
+        {
+            error = $"[Replay] Snapshot container is invalid: {ex.Message}";
+            return false;
+        }
+        // S4.2-AC03/AC04: the declared identity/hash and the cross-component
+        // graph are validated before any lifecycle mutation. The verified
+        // container bytes are embedded as-is (no re-encode) so the stamped hash
+        // is byte-exact against the save document's SHA-256.
+        try
+        {
+            _snapshotCoordinator.ValidateSnapshot(snapshot, SnapshotRestoreMode.ReplayBootstrap);
+        }
+        catch (SnapshotPrepareException ex)
+        {
+            error = $"[Replay] Snapshot failed graph validation: {ex.Message}";
+            return false;
+        }
+
+        // The committed swap: non-observable restore under one fresh epoch.
+        try
+        {
+            _snapshotCoordinator.Restore(snapshot, SnapshotRestoreMode.ReplayBootstrap);
+        }
+        catch (Exception ex) when (ex is SnapshotPrepareException or InvalidOperationException)
+        {
+            error = $"[Replay] State-scoped bootstrap restore failed: {ex.Message}";
+            return false;
+        }
+
+        // Attach the recorder AFTER the restore: the orchestrator's own snapshot
+        // participant installs RecordingRuntimeSnapshot(false) for non-Normal
+        // modes, resetting EventBus.Recorder during the swap.
+        _recordingInitialSnapshot = containerBytes;
+        _snapshots.Clear();
+        _recorder.IsRecording = true;
+        EventBus.Instance.Recorder = _recorder;
+        FrameworkLog.Info?.Invoke(
+            $"[Replay] State-scoped recording started from snapshot frame {snapshot.Frame}; resumes at frame {snapshot.Frame + 1}.");
+        error = string.Empty;
+        return true;
+    }
+
     public ReplayFile StopRecording()
     {
         if (!_recorder.IsRecording)
@@ -116,7 +233,8 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
 
         ReplayFile recorded = _recorder.Save();
         var file = new ReplayFile(recorded.FrameworkVersion, recorded.DataVersion,
-            recorded.FrameCount, recorded.Entries, _recordingInitialSnapshot);
+            recorded.FrameCount, recorded.Entries, _recordingInitialSnapshot,
+            _recordingInitialSnapshot is null ? null : ReplayFile.ComputeInitialSnapshotHash(_recordingInitialSnapshot));
         _recordingInitialSnapshot = null;
         FrameworkLog.Info?.Invoke($"[Replay] Recording stopped: {file.EventCount} events over {file.FrameCount} frames.");
         return file;
@@ -149,6 +267,10 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
             : StateSnapshotCodec.Decode(file.InitialSnapshot);
         if (initialSnapshot is not null && _snapshotCoordinator is null)
             throw new InvalidOperationException("[Replay] This replay requires a runtime snapshot coordinator.");
+        // S4.2-AC04: graph pre-validation before acquiring replay ownership so a
+        // rejected candidate performs no lifecycle mutation at all.
+        if (initialSnapshot is not null)
+            _snapshotCoordinator!.ValidateSnapshot(initialSnapshot, SnapshotRestoreMode.ReplayBootstrap);
 
         _playbackModes.Enter(RuntimePlaybackMode.AuthoritativeReplay, EventBus.Instance.LifecycleEpoch);
         IReplayRecorder? previousRecorder = EventBus.Instance.Recorder;
@@ -158,20 +280,33 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
             _player.Load(file);
             _loadedFile = file;
             _currentReplayPath = path;
-            _replayFrame = 0;
+            // S4.2-C: state-scoped files carry an absolute frame domain starting
+            // at snapshot.frame + 1; legacy files start at frame 0.
+            _replayFrame = initialSnapshot is null ? 0 : initialSnapshot.Frame + 1;
             _preReplayFrameNumber = EventBus.Instance.CurrentFrame;
 
             EventBus.Instance.Recorder = null;
             EventBus.Instance.SuppressFrameAdvanced = true;
-            EventBus.Instance.PublishImmediate(new ReplayStartedEvent(file.FrameCount, file.DataVersion));
             if (initialSnapshot is not null)
                 _snapshotCoordinator!.Restore(initialSnapshot, SnapshotRestoreMode.ReplayBootstrap);
+            // ReplayStartedEvent is a lifecycle event: publishing it bumps the
+            // epoch and clears stale queues, so it must wait until the restore
+            // commit succeeds — a failed restore then leaves epoch and queues
+            // unchanged (S4.2-AC09). Published before BeginReplayApply so the
+            // session suppression does not swallow it.
+            EventBus.Instance.PublishImmediate(new ReplayStartedEvent(file.FrameCount, file.DataVersion));
+            // Session-level replay apply: suppresses derived publication of all
+            // registered types for the whole playback session so injected events
+            // execute exactly once (owner-applier + queue dispatch), never
+            // re-broadcast by cancel-chain or frame-update subscribers.
+            EventBus.Instance.BeginReplayApply();
             _playbackModes.RebindEpoch(RuntimePlaybackMode.AuthoritativeReplay, EventBus.Instance.LifecycleEpoch);
             _player.IsPlaying = true;
             FrameworkLog.Info?.Invoke($"[Replay] Playback started: {file.EventCount} events, {file.FrameCount} frames.");
         }
         catch
         {
+            EventBus.Instance.EndReplayApply();
             _player.IsPlaying = false;
             _loadedFile = null;
             _currentReplayPath = null;
@@ -192,6 +327,9 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
         int framesPlayed = _replayFrame;
         _replayFrame = 0;
 
+        // End the session-level suppression BEFORE publishing ReplayEndedEvent,
+        // which must reach its UI observers on the live epoch.
+        EventBus.Instance.EndReplayApply();
         EventBus.Instance.SuppressFrameAdvanced = false;
 
         StateSnapshot? finalSnapshot = _snapshotCoordinator is null

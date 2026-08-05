@@ -36,3 +36,21 @@ On Unix-like systems, use the equivalent `cp` commands and invoke the installed
 .NET-enabled Godot console binary. Success prints `[ScaffoldSmoke] PASS` and exits
 zero. The harness waits up to 600 rendered frames for training initialization,
 then runs at a 1280×720 root viewport.
+
+## Story 4.1 balance trial smoke (E4.1-G)
+
+The balance trial harness proves the deterministic balance testbed end to end in
+a generated project: it saves a training snapshot containing a real recording,
+prepares and starts a trial through the runtime `BalanceTrialService`, and waits
+for the observation window (120 frames) to complete with per-frame hashes,
+initiations, and metrics.
+
+```powershell
+Copy-Item Scaffold/verification/BalanceTrialSmokeTest.cs "$output/MyFighter/Scripts/"
+Copy-Item Scaffold/verification/balance_trial_smoke.tscn "$output/MyFighter/"
+dotnet build "$output/MyFighter/MyFighter.csproj" --no-restore
+& "D:\path\to\Godot_mono_console.exe" --headless --path "$output/MyFighter" res://balance_trial_smoke.tscn
+```
+
+Success prints `[BalanceTrialSmoke] PASS` (with window, damage, combo, initiation
+count, terminal move, position, and committed data versions) and exits zero.

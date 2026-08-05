@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using FTG_Framework.Core.Balance;
 using FTG_Framework.Core.Events;
 using FTG_Framework.Core.Replay;
 using FTG_Framework.Data;
@@ -45,11 +46,22 @@ public partial class GameLoop : Node
     private RuntimeTuningService? _runtimeTuningService;
     private RuntimeTuningSessionAuthority? _runtimeTuningSessions;
     private TrainingStateService? _trainingStateService;
+    private FrameDataEngine? _frameDataEngineInstance;
+    private StateMachine? _stateMachineInstance;
+    private PhysicsEngine? _physicsEngineInstance;
+    private InputHistory? _inputHistoryInstance;
+    private ChargeTracker? _chargeTrackerInstance;
+    private ComboStateTracker? _comboStateTracker;
+    private PlaybackModeCoordinator? _playbackModes;
+    private BalanceTrialService? _balanceTrialService;
 
     public IStateMachine? StateMachine => _stateMachine;
     public IInputHistory? InputHistory => _inputHistory;
     public IPhysicsEngine? PhysicsEngine => _physicsEngine;
     internal IDataStore? DataStore => _dataStore;
+    public BalanceTrialService? BalanceTrialService => _balanceTrialService;
+    public TrainingStateService? TrainingStateService => _trainingStateService;
+    public TrainingInputRecordingLibrary? TrainingRecordingLibrary => _trainingRecordingLibrary;
 
     public override void _Ready()
     {
@@ -118,6 +130,7 @@ public partial class GameLoop : Node
             var stateMachine = new global::FTG_Framework.Engine.StateMachine.StateMachine(_dataStore);
             RegisterModule(stateMachine);
             _stateMachine = stateMachine;
+            _stateMachineInstance = stateMachine;
 
             stateMachine.RegisterStateProfile(CharacterState.Idle, "default");
             stateMachine.RegisterStateProfile(CharacterState.Hitstun, "default");
@@ -148,10 +161,12 @@ public partial class GameLoop : Node
             var inputHistory = new global::FTG_Framework.Input.InputHistory(capacity: 600);
             RegisterModule(inputHistory);
             _inputHistory = inputHistory;
+            _inputHistoryInstance = inputHistory;
 
             var chargeTracker = new global::FTG_Framework.Input.ChargeTracker(inputHistory);
             RegisterModule(chargeTracker);
             _chargeTracker = chargeTracker;
+            _chargeTrackerInstance = chargeTracker;
 
             var leniencyMatcher = new global::FTG_Framework.Input.InputLeniencyMatcher(inputHistory);
             RegisterDefaultMoves(leniencyMatcher);
@@ -170,10 +185,12 @@ public partial class GameLoop : Node
             var frameDataEngine = new FrameDataEngine(_dataStore);
             RegisterModule(frameDataEngine);
             _frameDataEngine = frameDataEngine;
+            _frameDataEngineInstance = frameDataEngine;
 
             var physicsEngine = new PhysicsEngine(_dataStore, frameDataEngine, stateMachine);
             RegisterModule(physicsEngine);
             _physicsEngine = physicsEngine;
+            _physicsEngineInstance = physicsEngine;
 
             var comboExecutor = new ComboExecutor(_dataStore, frameDataEngine);
             _comboExecutor = comboExecutor;
@@ -181,10 +198,12 @@ public partial class GameLoop : Node
 
             var comboStateTracker = new ComboStateTracker(_dataStore);
             RegisterModule(comboStateTracker);
+            _comboStateTracker = comboStateTracker;
 
             _socdResolver = new global::FTG_Framework.Input.DefaultSOCDResolver();
 
             var playbackModes = new PlaybackModeCoordinator();
+            _playbackModes = playbackModes;
             _trainingRecordingLibrary = new TrainingInputRecordingLibrary();
             _trainingInputService = new TrainingInputService(
                 RecordCanonicalInput,
@@ -206,6 +225,22 @@ public partial class GameLoop : Node
                 snapshotCoordinator,
                 () => EventBus.Instance.CurrentFrame,
                 () => EventBus.Instance.LifecycleEpoch);
+            _balanceTrialService = new BalanceTrialService(
+                _trainingStateService,
+                _trainingInputService,
+                _trainingRecordingLibrary,
+                _playbackModes,
+                _dataStore,
+                currentFrame: () => EventBus.Instance.CurrentFrame,
+                currentEpoch: () => EventBus.Instance.LifecycleEpoch,
+                versions: () =>
+                {
+                    var store = (DataStore)_dataStore;
+                    return new BalanceDataVersions(store.MoveDatasetVersion, store.PhysicsDatasetVersion);
+                },
+                frameHash: HashRuntimeFrame,
+                playerPositionX: player => (int)RuntimePlayerPositionX(player),
+                playerTerminalMoveId: player => _frameDataEngineInstance?.GetCurrentMoveId(player));
             replayOrchestrator.AttachSnapshotCoordinator(snapshotCoordinator);
             _replayOrchestrator = replayOrchestrator;
             _matchInitializedHandler = e =>
@@ -405,6 +440,8 @@ public partial class GameLoop : Node
 
     public override void _ExitTree()
     {
+        _balanceTrialService?.Shutdown();
+        _balanceTrialService = null;
         _trainingInputService?.Shutdown();
         _trainingInputService = null;
         _trainingRecordingLibrary = null;
@@ -424,6 +461,25 @@ public partial class GameLoop : Node
         for (int i = modules.Count - 1; i >= 0; i--)
             modules[i].Shutdown();
         modules.Clear();
+    }
+
+    private string HashRuntimeFrame(int frame, int targetPlayer)
+    {
+        if (_frameDataEngineInstance is null || _stateMachineInstance is null ||
+            _physicsEngineInstance is null || _comboStateTracker is null ||
+            _inputHistoryInstance is null || _chargeTrackerInstance is null)
+            throw new InvalidOperationException(
+                "[Trial] Frame hash requested before runtime engines were initialized.");
+        return BalanceFrameHash.Compute(frame, targetPlayer, _frameDataEngineInstance, _stateMachineInstance,
+            _physicsEngineInstance, _comboStateTracker, _inputHistoryInstance, _chargeTrackerInstance);
+    }
+
+    private float RuntimePlayerPositionX(int player)
+    {
+        PhysicsEngine? physics = _physicsEngineInstance;
+        if (physics is null) return 0;
+        var snapshot = physics.CaptureRuntimeSnapshot();
+        return snapshot.Participants.TryGetValue(player, out var participant) ? participant.WorldX : 0;
     }
 
     internal static bool ShouldProcessFrame(bool paused, bool stepRequested) => !paused || stepRequested;
@@ -522,6 +578,10 @@ public partial class GameLoop : Node
 
         Register("5LP", ButtonValue.A, MoveCategory.Normal, DirectionValue.Neutral);
         Register("5HP", ButtonValue.B, MoveCategory.Normal, DirectionValue.Neutral);
+        // 236P shares the B button with 5HP but differs by direction sequence
+        // (neutral vs down-forward quarter circle), so both resolve unambiguously.
+        Register("236P", ButtonValue.B, MoveCategory.Special,
+            DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward);
         Register("dp_c", ButtonValue.C, MoveCategory.Special,
             DirectionValue.Forward, DirectionValue.Down, DirectionValue.DownForward);
         Register("dp_d", ButtonValue.D, MoveCategory.Special,

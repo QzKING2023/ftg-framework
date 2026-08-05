@@ -41,10 +41,12 @@ public class GameLoopInputRegistrationTests
         GameLoop.RegisterDefaultMoves(matcher);
         var moves = matcher.GetRegisteredMoves();
 
-        Assert.Equal(5, moves.Count);
-        Assert.Equal(5, moves.Select(move => move.MoveId).Distinct().Count());
+        Assert.Equal(6, moves.Count);
+        Assert.Equal(6, moves.Select(move => move.MoveId).Distinct().Count());
         AssertMove("5LP", ButtonValue.A, MoveCategory.Normal, DirectionValue.Neutral);
         AssertMove("5HP", ButtonValue.B, MoveCategory.Normal, DirectionValue.Neutral);
+        AssertMove("236P", ButtonValue.B, MoveCategory.Special,
+            DirectionValue.Down, DirectionValue.DownForward, DirectionValue.Forward);
         AssertMove("dp_c", ButtonValue.C, MoveCategory.Special,
             DirectionValue.Forward, DirectionValue.Down, DirectionValue.DownForward);
         AssertMove("dp_d", ButtonValue.D, MoveCategory.Special,

@@ -22,3 +22,10 @@
 
 - Preserve the unrelated `project.godot` animation-library importer root-scale setting for its owning workstream rather than changing user-owned baseline state during Story 2.4-E review.
 - Repair or remove the pre-existing untracked mojibake `workflow.md` in a documentation-cleanup workstream; it is not referenced by Story 2.4-E evidence.
+
+## Deferred from: code review of v2-4-1-deterministic-balance-testbed (2026-08-05)
+
+- The final window frame's Phase 3/4 metrics (damage, initiations, combo-end) are dropped because the trial completes at its FrameAdvanced before same-frame event dispatch. Practically unreachable (the window ends 120 frames after terminal); a fix ripples window-count semantics (HashedFrames +1, smoke/evidence refresh) — revisit when window semantics are reworked.
+- No stall detection: a paused host that stops dispatching FrameAdvanced strands the trial in Running until external Cancel/Shutdown. Host-side policy question; revisit when Story 4.3 dock hosting defines trial lifecycle integration.
+- AC02 "validate against both candidate datasets" letter not implemented: validation runs per trial against the live current dataset. The letter would require historical dataset access (versioned snapshots of committed data); the practical per-trial contract is covered by existing tests.
+- AC13 letter: `TryStartPlayback` remains a fallible operation after the committed restore swap. It is fully pre-validated by Prepare; a post-swap failure is an invariant-violation detector that marks the trial Failed (never silent). The story documents this interpretation.

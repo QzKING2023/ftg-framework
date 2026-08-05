@@ -44,6 +44,7 @@
 
 generated: 2026-07-27
 last_updated: 2026-08-05
+# v2-4-1: done — code review closed 2026-08-05 (18 patch findings applied, 4 deferred)
 # Note: Story 3.0 (Replay Spike) is intentionally started before Epic 1 per Implementation Readiness Advisory #1.
 # The spike's go/no-go decision may affect event design across all epics.
 
@@ -339,7 +340,9 @@ development_status:
   # itemized sign-off in planning-artifacts/epic-4-risk-and-evidence-checklist.md §13.
   # Kickoff authorized by Q1625 on 2026-08-05; Story 4.1 created (ready-for-dev).
   v2-epic-4: in-progress
-  v2-4-1-deterministic-balance-testbed: ready-for-dev
-  v2-4-2-state-scoped-save-replay: backlog
+  v2-4-1-deterministic-balance-testbed: done
+  # v2-4-2: ready-for-dev — story created 2026-08-05 from spike 4.2 GO + checklist P-4.2;
+  # the two spike contract items (InitialSnapshotHash; F+1 driver loop) are bound as slice boundaries.
+  v2-4-2-state-scoped-save-replay: ready-for-dev
   v2-4-3-unified-toolbox-dock: backlog
   v2-epic-4-retrospective: optional

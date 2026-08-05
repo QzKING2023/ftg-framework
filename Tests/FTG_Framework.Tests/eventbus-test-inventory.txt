@@ -1,3 +1,5 @@
+FTG_Framework.Tests.BalanceReferencePathTests
+FTG_Framework.Tests.BalanceTrialServiceTests
 FTG_Framework.Tests.CancelWindowConsumptionIntegrationTests
 FTG_Framework.Tests.CancelWindowTrackerTests
 FTG_Framework.Tests.ComboExecutorCancelTests

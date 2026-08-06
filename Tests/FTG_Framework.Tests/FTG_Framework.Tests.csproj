@@ -4,7 +4,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- Godot source generators run transitively in this test project (it references the
+         Godot SDK project). GodotPluginsInitializerGenerator emits a second Main (CS0436)
+         and ScriptPathAttributeGenerator warns without GodotProjectDir. The test project
+         declares no Godot classes, so all Godot generators are disabled. The per-name
+         GodotDisabledSourceGenerators list is not used: it splits on ';' which the
+         editorconfig loses (godot #91999). -->
+    <GodotSourceGenerators>disabled</GodotSourceGenerators>
   </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="GodotSourceGenerators" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />

@@ -154,11 +154,15 @@ public partial class ToolboxDock : VBoxContainer
     private void BuildUi()
     {
         Name = "FTG Framework Toolbox";
-        CustomMinimumSize = new Vector2(920, 420);
+        CustomMinimumSize = new Vector2(760, 360);
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        var toolbar = new HBoxContainer();
-        toolbar.AddChild(new Label { Text = "FTG Framework Toolbox", SizeFlagsHorizontal = SizeFlags.ExpandFill });
+        // Top bar: title and panel toggles flow naturally and wrap at narrow dock
+        // widths or when more panel kinds are added (content-sized, no ExpandFill
+        // title hogging the row). The dock's native title bar already shows the
+        // toolbox name, so the in-bar title stays compact.
+        var toolbar = new HFlowContainer();
+        toolbar.AddChild(new Label { Text = "FTG Framework Toolbox", MouseFilter = MouseFilterEnum.Ignore });
         foreach (ToolboxPanelKind kind in AllKinds)
         {
             ToolboxPanelLayoutEntry entry = ToolboxLayoutService.EntryFor(_layout, kind);
@@ -176,7 +180,13 @@ public partial class ToolboxDock : VBoxContainer
             toggle.Toggled += pressed => TogglePanel(kind, pressed);
             toolbar.AddChild(toggle);
         }
+        // The status label must fill the row's remaining width: with WordSmart
+        // autowrap its minimum width shrinks to the longest word, so without
+        // ExpandFill the flow/hbox container would size it to a narrow sliver
+        // and the text would wrap vertically ("Toolbox / ready.").
         _statusLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _statusLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _statusLabel.HorizontalAlignment = HorizontalAlignment.Right;
         toolbar.AddChild(_statusLabel);
         AddChild(toolbar);
 

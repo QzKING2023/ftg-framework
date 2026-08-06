@@ -1,4 +1,10 @@
 #nullable enable
+// xUnit1031 (no blocking task operations in test methods) is intentionally disabled here:
+// EventBus's test scope is bound to the owning test thread (EventBus.BeginTestScope/
+// EndTestScope, EventBus.EnsureTestOwner) and xUnit v2 async tests may resume on a
+// different thread after await, which would trip that guard in the class Dispose. The
+// waits below poll on the same thread for the same reason.
+#pragma warning disable xUnit1031
 using System;
 using System.IO;
 using System.Threading.Tasks;

@@ -74,7 +74,7 @@ public class StateMachineTests : IDisposable
             Assert.Equal([CharacterState.Idle], stackChanged!.Value.OldSnapshot);
             Assert.Equal([CharacterState.Idle, CharacterState.JumpStartup], stackChanged.Value.NewSnapshot);
             Assert.Equal(CharacterState.Idle, StateStackSnapshot.Empty.TopOrIdle);
-            Assert.False(changed.Value.NewSnapshot is IList<CharacterState>);
+            Assert.IsNotAssignableFrom<IList<CharacterState>>(changed.Value.NewSnapshot);
         });
     }
 

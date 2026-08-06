@@ -35,7 +35,7 @@ public sealed class TrainingSaveLoadViewModelTests : IDisposable
             service,
             name => Path.Combine(dir, name.Replace(" ", "", StringComparison.Ordinal) + ".json"),
             () => Directory.Exists(dir)
-                ? Directory.GetFiles(dir, "*.json").Select(Path.GetFileNameWithoutExtension).ToArray()
+                ? Directory.GetFiles(dir, "*.json").Select(path => Path.GetFileNameWithoutExtension(path)!).ToArray()
                 : Array.Empty<string>(),
             name => name.Replace(" ", "", StringComparison.Ordinal));
         return (viewModel, dir);

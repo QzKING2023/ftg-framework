@@ -350,6 +350,8 @@ development_status:
   # measurement interval fixed (600 ProcessFrame() calls, seeds 2202-2206).
   # All slices S4.3-A..E complete 2026-08-06; evidence/v2-4-3 published (focused
   # 86/86, regression 1367/1367 across seeds 2202-2206); Godot editor checklist
-  # published, interactive execution by Q1625. Status: review.
-  v2-4-3-unified-toolbox-dock: review
+  # published, interactive execution by Q1625. Manual acceptance passed 2026-08-06
+  # (post-delivery hardening: 0 build warnings via GodotSourceGenerators=disabled
+  # + warning fixes; toolbox top-bar UI fix; regression 1367/1367 re-verified).
+  v2-4-3-unified-toolbox-dock: done
   v2-epic-4-retrospective: optional

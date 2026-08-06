@@ -145,7 +145,7 @@ public class ReplayRecorderTests
         }
         finally
         {
-            FrameworkLog.Info = null;
+            FrameworkLog.Info = _ => { };
         }
     }
 }

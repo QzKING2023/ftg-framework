@@ -70,10 +70,15 @@ public sealed class InitialSnapshotHashContractTests : IDisposable
     }
 
     [Fact]
-    public void Decode_SnapshotWithoutHash_IsRejected()
+    public void Decode_SnapshotWithoutHash_AcceptedAsLegacy()
     {
-        Assert.Throws<InvalidDataException>(() =>
-            ReplayCodec.Decode(ReplayCodec.Encode(FileWithSnapshot(SnapshotBytes(), null)), "2.3.0"));
+        // S4.2-C (relaxed): snapshot-bearing files recorded before the hash
+        // field existed remain readable — the hash is validate-when-present.
+        byte[] snapshotBytes = SnapshotBytes();
+        ReplayFile decoded = ReplayCodec.Decode(
+            ReplayCodec.Encode(FileWithSnapshot(snapshotBytes, null)), "2.3.0");
+        Assert.Equal(snapshotBytes, decoded.InitialSnapshot);
+        Assert.Null(decoded.InitialSnapshotHash);
     }
 
     [Fact]
@@ -156,5 +161,45 @@ public sealed class InitialSnapshotHashContractTests : IDisposable
         var file = new ReplayFile("2.3.0", ReplayVersionValidator.CurrentDataVersion, 1,
             [new ReplayEntry(0, "FrameAdvancedEvent", "{\"FrameNumber\":0}")], containerBytes, wrong);
         Assert.Throws<InvalidDataException>(() => ReplayCodec.Decode(ReplayCodec.Encode(file), "2.3.0"));
+    }
+
+    [Fact]
+    public void Decode_StateScopedWithoutSnapshot_IsRejected()
+    {
+        var file = new ReplayFile("2.3.0", ReplayVersionValidator.CurrentDataVersion, 1,
+            [new ReplayEntry(0, "FrameAdvancedEvent", "{\"FrameNumber\":0}")],
+            stateScoped: true);
+        Assert.Throws<InvalidDataException>(() => ReplayCodec.Decode(ReplayCodec.Encode(file), "2.3.0"));
+    }
+
+    [Fact]
+    public void Decode_StateScopedWithoutHash_IsRejected()
+    {
+        byte[] snapshotBytes = SnapshotBytes();
+        var file = new ReplayFile("2.3.0", ReplayVersionValidator.CurrentDataVersion, 1,
+            [new ReplayEntry(0, "FrameAdvancedEvent", "{\"FrameNumber\":0}")], snapshotBytes, null, true);
+        Assert.Throws<InvalidDataException>(() => ReplayCodec.Decode(ReplayCodec.Encode(file), "2.3.0"));
+    }
+
+    [Fact]
+    public void Decode_StateScopedEntryPrecedingSnapshotDomain_IsRejected()
+    {
+        byte[] snapshotBytes = SnapshotBytes(); // snapshot.Frame == 0 → domain starts at 1
+        string hash = ReplayFile.ComputeInitialSnapshotHash(snapshotBytes);
+        var file = new ReplayFile("2.3.0", ReplayVersionValidator.CurrentDataVersion, 2,
+            [new ReplayEntry(0, "FrameAdvancedEvent", "{\"FrameNumber\":0}")], snapshotBytes, hash, true);
+        Assert.Throws<InvalidDataException>(() => ReplayCodec.Decode(ReplayCodec.Encode(file), "2.3.0"));
+    }
+
+    [Fact]
+    public void Decode_StateScopedEntryWithinSnapshotDomain_IsAccepted()
+    {
+        byte[] snapshotBytes = SnapshotBytes(); // snapshot.Frame == 0 → domain starts at 1
+        string hash = ReplayFile.ComputeInitialSnapshotHash(snapshotBytes);
+        var file = new ReplayFile("2.3.0", ReplayVersionValidator.CurrentDataVersion, 2,
+            [new ReplayEntry(1, "FrameAdvancedEvent", "{\"FrameNumber\":1}")], snapshotBytes, hash, true);
+        ReplayFile decoded = ReplayCodec.Decode(ReplayCodec.Encode(file), "2.3.0");
+        Assert.True(decoded.StateScoped);
+        Assert.Equal(1, decoded.Entries[0].Frame);
     }
 }

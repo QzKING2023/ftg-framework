@@ -1,5 +1,5 @@
 # generated: 2026-07-27
-# last_updated: 2026-08-05
+# last_updated: 2026-08-06
 # project: ftg-framework
 # project_key: NOKEY
 # tracking_system: file-system
@@ -43,8 +43,9 @@
 # V2 entries use v2- prefix to avoid key collision with V1 epics (V1 epics 1-3 are done).
 
 generated: 2026-07-27
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 # v2-4-1: done — code review closed 2026-08-05 (18 patch findings applied, 4 deferred)
+# v2-4-2: done — code review closed 2026-08-06 (11 patch findings applied incl. AC06 epoch-rebind fix, 4 deferred); full regression 1293/1293
 # Note: Story 3.0 (Replay Spike) is intentionally started before Epic 1 per Implementation Readiness Advisory #1.
 # The spike's go/no-go decision may affect event design across all epics.
 
@@ -341,8 +342,9 @@ development_status:
   # Kickoff authorized by Q1625 on 2026-08-05; Story 4.1 created (ready-for-dev).
   v2-epic-4: in-progress
   v2-4-1-deterministic-balance-testbed: done
-  # v2-4-2: review — all slices S4.2-A..E complete 2026-08-05; evidence/v2-4-2 published
-  # (focused 26/26, regression 1287/1287, godot-smoke + restart-verify exit 0).
-  v2-4-2-state-scoped-save-replay: review
+  # v2-4-2: done — all slices S4.2-A..E complete 2026-08-05; evidence/v2-4-2 published
+  # (focused 26/26, regression 1287/1287, godot-smoke + restart-verify exit 0);
+  # code review closed 2026-08-06 (11 patch findings applied, 4 deferred); regression 1293/1293.
+  v2-4-2-state-scoped-save-replay: done
   v2-4-3-unified-toolbox-dock: backlog
   v2-epic-4-retrospective: optional

@@ -90,18 +90,7 @@ public partial class GameLoop : Node
             error = "[Replay] Runtime replay orchestrator is unavailable.";
             return false;
         }
-        try
-        {
-            ReplayFile file = _replayOrchestrator.StopRecording();
-            ReplayCodec.Write(replayPath, file);
-            error = string.Empty;
-            return true;
-        }
-        catch (Exception ex)
-        {
-            error = ex.Message;
-            return false;
-        }
+        return _replayOrchestrator.TryStopAndWriteReplay(replayPath, out error);
     }
 
     /// <summary>Starts authoritative playback of a state-scoped ReplayFile;

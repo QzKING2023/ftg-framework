@@ -72,7 +72,18 @@ public sealed class StateSnapshotCoordinator
             throw new SnapshotPrepareException("container.framework_version",
                 $"Snapshot framework '{snapshot.FrameworkVersion}' is incompatible with '{_frameworkVersion}'.");
 
-        var byId = snapshot.Components.ToDictionary(c => c.Discriminator, StringComparer.Ordinal);
+        IReadOnlyDictionary<string, SnapshotComponent> byId;
+        try
+        {
+            byId = snapshot.Components.ToDictionary(c => c.Discriminator, StringComparer.Ordinal);
+        }
+        catch (ArgumentException ex)
+        {
+            // Duplicate discriminator in the candidate: report as a catalog
+            // defect, never leak the raw dictionary exception.
+            throw new SnapshotPrepareException("component_catalog",
+                "Snapshot contains duplicate component discriminators.", ex);
+        }
         var participantByDiscriminator = _participants.ToDictionary(
             participant => participant.Discriminator, StringComparer.Ordinal);
         string[] unknown = byId.Keys.Where(id => !participantByDiscriminator.ContainsKey(id)).ToArray();
@@ -123,7 +134,16 @@ public sealed class StateSnapshotCoordinator
         {
             _faultInjector?.Invoke(SnapshotFaultPoint.ReserveEpoch, "event_bus");
             ulong reservedEpoch = _eventBus.ReserveLifecycleEpoch();
-            var byId = snapshot.Components.ToDictionary(c => c.Discriminator, StringComparer.Ordinal);
+            IReadOnlyDictionary<string, SnapshotComponent> byId;
+            try
+            {
+                byId = snapshot.Components.ToDictionary(c => c.Discriminator, StringComparer.Ordinal);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new SnapshotPrepareException("component_catalog",
+                    "Snapshot contains duplicate component discriminators.", ex);
+            }
             var participantByDiscriminator = _participants.ToDictionary(
                 participant => participant.Discriminator, StringComparer.Ordinal);
             string[] unknown = byId.Keys.Where(id => !participantByDiscriminator.ContainsKey(id)).ToArray();

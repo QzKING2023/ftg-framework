@@ -68,22 +68,36 @@ public static class ReplayCodec
     {
         ReplayVersionValidator.ValidateVersion(file.DataVersion);
         ReplayVersionValidator.ValidateFrameworkVersion(file.FrameworkVersion, currentFrameworkVersion);
+        StateSnapshot? initialSnapshot = null;
         if (file.InitialSnapshot is not null)
         {
-            _ = StateSnapshotCodec.Decode(file.InitialSnapshot);
-            // S4.2 spike contract: the declared initial-snapshot hash is enforced
-            // when the snapshot is present (validate-when-present — legacy files
-            // without the field remain readable).
-            if (string.IsNullOrWhiteSpace(file.InitialSnapshotHash))
-                throw new InvalidDataException("[Replay] InitialSnapshot is present but InitialSnapshotHash is missing.");
-            if (!IsHexDigest(file.InitialSnapshotHash) ||
-                !string.Equals(ReplayFile.ComputeInitialSnapshotHash(file.InitialSnapshot), file.InitialSnapshotHash,
-                    StringComparison.OrdinalIgnoreCase))
+            initialSnapshot = StateSnapshotCodec.Decode(file.InitialSnapshot);
+            // S4.2 spike contract (validate-when-present, relaxed for legacy):
+            // the declared initial-snapshot hash is enforced when present —
+            // files recorded before the field existed remain readable.
+            if (file.InitialSnapshotHash is not null &&
+                (!IsHexDigest(file.InitialSnapshotHash) ||
+                 !string.Equals(ReplayFile.ComputeInitialSnapshotHash(file.InitialSnapshot), file.InitialSnapshotHash,
+                     StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidDataException("[Replay] InitialSnapshotHash does not match the embedded initial snapshot.");
         }
         else if (file.InitialSnapshotHash is not null)
         {
             throw new InvalidDataException("[Replay] InitialSnapshotHash is present without an initial snapshot.");
+        }
+        // S4.2-C format marker: state-scoped files are recorded from a Story 2.5
+        // training snapshot and must carry the snapshot plus its stamped hash,
+        // with an absolute frame domain starting at snapshot.frame + 1.
+        // Ordinary recordings and legacy files start at frame 0.
+        if (file.StateScoped)
+        {
+            if (initialSnapshot is null)
+                throw new InvalidDataException("[Replay] State-scoped replay requires an embedded initial snapshot.");
+            if (string.IsNullOrWhiteSpace(file.InitialSnapshotHash))
+                throw new InvalidDataException("[Replay] State-scoped replay requires an initial snapshot hash.");
+            if (file.FrameCount <= initialSnapshot.Frame)
+                throw new InvalidDataException(
+                    $"[Replay] State-scoped FrameCount {file.FrameCount} must exceed snapshot frame {initialSnapshot.Frame}.");
         }
         if (file.Entries is null)
             throw new InvalidDataException("[Replay] Entries are required.");
@@ -95,6 +109,9 @@ public static class ReplayCodec
             ReplayEntry entry = candidate;
             if (entry.Frame >= file.FrameCount)
                 throw new InvalidDataException($"[Replay] Event frame {entry.Frame} is outside FrameCount {file.FrameCount}.");
+            if (file.StateScoped && entry.Frame < initialSnapshot!.Frame + 1)
+                throw new InvalidDataException(
+                    $"[Replay] Event frame {entry.Frame} precedes the state-scoped domain starting at {initialSnapshot.Frame + 1}.");
             Type? eventType = EventTypeRegistry.Resolve(entry.EventType);
             if (eventType is null)
                 throw new InvalidDataException($"[Replay] Unknown event discriminator '{entry.EventType}'.");

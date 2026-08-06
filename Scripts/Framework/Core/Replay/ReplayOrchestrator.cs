@@ -27,6 +27,8 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
     private string? _currentReplayPath;
     private int _preReplayFrameNumber;
     private byte[]? _recordingInitialSnapshot;
+    private bool _stateScopedRecording;
+    private ReplayFile? _pendingReplayWrite;
 
     public bool IsRecording => _recorder.IsRecording;
     public bool IsPlaying => _player.IsPlaying;
@@ -110,6 +112,7 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
             return;
         }
 
+        _stateScopedRecording = false;
         _recordingInitialSnapshot = _snapshotCoordinator is null
             ? null
             : StateSnapshotCodec.Encode(_snapshotCoordinator.Capture(
@@ -165,6 +168,13 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
             error = $"[Replay] Cannot read snapshot save file: {ex.Message}";
             return false;
         }
+        // S4.2-AC13: bound the candidate save before any validation or lifecycle
+        // mutation; the persistence boundary enforces the same limit on write.
+        if (fileBytes.Length > TrainingStatePersistence.MaxFileBytes)
+        {
+            error = $"[Replay] Snapshot save file exceeds the {TrainingStatePersistence.MaxFileBytes}-byte P-SAVE limit.";
+            return false;
+        }
         byte[] containerBytes;
         try
         {
@@ -214,6 +224,7 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
         // participant installs RecordingRuntimeSnapshot(false) for non-Normal
         // modes, resetting EventBus.Recorder during the swap.
         _recordingInitialSnapshot = containerBytes;
+        _stateScopedRecording = true;
         _snapshots.Clear();
         _recorder.IsRecording = true;
         EventBus.Instance.Recorder = _recorder;
@@ -234,10 +245,41 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
         ReplayFile recorded = _recorder.Save();
         var file = new ReplayFile(recorded.FrameworkVersion, recorded.DataVersion,
             recorded.FrameCount, recorded.Entries, _recordingInitialSnapshot,
-            _recordingInitialSnapshot is null ? null : ReplayFile.ComputeInitialSnapshotHash(_recordingInitialSnapshot));
+            _recordingInitialSnapshot is null ? null : ReplayFile.ComputeInitialSnapshotHash(_recordingInitialSnapshot),
+            _stateScopedRecording);
         _recordingInitialSnapshot = null;
+        _stateScopedRecording = false;
         FrameworkLog.Info?.Invoke($"[Replay] Recording stopped: {file.EventCount} events over {file.FrameCount} frames.");
         return file;
+    }
+
+    /// <summary>
+    /// Stop-and-persist with retry (S4.2-AC13 stop path): StopRecording is the
+    /// one-shot committed swap, so a failed Write must not strand the produced
+    /// file — the ReplayFile is retained and a retry rewrites it without
+    /// re-detaching.
+    /// </summary>
+    public bool TryStopAndWriteReplay(string replayPath, out string error)
+    {
+        try
+        {
+            if (_recorder.IsRecording)
+                _pendingReplayWrite = StopRecording();
+            else if (_pendingReplayWrite is null)
+            {
+                error = "[Replay] No active recording to stop.";
+                return false;
+            }
+            ReplayCodec.Write(replayPath, _pendingReplayWrite);
+            _pendingReplayWrite = null;
+            error = string.Empty;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
     }
 
     /// <summary>
@@ -280,9 +322,10 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
             _player.Load(file);
             _loadedFile = file;
             _currentReplayPath = path;
-            // S4.2-C: state-scoped files carry an absolute frame domain starting
-            // at snapshot.frame + 1; legacy files start at frame 0.
-            _replayFrame = initialSnapshot is null ? 0 : initialSnapshot.Frame + 1;
+            // S4.2-C: state-scoped files (format marker) carry an absolute frame
+            // domain starting at snapshot.frame + 1; ordinary recordings and
+            // legacy files start at frame 0.
+            _replayFrame = file.StateScoped ? initialSnapshot!.Frame + 1 : 0;
             _preReplayFrameNumber = EventBus.Instance.CurrentFrame;
 
             EventBus.Instance.Recorder = null;
@@ -313,7 +356,10 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
             _replayFrame = 0;
             EventBus.Instance.Recorder = previousRecorder;
             EventBus.Instance.SuppressFrameAdvanced = previousSuppression;
-            _playbackModes.Exit(RuntimePlaybackMode.AuthoritativeReplay);
+            // Exit throws on mode mismatch; guard so cleanup cannot mask the
+            // original failure.
+            if (_playbackModes.ActiveMode == RuntimePlaybackMode.AuthoritativeReplay)
+                _playbackModes.Exit(RuntimePlaybackMode.AuthoritativeReplay);
             throw;
         }
     }
@@ -332,11 +378,16 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
         EventBus.Instance.EndReplayApply();
         EventBus.Instance.SuppressFrameAdvanced = false;
 
-        StateSnapshot? finalSnapshot = _snapshotCoordinator is null
-            ? null
-            : _snapshotCoordinator.Capture(Math.Max(0, framesPlayed - 1), "2.3.0");
+        // S4.2 failure path (P4): every fallible step between detach and the
+        // mode exit must sit inside the try so a mid-stop exception cannot
+        // strand AuthoritativeReplay; Exit is guarded because it throws on mode
+        // mismatch and must not mask the original failure.
+        StateSnapshot? finalSnapshot = null;
         try
         {
+            finalSnapshot = _snapshotCoordinator is null
+                ? null
+                : _snapshotCoordinator.Capture(Math.Max(0, framesPlayed - 1), "2.3.0");
             EventBus.Instance.PublishImmediate(new ReplayEndedEvent(framesPlayed));
             if (finalSnapshot is not null)
                 _snapshotCoordinator!.Restore(finalSnapshot, SnapshotRestoreMode.ReplayHandoff);
@@ -347,7 +398,11 @@ internal sealed class ReplayOrchestrator : IStateSnapshotParticipant
                 EventBus.Instance.RewindFrameCounter(_preReplayFrameNumber);
             }
         }
-        finally { _playbackModes.Exit(RuntimePlaybackMode.AuthoritativeReplay); }
+        finally
+        {
+            if (_playbackModes.ActiveMode == RuntimePlaybackMode.AuthoritativeReplay)
+                _playbackModes.Exit(RuntimePlaybackMode.AuthoritativeReplay);
+        }
         FrameworkLog.Info?.Invoke($"[Replay] Playback ended after {framesPlayed} frames.");
     }
 

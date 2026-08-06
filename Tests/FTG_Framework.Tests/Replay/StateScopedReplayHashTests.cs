@@ -112,7 +112,7 @@ public sealed class StateScopedReplayHashTests : IDisposable
                 new ReplayEntry(5, "FrameAdvancedEvent", "{\"FrameNumber\":5}", 1, 0, 7),
                 new ReplayEntry(6, "FrameAdvancedEvent", "{\"FrameNumber\":6}", 1, 0, 7),
                 new ReplayEntry(7, "FrameAdvancedEvent", "{\"FrameNumber\":7}", 1, 0, 7)
-            ], initialBytes, ReplayFile.ComputeInitialSnapshotHash(initialBytes)));
+            ], initialBytes, ReplayFile.ComputeInitialSnapshotHash(initialBytes), stateScoped: true));
         var orchestrator = new ReplayOrchestrator(snapshotCoordinator: coordinator);
 
         orchestrator.LoadAndStartReplay(path);
@@ -234,6 +234,74 @@ public sealed class StateScopedReplayHashTests : IDisposable
             // Live play continues cleanly after the rebind.
             EventBus.Instance.ProcessFrame();
             Assert.Equal(file.FrameCount + 1, EventBus.Instance.CurrentFrame);
+        }
+        finally { Shutdown(p); }
+    }
+
+    [Fact]
+    public void StateScopedReplay_ReplayStartedDoesNotWipeRestoredTrajectory()
+    {
+        // AC06: a training save taken mid-knockback carries the in-flight
+        // trajectory (tuple + hitstun occupancy + generation high-water).
+        // LoadAndStartReplay publishes ReplayStartedEvent AFTER the restore
+        // commit, so the StateMachine must not reset that state — otherwise the
+        // recorded completion cannot bind and P2 strands in Hitstun.
+        Bundle b = Runtime();
+        string savePath = Path.Combine(_directory, "save-ac06.json");
+        try
+        {
+            EventBus.Instance.PublishImmediate(new HitConnectedEvent(1, 2, "5LP", 1, 1, 1));
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 1, 0, 1, 0.1f, 10, 0, 1, 1, 1, KnockbackPhase.Started));
+            Assert.Equal(CharacterState.Hitstun, b.StateMachine.GetCurrentState(2));
+            Assert.True(b.SaveService.TrySave(savePath, out string saveError), saveError);
+        }
+        finally { Shutdown(b); }
+
+        Bundle r = Runtime();
+        string replayPath = Path.Combine(_directory, "replay-ac06.json");
+        ReplayFile file;
+        try
+        {
+            Assert.True(r.Orchestrator.TryStartStateScopedRecording(savePath, out string startError), startError);
+            // One frame tick enters the recording domain (snapshot.frame + 1),
+            // the completion dispatches on the fresh reserved epoch and binds
+            // the restored tuple, and a second tick ensures the replay driver
+            // dispatches the injected completion before reaching the end of the
+            // frame domain (injected events land on the next ProcessFrame).
+            EventBus.Instance.ProcessFrame();
+            EventBus.Instance.PublishImmediate(new KnockbackAppliedEvent(
+                2, 0, 0, 1, 0.1f, 10, 0, 1, 1, 2, KnockbackPhase.Completed));
+            Assert.Equal(CharacterState.Idle, r.StateMachine.GetCurrentState(2));
+            EventBus.Instance.ProcessFrame();
+            file = r.Orchestrator.StopRecording();
+            Assert.Contains(file.Entries, e => e.EventType == "KnockbackAppliedEvent");
+            Assert.Equal(3, file.FrameCount);
+            ReplayCodec.Write(replayPath, file);
+        }
+        finally { Shutdown(r); }
+
+        Bundle p = Runtime();
+        try
+        {
+            p.Orchestrator.LoadAndStartReplay(replayPath);
+            var trajectoryProbe = p.StateMachine.CaptureRuntimeSnapshot();
+            Assert.True(trajectoryProbe.KnockbackTuples!.ContainsKey(2),
+                $"tuple missing; occupancy={string.Join(",", trajectoryProbe.HitstunOccupancy!.Keys)}");
+            var probedTuple = trajectoryProbe.KnockbackTuples[2];
+            Assert.Equal(EventBus.Instance.LifecycleEpoch, probedTuple.Epoch);
+            Assert.Equal(1UL, probedTuple.Generation);
+            Assert.False(probedTuple.Terminal);
+            Assert.Equal(CharacterState.Hitstun, p.StateMachine.GetCurrentState(2));
+            while (p.Orchestrator.IsPlaying)
+            {
+                if (!p.Orchestrator.ProcessReplayFrame())
+                    break;
+                p.FrameData.Update();
+                EventBus.Instance.ProcessFrame();
+            }
+            Assert.False(p.Orchestrator.IsPlaying);
+            Assert.Equal(CharacterState.Idle, p.StateMachine.GetCurrentState(2));
         }
         finally { Shutdown(p); }
     }

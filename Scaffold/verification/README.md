@@ -59,10 +59,13 @@ count, terminal move, position, and committed data versions) and exits zero.
 
 The state-scoped replay harness proves Story 2.5 snapshot bootstrap end to end in
 a generated project. Flow B saves a mid-move snapshot, records 30 frames, and
-replays them with byte-identical per-frame hashes. Flow A saves mid-combo after
-real walking (3px/frame, stop at 45px), records 40 frames, replays, and verifies
-zero `StateRestored` publications, replay-end rebind into live play, and live
-continuation.
+replays them with byte-identical per-frame hashes across the physics-static
+window (the state components only — the live-only input history is asserted
+frozen instead; hash parity intentionally does not extend to Flow A's mid-combo
+window, where physics is not re-advanced during playback). Flow A saves
+mid-combo after real walking (3px/frame, stop at 45px), records 40 frames,
+replays, and verifies zero `StateRestored` publications, replay-end rebind into
+live play, and live continuation.
 
 ```powershell
 Copy-Item Scaffold/verification/StateScopedReplaySmokeTest.cs "$output/MyFighter/Scripts/"

@@ -171,6 +171,41 @@ public sealed class StateScopedFaultInjectionTests : IDisposable
     }
 
     [Fact]
+    public void TryStopAndWriteReplay_WriteFailure_KeepsFileRetryableAfterDetach()
+    {
+        // S4.2-AC13 stop path: StopRecording is the one-shot committed swap, so
+        // a failed Write must not strand the produced file — the retained
+        // ReplayFile rewrites on retry without re-detaching.
+        var slot = new SnapshotReference<OwnerState>(new OwnerState("live"));
+        var coordinator = new StateSnapshotCoordinator(EventBus.Instance, [Participant(slot)]);
+        string savePath = Path.Combine(_directory, "stop-save.json");
+        string replayPath = Path.Combine(_directory, "stop-replay.json");
+        TrainingStatePersistence.Save(SaveSnapshot(frame: 4), savePath);
+        var orchestrator = new ReplayOrchestrator(snapshotCoordinator: coordinator);
+        Assert.True(orchestrator.TryStartStateScopedRecording(savePath, out string startError), startError);
+
+        // One frame tick enters the recording domain so the file carries events.
+        EventBus.Instance.ProcessFrame();
+
+        // First attempt: the Write target cannot be created (missing parent).
+        string badPath = Path.Combine(_directory, "missing-dir", "replay.json");
+        Assert.False(orchestrator.TryStopAndWriteReplay(badPath, out string error));
+        Assert.False(string.IsNullOrEmpty(error));
+        Assert.False(orchestrator.IsRecording);
+
+        // Retry against a valid path succeeds; the file is the same recording.
+        Assert.True(orchestrator.TryStopAndWriteReplay(replayPath, out error), error);
+        ReplayFile decoded = ReplayCodec.Read(replayPath, "2.3.0");
+        Assert.True(decoded.StateScoped);
+        Assert.Equal(6, decoded.FrameCount); // snapshot frame 4 + one tick (frame 5 entry)
+        Assert.Equal(5, decoded.Entries[0].Frame);
+
+        // A third call with nothing retained reports the terminal state.
+        Assert.False(orchestrator.TryStopAndWriteReplay(replayPath, out error));
+        Assert.Contains("No active recording", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Stop_ReplayHandoffRestore_EmitsNoStateRestored()
     {
         var slot = new SnapshotReference<OwnerState>(new OwnerState("live"));

@@ -20,6 +20,8 @@ internal sealed class StateMachine : IModule, IStateMachine
     private Dictionary<int, (ulong Epoch, ulong Generation)> _hitstunOccupancy = new();
     private Dictionary<int, GenerationEpochSnapshot> _highestKnockbackGeneration = new();
     private Dictionary<int, ReactionRecoverySnapshot> _reactionRecovery = new();
+    private SnapshotRestoreMode _lastPrepareMode;
+    private bool _runtimeSnapshotJustRestored;
     private bool _initialized;
 
     public StateMachine(IDataStore dataStore)
@@ -273,6 +275,7 @@ internal sealed class StateMachine : IModule, IStateMachine
         StateMachineRuntimeSnapshot snapshot, SnapshotPrepareContext context)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        _lastPrepareMode = context.Mode;
         if (snapshot.Stacks is null || snapshot.EffectiveProfiles is null || snapshot.GenerationHighWater is null ||
             snapshot.ReactionRecovery is null)
             throw new SnapshotPrepareException(SnapshotParticipantCatalog.StateMachine, "Required state is null.");
@@ -333,6 +336,15 @@ internal sealed class StateMachine : IModule, IStateMachine
 
     internal void InstallRuntimeSnapshot(StateMachineRuntimeSnapshot snapshot)
     {
+        // A ReplayBootstrap restore installs the snapshot's in-flight trajectory
+        // state; LoadAndStartReplay publishes ReplayStartedEvent after the restore
+        // commit (S4.2-AC09), so OnReplayStarted must skip its reset for that
+        // session or the restored state is wiped before the first envelope
+        // (S4.2-AC06). The flag is consumed by the next ReplayStartedEvent; a
+        // state-scoped RECORDING bootstrap (restore without event) can leave it
+        // set until the next replay start — an accepted narrow window.
+        if (_lastPrepareMode == SnapshotRestoreMode.ReplayBootstrap)
+            _runtimeSnapshotJustRestored = true;
         _stacks = snapshot.Stacks;
         _effectiveProfileSnapshots = snapshot.EffectiveProfiles;
         _highestKnockbackGeneration = snapshot.GenerationHighWater;
@@ -470,9 +482,43 @@ internal sealed class StateMachine : IModule, IStateMachine
             ResetToIdle(e.PlayerId);
     }
 
-    private void OnReplayStarted(ReplayStartedEvent e) => ResetTrajectoryGenerations();
-    private void OnReplayEnded(ReplayEndedEvent e) => ResetTrajectoryGenerations();
-    private void OnMatchInitialized(MatchInitializedEvent e) => ResetTrajectoryGenerations();
+    private void OnReplayStarted(ReplayStartedEvent e)
+    {
+        // See InstallRuntimeSnapshot: a just-restored state-scoped replay must
+        // keep its trajectories; ordinary replays (no restore) reset live state
+        // so the recorded knockback events bind cleanly.
+        if (_runtimeSnapshotJustRestored)
+        {
+            _runtimeSnapshotJustRestored = false;
+            // ReplayStartedEvent is a lifecycle event: its publication bumps the
+            // lifecycle epoch AFTER the restore commit (S4.2-AC09), so the
+            // restored tuples are still bound to the reserved epoch. Rebind them
+            // to the active epoch or the injected events are rejected as stale.
+            ulong epoch = EventBus.Instance.DispatchEpoch;
+            foreach (int playerId in _knockbackTuples.Keys.ToArray())
+                _knockbackTuples[playerId] = _knockbackTuples[playerId] with { Epoch = epoch };
+            var occupancy = new Dictionary<int, (ulong Epoch, ulong Generation)>(_hitstunOccupancy.Count);
+            foreach ((int playerId, var owned) in _hitstunOccupancy)
+                occupancy[playerId] = (epoch, owned.Generation);
+            _hitstunOccupancy = occupancy;
+            var highWater = new Dictionary<int, GenerationEpochSnapshot>(_highestKnockbackGeneration.Count);
+            foreach ((int playerId, var snapshot) in _highestKnockbackGeneration)
+                highWater[playerId] = new GenerationEpochSnapshot(epoch, snapshot.Generation);
+            _highestKnockbackGeneration = highWater;
+            return;
+        }
+        ResetTrajectoryGenerations();
+    }
+    private void OnReplayEnded(ReplayEndedEvent e)
+    {
+        _runtimeSnapshotJustRestored = false;
+        ResetTrajectoryGenerations();
+    }
+    private void OnMatchInitialized(MatchInitializedEvent e)
+    {
+        _runtimeSnapshotJustRestored = false;
+        ResetTrajectoryGenerations();
+    }
 
     private void ResetTrajectoryGenerations()
     {

@@ -86,6 +86,11 @@ public partial class StateScopedReplaySmokeTest : Node
 
         _restartVerifyMode = OS.GetCmdlineUserArgs().Contains("--replay-verify");
 
+        // A main-flow run must not inherit artifacts from a previous run; the
+        // restart-verify run keeps them (it reads the persisted trail + file).
+        if (!_restartVerifyMode)
+            DeleteStaleArtifacts();
+
         _stateRestoredHandler = _ => _stateRestoredCount++;
         _comboStartedHandler = _ => _comboStartedCount++;
         _comboEndedHandler = _ => _comboEndedCount++;
@@ -216,8 +221,12 @@ public partial class StateScopedReplaySmokeTest : Node
                         Fail($"Flow B empty hash trail (recorded={_recordedTrail.Count}, replayed={_replayedTrail.Count})");
                         return;
                     }
-                    if (!_recordedTrail.Take(_replayedTrail.Count)
-                            .Select(StateComponents)
+                    if (_replayedTrail.Count != _recordedTrail.Count)
+                    {
+                        Fail($"Flow B hash trail count mismatch: recorded={_recordedTrail.Count}, replayed={_replayedTrail.Count}");
+                        return;
+                    }
+                    if (!_recordedTrail.Select(StateComponents)
                             .SequenceEqual(_replayedTrail.Select(StateComponents)))
                     {
                         int firstMismatch = 0;
@@ -456,8 +465,12 @@ public partial class StateScopedReplaySmokeTest : Node
                         Fail($"verify empty trail (recorded={recorded.Length}, replayed={_replayedTrail.Count})");
                         return;
                     }
-                    if (!recorded.Take(_replayedTrail.Count)
-                            .Select(StateComponents)
+                    if (recorded.Length != _replayedTrail.Count)
+                    {
+                        Fail($"verify hash trail count mismatch: recorded={recorded.Length}, replayed={_replayedTrail.Count}");
+                        return;
+                    }
+                    if (!recorded.Select(StateComponents)
                             .SequenceEqual(_replayedTrail.Select(StateComponents)))
                     {
                         int firstMismatch = 0;
@@ -596,6 +609,25 @@ public partial class StateScopedReplaySmokeTest : Node
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             GD.PushWarning($"[StateScopedReplaySmoke] could not persist trails: {ex.Message}");
+        }
+    }
+
+    private void DeleteStaleArtifacts()
+    {
+        foreach (string path in new[]
+                 {
+                     _snapshotBPath, _snapshotAPath, _replayBPath, _replayAPath,
+                     _recordedTrailPath, _replayedTrailPath
+                 })
+        {
+            try
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                GD.PushWarning($"[StateScopedReplaySmoke] could not delete stale artifact {path}: {ex.Message}");
+            }
         }
     }
 

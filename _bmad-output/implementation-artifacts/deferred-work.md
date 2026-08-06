@@ -29,3 +29,11 @@
 - No stall detection: a paused host that stops dispatching FrameAdvanced strands the trial in Running until external Cancel/Shutdown. Host-side policy question; revisit when Story 4.3 dock hosting defines trial lifecycle integration.
 - AC02 "validate against both candidate datasets" letter not implemented: validation runs per trial against the live current dataset. The letter would require historical dataset access (versioned snapshots of committed data); the practical per-trial contract is covered by existing tests.
 - AC13 letter: `TryStartPlayback` remains a fallible operation after the committed restore swap. It is fully pre-validated by Prepare; a post-swap failure is an invariant-violation detector that marks the trial Failed (never silent). The story documents this interpretation.
+
+## Deferred from: code review of v2-4-2-state-scoped-save-replay (2026-08-06)
+
+- Session-level replay suppression swallows all registered-type publications (Publish/PublishImmediate) for the whole playback session; unregistered types bypass. Latent (no current publisher produces a swallowed event); mandated by Task S4.2-C implementation note.
+- Injected lifecycle event bumps the epoch mid-frame and purges same-frame sibling envelopes. Latent: the recorder never records lifecycle events today.
+- LoadAndStartReplay lacks the _recorder.IsRecording guard; an active recording is orphaned (Recorder=null, IsRecording stays true). Pre-existing orphan risk.
+- StateScopedReplaySmokeTest.cs.uid not copied by the README Copy-Item step — same convention as all prior smoke suites; E4.2-S evidence passed.
+- Envelope recording uses _dispatchFrame, stale for PublishImmediate events fired between ProcessFrames; pre-existing, newly load-bearing under the byte-exact hash contract.

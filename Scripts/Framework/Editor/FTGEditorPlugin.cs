@@ -3,6 +3,7 @@
 using System;
 using System.IO;
 using FTG_Framework.Data;
+using FTG_Framework.UI.Training;
 using Godot;
 
 namespace FTG_Framework.Editor;
@@ -10,7 +11,8 @@ namespace FTG_Framework.Editor;
 [Tool]
 public partial class FTGEditorPlugin : EditorPlugin
 {
-    private MoveAuthoringDock? _dock;
+    private ToolboxDock? _toolbox;
+    private ToolboxPlaySessionBoundary? _boundary;
     private GodotEditorContext? _context;
     private bool _dockRegistrationAttempted;
 
@@ -22,16 +24,40 @@ public partial class FTGEditorPlugin : EditorPlugin
             string dataRoot = ResolveDataRoot();
             string moveJson = File.ReadAllText(Path.Combine(dataRoot, "example_moves.json"));
             string physicsJson = File.ReadAllText(Path.Combine(dataRoot, "example_knockback_profiles.json"));
+            string responseJson = File.ReadAllText(Path.Combine(dataRoot, "example_physics_response_profiles.json"));
             var store = new DataStore(MoveDataLoader.LoadFromJson(moveJson),
-                knockbackProfiles: PhysicsDataLoader.LoadKnockbackProfilesFromJson(physicsJson));
+                knockbackProfiles: PhysicsDataLoader.LoadKnockbackProfilesFromJson(physicsJson),
+                physicsResponseProfiles: PhysicsDataLoader.LoadPhysicsResponseProfilesFromJson(responseJson));
             var persistence = new MoveDatasetPersistence(dataRoot, store);
             var viewModel = new MoveAuthoringViewModel(persistence.Load("example_moves"), persistence, "example_moves");
             var undo = new MoveAuthoringUndoService(_context, persistence, "example_moves");
-            _dock = new MoveAuthoringDock();
-            _dock.Bind(viewModel, undo);
+            var authoring = new MoveAuthoringDock();
+            authoring.Bind(viewModel, undo);
+
+            var sessions = new RuntimeTuningSessionAuthority();
+            var tuningService = new RuntimeTuningService(dataRoot, store,
+                Path.Combine(dataRoot, "example_knockback_profiles.json"),
+                Path.Combine(dataRoot, "example_physics_response_profiles.json"),
+                requiredResponseIds: () => new[] { "default" });
+            var tuning = new RuntimeTuningPanel
+            {
+                Service = tuningService,
+                DataStore = store,
+                Sessions = sessions,
+                HostedMode = true
+            };
+            var debug = new EventBusDebugPanel { HostedMode = true };
+
+            var workspace = new ToolboxWorkspaceService();
+            var selection = new ToolboxSelectionService();
+            var errors = new ToolboxErrorRouter();
+            _toolbox = new ToolboxDock(workspace, selection, errors, dataRoot, authoring, debug, tuning);
             _dockRegistrationAttempted = true;
-            AddControlToDock(DockSlot.LeftBr, _dock);
-            GD.Print("[FTG Editor] Move authoring dock registered.");
+            AddControlToDock(DockSlot.LeftBr, _toolbox);
+            _boundary = new ToolboxPlaySessionBoundary(workspace);
+            AddDebuggerPlugin(_boundary);
+            _toolbox.Open();
+            GD.Print("[FTG Editor] Unified toolbox dock registered.");
         }
         catch { Cleanup(); throw; }
     }
@@ -57,11 +83,16 @@ public partial class FTGEditorPlugin : EditorPlugin
     {
         GodotEditorContext? context = _context;
         _context = null;
-        MoveAuthoringDock? dock = _dock;
-        _dock = null;
+        ToolboxDock? toolbox = _toolbox;
+        _toolbox = null;
+        ToolboxPlaySessionBoundary? boundary = _boundary;
+        _boundary = null;
         bool removeDock = _dockRegistrationAttempted;
         _dockRegistrationAttempted = false;
 
+        // All fallible operations run before the toolbox's first committed
+        // release (S4.3-AC13); the workspace close happens inside the dock's
+        // _ExitTree during RemoveControlFromDocks.
         try
         {
             context?.Dispose();
@@ -71,13 +102,25 @@ public partial class FTGEditorPlugin : EditorPlugin
             GD.PushError($"[FTG Editor] Context cleanup failed: {ex.Message}");
         }
 
-        if (dock is null || !IsInstanceValid(dock)) return;
+        if (boundary is not null && IsInstanceValid(boundary))
+        {
+            try
+            {
+                RemoveDebuggerPlugin(boundary);
+            }
+            catch (Exception ex)
+            {
+                GD.PushError($"[FTG Editor] Debugger plugin removal failed: {ex.Message}");
+            }
+        }
+
+        if (toolbox is null || !IsInstanceValid(toolbox)) return;
         if (removeDock)
         {
             try
             {
-                RemoveControlFromDocks(dock);
-                GD.Print("[FTG Editor] Move authoring dock removed.");
+                RemoveControlFromDocks(toolbox);
+                GD.Print("[FTG Editor] Unified toolbox dock removed.");
             }
             catch (Exception ex)
             {
@@ -86,7 +129,7 @@ public partial class FTGEditorPlugin : EditorPlugin
         }
         try
         {
-            dock.QueueFree();
+            toolbox.QueueFree();
         }
         catch (Exception ex)
         {

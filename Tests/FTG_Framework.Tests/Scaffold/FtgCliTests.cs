@@ -337,6 +337,22 @@ public class FtgCliTests
             Assert.True(File.Exists(Path.Combine(editorDir, "MoveAuthoringDock.cs")));
             Assert.True(File.Exists(Path.Combine(editorDir, "MoveAuthoringUndoService.cs")));
 
+            // Editor toolbox (E4.3-S): the unified toolbox ships in the scaffold
+            // with the plugin entry that hosts it.
+            var toolboxDir = Path.Combine(editorDir, "Toolbox");
+            foreach (var toolboxFile in new[]
+                     {
+                         "ToolboxDock.cs",
+                         "ToolboxWorkspaceService.cs",
+                         "ToolboxSelectionService.cs",
+                         "ToolboxLayoutService.cs",
+                         "ToolboxErrorRouter.cs",
+                         "ToolboxModels.cs",
+                         "ToolboxPlaySessionBoundary.cs"
+                     })
+                Assert.True(File.Exists(Path.Combine(toolboxDir, toolboxFile)),
+                    $"Missing scaffold input: Editor/Toolbox/{toolboxFile}");
+
             var projectDir = Path.Combine(tmpDir, "FullModules");
             var pluginConfig = Path.Combine(projectDir, "addons", "ftg-framework", "plugin.cfg");
             var pluginEntry = Path.Combine(projectDir, "addons", "ftg-framework", "FTGEditorPluginEntry.cs");

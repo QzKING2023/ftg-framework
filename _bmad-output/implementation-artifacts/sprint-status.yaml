@@ -346,5 +346,10 @@ development_status:
   # (focused 26/26, regression 1287/1287, godot-smoke + restart-verify exit 0);
   # code review closed 2026-08-06 (11 patch findings applied, 4 deferred); regression 1293/1293.
   v2-4-2-state-scoped-save-replay: done
-  v2-4-3-unified-toolbox-dock: backlog
+  # v2-4-3: created 2026-08-06 (create-story) — baseline a3b05cb; zero-footprint
+  # measurement interval fixed (600 ProcessFrame() calls, seeds 2202-2206).
+  # All slices S4.3-A..E complete 2026-08-06; evidence/v2-4-3 published (focused
+  # 86/86, regression 1367/1367 across seeds 2202-2206); Godot editor checklist
+  # published, interactive execution by Q1625. Status: review.
+  v2-4-3-unified-toolbox-dock: review
   v2-epic-4-retrospective: optional

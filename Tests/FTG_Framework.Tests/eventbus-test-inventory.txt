@@ -47,3 +47,7 @@ FTG_Framework.Tests.UI.Training.ViewModels.TrainingSaveLoadViewModelTests
 FTG_Framework.Tests.Replay.StateScopedReplayBootstrapTests
 FTG_Framework.Tests.Replay.StateScopedReplayHashTests
 FTG_Framework.Tests.Replay.StateScopedFaultInjectionTests
+FTG_Framework.Tests.Editor.ToolboxWorkspaceTests
+FTG_Framework.Tests.Editor.ToolboxSelectionTests
+FTG_Framework.Tests.Editor.ToolboxSaveReloadObservationTests
+FTG_Framework.Tests.Editor.ToolboxZeroFootprintTests

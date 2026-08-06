@@ -250,6 +250,83 @@ public sealed class EventBusDebugServiceTests : IDisposable
             service.Disable();
         }
     }
+
+    [Fact]
+    public void CatalogCoverage_GetKnownEventTypes_IncludesReloadAndLifecycleTypes()
+    {
+        // E4.3-B (Story 3.4 note): the static catalog the debug panel subscribes
+        // to already covers the reload/lifecycle types AC03 needs. This locks the
+        // coverage so a future catalog change cannot silently break save/reload
+        // observation.
+        var known = EventBus.Instance.GetKnownEventTypes();
+
+        Assert.Contains(typeof(DataReloadedEvent), known);
+        Assert.Contains(typeof(MatchInitializedEvent), known);
+        Assert.Contains(typeof(ReplayStartedEvent), known);
+        Assert.Contains(typeof(ReplayEndedEvent), known);
+        Assert.Contains(typeof(StateRestoredEvent), known);
+    }
+
+    [Fact]
+    public void Enable_RegistersReloadAndLifecycleEntries()
+    {
+        var service = new EventBusDebugService();
+        service.Enable();
+        try
+        {
+            var entries = service.GetEntries();
+
+            Assert.Contains(entries, e => e.EventTypeName == nameof(DataReloadedEvent));
+            Assert.Contains(entries, e => e.EventTypeName == nameof(MatchInitializedEvent));
+            Assert.Contains(entries, e => e.EventTypeName == nameof(ReplayStartedEvent));
+            Assert.Contains(entries, e => e.EventTypeName == nameof(ReplayEndedEvent));
+            Assert.Contains(entries, e => e.EventTypeName == nameof(StateRestoredEvent));
+        }
+        finally
+        {
+            service.Disable();
+        }
+    }
+
+    [Fact]
+    public void ReloadAndLifecycleEnvelopes_TrackedInAd12Order()
+    {
+        var service = new EventBusDebugService();
+        service.Enable();
+        try
+        {
+            // AD-12: hot-reload is dispatch phase 0, lifecycle/UI is phase 7 —
+            // the reload envelope always dispatches strictly before lifecycle
+            // envelopes. A single frame carries at most one lifecycle
+            // activation (the first lifecycle dispatch bumps the epoch and
+            // purges same-frame siblings), so each lifecycle envelope is
+            // published in its own frame.
+            EventBus.Instance.EnqueueDataReload(new DataReloadedEvent("moves.json"));
+            EventBus.Instance.Publish(new MatchInitializedEvent("p1", "p2"));
+            EventBus.Instance.ProcessFrame();
+            EventBus.Instance.Publish(new ReplayStartedEvent(3, 1));
+            EventBus.Instance.ProcessFrame();
+            EventBus.Instance.Publish(new StateRestoredEvent(0, 0));
+            EventBus.Instance.ProcessFrame();
+
+            var entries = service.GetEntries();
+            var reload = entries.ShouldContain(e => e.EventTypeName == nameof(DataReloadedEvent));
+            var match = entries.ShouldContain(e => e.EventTypeName == nameof(MatchInitializedEvent));
+            var replay = entries.ShouldContain(e => e.EventTypeName == nameof(ReplayStartedEvent));
+            var restore = entries.ShouldContain(e => e.EventTypeName == nameof(StateRestoredEvent));
+            Assert.Equal(1, reload.TotalOccurrences);
+            Assert.Equal(1, match.TotalOccurrences);
+            Assert.Equal(1, replay.TotalOccurrences);
+            Assert.Equal(1, restore.TotalOccurrences);
+            Assert.True(reload.LastFrameSeen < match.LastFrameSeen,
+                "reload must dispatch strictly before lifecycle envelopes (AD-12)");
+        }
+        finally
+        {
+            service.Disable();
+        }
+    }
+
     public void Dispose() => _eventBusScope.Dispose();
 }
 

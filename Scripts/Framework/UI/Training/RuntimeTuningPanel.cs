@@ -16,6 +16,13 @@ public partial class RuntimeTuningPanel : Control
     public IDataStore? DataStore { get; set; }
     public RuntimeTuningSessionAuthority? Sessions { get; set; }
 
+    /// <summary>Hosted-toolbox affordance (S4.3-AC06): skips controller-action
+    /// registration and keyboard shortcuts; visibility is driven by the workspace.</summary>
+    public bool HostedMode { get; set; }
+
+    /// <summary>Toolbox error-reporting hook (S4.3-AC05); standalone mode leaves it null.</summary>
+    internal Action<string>? ErrorReported { get; set; }
+
     private RuntimeTuningViewModel? _viewModel;
     private ScrollContainer? _scroll;
     private OptionButton? _kind;
@@ -27,6 +34,7 @@ public partial class RuntimeTuningPanel : Control
     private Button? _reapply;
     private readonly Dictionary<string, LineEdit> _editors = new(StringComparer.Ordinal);
     private bool _disposed;
+    private bool _lifecycleSubscribed;
 
     internal RuntimeTuningViewModel? ViewModel => _viewModel;
 
@@ -39,7 +47,8 @@ public partial class RuntimeTuningPanel : Control
         }
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         _viewModel = new RuntimeTuningViewModel(Service, Sessions);
-        EnsureControllerActions();
+        if (!HostedMode)
+            EnsureControllerActions();
 
         _scroll = new ScrollContainer
         {
@@ -88,15 +97,14 @@ public partial class RuntimeTuningPanel : Control
         _status.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         root.AddChild(_status);
 
-        EventBus.Instance.Subscribe<MatchInitializedEvent>(OnLifecycle);
-        EventBus.Instance.Subscribe<ReplayStartedEvent>(OnLifecycle);
-        EventBus.Instance.Subscribe<StateRestoredEvent>(OnLifecycle);
+        SubscribeLifecycle();
         RebuildItems();
         RestoreFocus(_kind);
     }
 
     public override void _UnhandledInput(InputEvent @event)
     {
+        if (HostedMode) return; // hosted-toolbox affordance: no runtime keyboard shortcuts
         if (@event.IsActionPressed("tuning_apply")) { Apply(); GetViewport().SetInputAsHandled(); }
         else if (@event.IsActionPressed("tuning_reload")) { Reload(); GetViewport().SetInputAsHandled(); }
         else if (@event.IsActionPressed("tuning_reapply")) { ConfirmReapply(); GetViewport().SetInputAsHandled(); }
@@ -104,16 +112,74 @@ public partial class RuntimeTuningPanel : Control
 
     public override void _ExitTree() => Shutdown();
 
+    /// <summary>
+    /// Visibility semantics (S4.3-AC06): a hidden panel owns no active UI
+    /// callbacks. Suspend unsubscribes the lifecycle observers; resuming
+    /// resubscribes and reconstructs from authoritative data.
+    /// </summary>
+    internal void SetSuspended(bool suspended)
+    {
+        if (_disposed) return;
+        if (suspended)
+        {
+            UnsubscribeLifecycle();
+            _apply?.SetDisabled(true);
+        }
+        else
+        {
+            SubscribeLifecycle();
+            _apply?.SetDisabled(false);
+            ReconstructForLifecycle("panel re-shown");
+        }
+    }
+
     internal void Shutdown()
     {
         if (_disposed) return;
         _disposed = true;
-        EventBus.Instance.Unsubscribe<MatchInitializedEvent>(OnLifecycle);
-        EventBus.Instance.Unsubscribe<ReplayStartedEvent>(OnLifecycle);
-        EventBus.Instance.Unsubscribe<StateRestoredEvent>(OnLifecycle);
+        UnsubscribeLifecycle();
         _apply?.SetDisabled(true);
         _viewModel?.Dispose();
         _viewModel = null;
+    }
+
+    /// <summary>
+    /// Cross-panel selection consumer (S4.3-AC02): selects the given move in the
+    /// tuning panel's move kind without writing any data (opens a baseline read).
+    /// </summary>
+    internal void SelectMoveItem(string moveId)
+    {
+        if (_item is null || _kind is null || _viewModel is null) return;
+        if (SelectedKind != RuntimeTuningSelectionKind.Move)
+        {
+            _kind.Select((int)RuntimeTuningSelectionKind.Move);
+            RebuildItems();
+        }
+        for (int i = 0; i < _item.ItemCount; i++)
+            if (string.Equals(_item.GetItemText(i), moveId, StringComparison.Ordinal))
+            {
+                _item.Select(i);
+                OpenSelection();
+                return;
+            }
+    }
+
+    private void SubscribeLifecycle()
+    {
+        if (_lifecycleSubscribed) return;
+        EventBus.Instance.Subscribe<MatchInitializedEvent>(OnLifecycle);
+        EventBus.Instance.Subscribe<ReplayStartedEvent>(OnLifecycle);
+        EventBus.Instance.Subscribe<StateRestoredEvent>(OnLifecycle);
+        _lifecycleSubscribed = true;
+    }
+
+    private void UnsubscribeLifecycle()
+    {
+        if (!_lifecycleSubscribed) return;
+        EventBus.Instance.Unsubscribe<MatchInitializedEvent>(OnLifecycle);
+        EventBus.Instance.Unsubscribe<ReplayStartedEvent>(OnLifecycle);
+        EventBus.Instance.Unsubscribe<StateRestoredEvent>(OnLifecycle);
+        _lifecycleSubscribed = false;
     }
 
     private RuntimeTuningSelectionKind SelectedKind => _kind is null
@@ -224,7 +290,7 @@ public partial class RuntimeTuningPanel : Control
     private void OnLifecycle(MatchInitializedEvent _) => ReconstructForLifecycle("match restart");
     private void OnLifecycle(ReplayStartedEvent _) => ReconstructForLifecycle("replay start");
     private void OnLifecycle(StateRestoredEvent _) => ReconstructForLifecycle("state restore");
-    private void ReconstructForLifecycle(string reason)
+    internal void ReconstructForLifecycle(string reason)
     {
         if (_viewModel is null) return;
         _viewModel.Invalidate();
@@ -237,6 +303,7 @@ public partial class RuntimeTuningPanel : Control
         if (_status is null) return;
         _status.Text = error ? $"ERROR — {text}" : $"STATUS — {text}";
         _status.TooltipText = text;
+        if (error) ErrorReported?.Invoke(text);
     }
 
     private void RegisterScrollableFocus(Control control) =>

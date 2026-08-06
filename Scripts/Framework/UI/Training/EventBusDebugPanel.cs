@@ -22,7 +22,12 @@ public partial class EventBusDebugPanel : Control
     private ScrollContainer? _scrollContainer;
     private bool _prevToggleKey;
 
+    /// <summary>Hosted-toolbox affordance (S4.3-AC06): no BackQuote runtime toggle;
+    /// visibility and service activation are driven by the workspace.</summary>
+    internal bool HostedMode { get; set; }
+
     internal EventBusDebugViewModel ViewModel => _vm;
+    internal EventBusDebugService Service => _service;
     internal string TitleText => _titleLabel?.Text ?? string.Empty;
     internal string EntryListText => _entryListLabel?.Text ?? string.Empty;
     internal string DetailText => _detailLabel?.Text ?? string.Empty;
@@ -65,13 +70,16 @@ public partial class EventBusDebugPanel : Control
         };
         controlsRow.AddChild(sortButton);
 
-        var closeButton = new Button { Text = "Close (Toggle: `)" };
-        closeButton.Pressed += () =>
+        if (!HostedMode)
         {
-            _vm.ToggleVisibility();
-            Visible = _vm.IsVisible;
-        };
-        controlsRow.AddChild(closeButton);
+            var closeButton = new Button { Text = "Close (Toggle: `)" };
+            closeButton.Pressed += () =>
+            {
+                _vm.ToggleVisibility();
+                Visible = _vm.IsVisible;
+            };
+            controlsRow.AddChild(closeButton);
+        }
         _container.AddChild(controlsRow);
 
         _scrollContainer = new ScrollContainer
@@ -92,23 +100,41 @@ public partial class EventBusDebugPanel : Control
         _detailLabel.SizeFlagsVertical |= Control.SizeFlags.ExpandFill;
         _container.AddChild(_detailLabel);
 
-        // Start hidden — user toggles via BackQuote key
-        Visible = false;
+        // Start hidden in standalone mode — user toggles via BackQuote key.
+        // In hosted mode the workspace owns visibility and activation.
+        if (!HostedMode)
+            Visible = false;
+    }
+
+    /// <summary>
+    /// Hosted activation (S4.3-AC06): drives the ViewModel's visibility state,
+    /// which enables/disables the underlying EventBusDebugService exactly once
+    /// per transition. No-op when already in the requested state.
+    /// </summary>
+    internal void SetActive(bool active)
+    {
+        if (active == _vm.IsVisible)
+            return;
+        _vm.ToggleVisibility();
     }
 
     public override void _Process(double delta)
     {
-        // Toggle key: BackQuote (tilde)
-        bool toggleKey = Godot.Input.IsKeyPressed(Key.Quoteleft);
-        if (toggleKey && !_prevToggleKey)
+        // A hidden hosted panel owns no active callbacks (S4.3-AC06).
+        if (HostedMode && !Visible)
+            return;
+
+        if (!HostedMode)
         {
-            _vm.ToggleVisibility();
-            if (_vm.IsVisible)
-                Visible = true;
-            else
-                Visible = false;
+            // Toggle key: BackQuote (tilde) — standalone behavior unchanged
+            bool toggleKey = Godot.Input.IsKeyPressed(Key.Quoteleft);
+            if (toggleKey && !_prevToggleKey)
+            {
+                _vm.ToggleVisibility();
+                Visible = _vm.IsVisible;
+            }
+            _prevToggleKey = toggleKey;
         }
-        _prevToggleKey = toggleKey;
 
         if (!_vm.IsVisible)
             return;

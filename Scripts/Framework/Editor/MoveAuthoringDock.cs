@@ -25,6 +25,17 @@ public partial class MoveAuthoringDock : ScrollContainer
     private string? _moveId;
     private bool _busy;
     private bool _loading;
+    private string? _lastReportedSelection;
+
+    /// <summary>Current move selection exposed to the toolbox (S4.3-AC02).</summary>
+    internal string? SelectedMoveId => _moveId;
+
+    /// <summary>Cross-panel selection hook (S4.3-AC02): fired with the current
+    /// move identity when the user changes selection or the form rebinds.</summary>
+    internal Action<string?>? SelectionChanged { get; set; }
+
+    /// <summary>Toolbox error-reporting hook (S4.3-AC05); standalone mode leaves it null.</summary>
+    internal Action<string>? ErrorReported { get; set; }
 
     public MoveAuthoringDock()
     {
@@ -90,12 +101,14 @@ public partial class MoveAuthoringDock : ScrollContainer
             ClearNestedRows();
             _status.Text = "No moves are present. Choose Add Move to create one.";
             _loading = false;
+            ReportSelection();
             return;
         }
         _moveSelector.Select(selected);
         LoadMove(selected);
         _loading = false;
         _status.Text = "Ready — editing committed authoritative data.";
+        ReportSelection();
     }
 
     private void LoadMove(int index)
@@ -130,6 +143,7 @@ public partial class MoveAuthoringDock : ScrollContainer
             LoadMove((int)index);
             _loading = false;
             _status.Text = "Move selected; pending edits to the previous move were retained.";
+            ReportSelection();
         }
         catch (Exception ex)
         {
@@ -137,6 +151,7 @@ public partial class MoveAuthoringDock : ScrollContainer
             if (previous >= 0) _moveSelector.Select(previous);
             _loading = false;
             _status.Text = $"Cannot switch moves: {ex.Message}";
+            ReportError($"Cannot switch moves: {ex.Message}");
         }
     }
 
@@ -155,7 +170,7 @@ public partial class MoveAuthoringDock : ScrollContainer
             Bind(_viewModel, _undo, id);
             _status.Text = "New move created. Complete required fields before saving.";
         }
-        catch (Exception ex) { _status.Text = $"Add move failed: {ex.Message}"; }
+        catch (Exception ex) { _status.Text = $"Add move failed: {ex.Message}"; ReportError($"Add move failed: {ex.Message}"); }
     }
 
     private void AddCancelWindow() => MutateSelected(move => move with
@@ -210,14 +225,14 @@ public partial class MoveAuthoringDock : ScrollContainer
             _viewModel.Edit(id, mutation);
             Bind(_viewModel, _undo, id);
         }
-        catch (Exception ex) { _status.Text = $"Edit failed: {ex.Message}"; }
+        catch (Exception ex) { _status.Text = $"Edit failed: {ex.Message}"; ReportError($"Edit failed: {ex.Message}"); }
     }
 
     private void ReloadCommitted()
     {
         if (_busy || _viewModel is null || _undo is null) return;
         try { _viewModel.ReloadCommitted(); Bind(_viewModel, _undo, _moveId); _status.Text = "Reloaded the latest committed data; form edits were discarded."; }
-        catch (Exception ex) { _status.Text = $"Reload failed: {ex.Message}"; }
+        catch (Exception ex) { _status.Text = $"Reload failed: {ex.Message}"; ReportError($"Reload failed: {ex.Message}"); }
     }
 
     private void ReapplyCommitted()
@@ -235,7 +250,7 @@ public partial class MoveAuthoringDock : ScrollContainer
             else
                 ApplyValidationPresentation(_viewModel.LastResult, "Reapply needs correction.");
         }
-        catch (Exception ex) { _status.Text = $"Reapply failed: {ex.Message}"; }
+        catch (Exception ex) { _status.Text = $"Reapply failed: {ex.Message}"; ReportError($"Reapply failed: {ex.Message}"); }
     }
 
     private void ConfirmSave()
@@ -256,12 +271,13 @@ public partial class MoveAuthoringDock : ScrollContainer
         try
         {
             MoveValidationResult form = ApplyFormEdits();
-            if (!form.Success) { ApplyValidationPresentation(form, "Validation failed."); return; }
+            if (!form.Success) { ApplyValidationPresentation(form, "Validation failed."); ReportError("Validation failed."); return; }
             string savedMoveId = _moveId;
             MoveValidationResult validation = _viewModel.Validate();
             if (!validation.Success)
             {
                 ApplyValidationPresentation(validation, "Validation failed.");
+                ReportError("Validation failed.");
                 return;
             }
             ClearValidationPresentation();
@@ -276,15 +292,18 @@ public partial class MoveAuthoringDock : ScrollContainer
             else if (result?.Status == MoveSaveStatus.ValidationFailed && result.Errors is { Count: > 0 })
             {
                 ApplyValidationPresentation(new MoveValidationResult(result.Errors), "Validation failed.");
+                ReportError("Validation failed.");
             }
             else
             {
-                _status.Text = result?.Status == MoveSaveStatus.Conflict
+                string message = result?.Status == MoveSaveStatus.Conflict
                     ? $"Conflict: expected {result.ExpectedIdentity?.Sha256}, current {result.CurrentIdentity?.Sha256}. Reload or reapply before saving."
                     : $"Save failed: {result?.Diagnostic ?? "validation or I/O error"}";
+                _status.Text = message;
+                ReportError(message);
             }
         }
-        catch (Exception ex) { _status.Text = $"Save failed: {ex.Message}"; }
+        catch (Exception ex) { _status.Text = $"Save failed: {ex.Message}"; ReportError($"Save failed: {ex.Message}"); }
         finally { _busy = false; }
     }
 
@@ -520,6 +539,15 @@ public partial class MoveAuthoringDock : ScrollContainer
 
     private static void AppendError(Label label, string text) => label.Text = string.IsNullOrEmpty(label.Text) ? text : $"{label.Text}\n{text}";
     private static Label ErrorLabel() => new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
+
+    private void ReportSelection()
+    {
+        if (string.Equals(_moveId, _lastReportedSelection, StringComparison.Ordinal)) return;
+        _lastReportedSelection = _moveId;
+        SelectionChanged?.Invoke(_moveId);
+    }
+
+    private void ReportError(string message) => ErrorReported?.Invoke(message);
 
     private sealed record CancelRow(SpinBox Start, SpinBox End, LineEdit Category, Label Error);
     private sealed record BoxRow(LineEdit Id, SpinBox X, SpinBox Y, SpinBox Width, SpinBox Height, Label Error);
